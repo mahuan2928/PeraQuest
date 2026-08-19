@@ -28,7 +28,7 @@ describe('P0 access guards', () => {
       },
     })
 
-    expect(onboarding.statusCode).toBe(200)
+    expect(onboarding.statusCode).toBe(201)
     expect(onboarding.json()).toMatchObject({
       isMinor: true,
       guardianLinkStatus: 'pending',
@@ -93,7 +93,7 @@ describe('P0 access guards', () => {
         birthMonth: '2000-01',
         isMinor: false,
         guardianLinkStatus: 'not_required',
-        guardianId: null,
+      guardianId: null,
       })
       if (consentState !== 'missing') {
         await repository.setVoiceConsent('student-voice-guard', consentState, 'v1')
@@ -130,7 +130,7 @@ describe('P0 access guards', () => {
       birthMonth: '2000-01',
       isMinor: false,
       guardianLinkStatus: 'not_required',
-        guardianId: null,
+      guardianId: null,
     })
     const app = buildApp({ repository })
     apps.push(app)

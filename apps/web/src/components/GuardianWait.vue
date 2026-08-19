@@ -1,5 +1,9 @@
 <script setup lang="ts">
-defineProps<{ trialRedeemed: boolean; trialPending?: boolean }>()
+defineProps<{
+  trialRedeemed: boolean
+  trialPending?: boolean
+  trialError?: string
+}>()
 const emit = defineEmits<{ startTrial: [] }>()
 </script>
 
@@ -51,6 +55,13 @@ const emit = defineEmits<{ startTrial: [] }>()
         {{ trialRedeemed ? 'おためし済みです' : trialPending ? '確認中…' : '1回だけ体験する' }}
       </button>
     </div>
+    <p
+      v-if="trialError"
+      class="field-error"
+      role="alert"
+    >
+      {{ trialError }}
+    </p>
     <p
       v-if="trialRedeemed"
       class="redeemed-note"

@@ -1,67 +1,70 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
 import type { TrialQuestion } from '@peraquest/contracts'
+import { computed, nextTick, ref } from 'vue'
 import { submitTrialAnswer } from '../api/onboarding'
 
 const props = defineProps<{
-  studentId: string
   attemptId: string
+  initialQuestion: TrialQuestion
   questionCount: number
-  firstQuestion: TrialQuestion
 }>()
 const emit = defineEmits<{ complete: [score: number] }>()
-const index = ref(0)
-const current = ref<TrialQuestion>(props.firstQuestion)
+const questionNumber = ref(1)
+const current = ref<TrialQuestion>(props.initialQuestion)
 const selected = ref('')
 const submitted = ref(false)
 const submitting = ref(false)
-const answerError = ref('')
-const correct = ref(false)
+const answerCorrect = ref(false)
 const correctAnswer = ref('')
 const explanation = ref('')
+const completedScore = ref<number | null>(null)
 const nextQuestion = ref<TrialQuestion | null>(null)
-const finalScore = ref<number | null>(null)
+const serviceError = ref('')
 const feedback = ref<HTMLElement | null>(null)
-const progress = computed(() => ((index.value + 1) / props.questionCount) * 100)
+const progress = computed(() => (questionNumber.value / props.questionCount) * 100)
 
 async function submitAnswer() {
   if (!selected.value || submitted.value || submitting.value) return
   submitting.value = true
-  answerError.value = ''
+  serviceError.value = ''
   try {
-    const result = await submitTrialAnswer(props.studentId, props.attemptId, {
+    const result = await submitTrialAnswer(props.attemptId, {
       questionId: current.value.id,
       answer: selected.value,
     })
-    correct.value = result.correct
+    answerCorrect.value = result.correct
     correctAnswer.value = result.correctAnswer
     explanation.value = result.explanation
+    completedScore.value = result.completed ? result.score : null
     nextQuestion.value = result.nextQuestion
-    finalScore.value = result.score
     submitted.value = true
     await nextTick()
     feedback.value?.focus()
   } catch {
-    answerError.value = '回答を送信できませんでした。選択内容はそのままです。もう一度お試しください。'
+    serviceError.value = '答えを送信できませんでした。回答はそのままです。もう一度お試しください。'
   } finally {
     submitting.value = false
   }
 }
 
 function next() {
+  if (completedScore.value !== null) {
+    emit('complete', completedScore.value)
+    return
+  }
   if (!nextQuestion.value) {
-    emit('complete', finalScore.value ?? 0)
+    serviceError.value = '次の問題を確認できませんでした。もう一度お試しください。'
     return
   }
   current.value = nextQuestion.value
-  index.value += 1
+  questionNumber.value += 1
   selected.value = ''
   submitted.value = false
-  correct.value = false
+  answerCorrect.value = false
   correctAnswer.value = ''
   explanation.value = ''
   nextQuestion.value = null
-  finalScore.value = null
+  serviceError.value = ''
 }
 </script>
 
@@ -77,19 +80,20 @@ function next() {
         </p><strong>英検3級 · おためし</strong>
       </div>
       <p aria-live="polite">
-        {{ index + 1 }} / {{ questionCount }}
+        {{ questionNumber }} / {{ questionCount }}
       </p>
     </header>
     <div
       class="progress-track"
       role="progressbar"
-      :aria-valuenow="index + 1"
+      :aria-valuenow="questionNumber"
       aria-valuemin="1"
       :aria-valuemax="questionCount"
-      :aria-label="`問題 ${index + 1} / ${questionCount}`"
+      :aria-label="`問題 ${questionNumber} / ${questionCount}`"
     >
       <span :style="{ width: `${progress}%` }" />
     </div>
+
     <article class="question-card">
       <span class="ability-tag">{{ current.ability === 'grammar' ? '文法' : '単語' }}</span>
       <h1 id="question-title">
@@ -117,24 +121,26 @@ function next() {
           <span>{{ choice }}</span>
         </label>
       </fieldset>
-      <p
-        v-if="answerError"
-        role="alert"
-        class="restriction-note"
-      >
-        {{ answerError }}
-      </p>
+
       <div
         v-if="submitted"
         ref="feedback"
         class="feedback"
-        :class="correct ? 'correct' : 'incorrect'"
+        :class="answerCorrect ? 'correct' : 'incorrect'"
         role="status"
         tabindex="-1"
       >
-        <strong>{{ correct ? '正解！' : `正解は「${correctAnswer}」` }}</strong>
+        <strong>{{ answerCorrect ? '正解！' : `正解は「${correctAnswer}」` }}</strong>
         <p>{{ explanation }}</p>
       </div>
+      <p
+        v-if="serviceError"
+        class="field-error"
+        role="alert"
+      >
+        {{ serviceError }}
+      </p>
+
       <button
         v-if="!submitted"
         class="primary-action"
@@ -150,9 +156,10 @@ function next() {
         class="primary-action"
         data-testid="next-question"
         type="button"
+        :disabled="submitting"
         @click="next"
       >
-        {{ nextQuestion ? '次の問題へ' : '結果を見る' }}
+        {{ completedScore !== null ? '結果を見る' : '次の問題へ' }}
       </button>
     </article>
   </section>

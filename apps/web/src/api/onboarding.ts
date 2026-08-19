@@ -1,37 +1,39 @@
 import type {
+  CapabilityResponse,
+  GuardianLinkResponse,
   StudentOnboardingResponse,
   TrialAnswerRequest,
   TrialAnswerResponse,
   TrialAttemptResponse,
 } from '@peraquest/contracts'
 
-type ClientPlatform = 'ios' | 'android' | 'pc'
-
-function detectClientPlatform(): ClientPlatform {
+function detectClientPlatform(): 'ios' | 'android' | 'pc' {
   if (/Android/i.test(navigator.userAgent)) return 'android'
   if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) return 'ios'
   return 'pc'
 }
 
-export class ApiError extends Error {
-  constructor(public readonly code: string) {
-    super(code)
+function studentHeaders(): HeadersInit {
+  const studentId = sessionStorage.getItem('lingoquest.student.id')
+  if (!studentId) throw new Error('STUDENT_SESSION_MISSING')
+  return {
+    'x-student-id': studentId,
+    'x-client-platform': detectClientPlatform(),
   }
 }
 
-async function parseError(response: Response, fallback: string): Promise<never> {
-  let code = fallback
-  try {
-    const body = await response.json() as { error?: string; code?: string }
-    code = body.code ?? body.error ?? fallback
-  } catch {
-    // Keep the stable fallback when an upstream error is not JSON.
+async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init)
+  if (!response.ok) {
+    const error = new Error(`REQUEST_FAILED_${response.status}`)
+    Object.assign(error, { status: response.status })
+    throw error
   }
-  throw new ApiError(code)
+  return response.json() as Promise<T>
 }
 
-export async function createStudentOnboarding(birthMonth: string): Promise<StudentOnboardingResponse> {
-  const response = await fetch('/v1/students/onboarding', {
+export function createStudentOnboarding(birthMonth: string): Promise<StudentOnboardingResponse> {
+  return jsonRequest('/v1/students/onboarding', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -41,29 +43,20 @@ export async function createStudentOnboarding(birthMonth: string): Promise<Stude
       client: { platform: detectClientPlatform() },
     }),
   })
-  if (!response.ok) return parseError(response, 'ONBOARDING_FAILED')
-  return response.json() as Promise<StudentOnboardingResponse>
 }
 
-export async function createTrialAttempt(studentId: string): Promise<TrialAttemptResponse> {
-  const response = await fetch('/v1/trial-attempts', {
-    method: 'POST',
-    headers: { 'x-student-id': studentId },
-  })
-  if (!response.ok) return parseError(response, 'TRIAL_START_FAILED')
-  return response.json() as Promise<TrialAttemptResponse>
-}
+export const getGuardianStatus = (): Promise<GuardianLinkResponse> =>
+  jsonRequest('/v1/me/guardian-link', { headers: studentHeaders() })
 
-export async function submitTrialAnswer(
-  studentId: string,
-  attemptId: string,
-  answer: TrialAnswerRequest,
-): Promise<TrialAnswerResponse> {
-  const response = await fetch(`/v1/trial-attempts/${encodeURIComponent(attemptId)}/answers`, {
+export const getCapabilities = (): Promise<CapabilityResponse> =>
+  jsonRequest('/v1/me/capabilities', { headers: studentHeaders() })
+
+export const createTrialAttempt = (): Promise<TrialAttemptResponse> =>
+  jsonRequest('/v1/trial-attempts', { method: 'POST', headers: studentHeaders() })
+
+export const submitTrialAnswer = (attemptId: string, answer: TrialAnswerRequest): Promise<TrialAnswerResponse> =>
+  jsonRequest(`/v1/trial-attempts/${attemptId}/answers`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-student-id': studentId },
+    headers: { ...studentHeaders(), 'content-type': 'application/json' },
     body: JSON.stringify(answer),
   })
-  if (!response.ok) return parseError(response, 'TRIAL_ANSWER_FAILED')
-  return response.json() as Promise<TrialAnswerResponse>
-}

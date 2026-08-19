@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { TrialAttemptResponse } from '@peraquest/contracts'
-import { ApiError, createStudentOnboarding, createTrialAttempt } from './api/onboarding'
+import type { TrialQuestion } from '@peraquest/contracts'
+import { createStudentOnboarding, createTrialAttempt, getCapabilities, getGuardianStatus } from './api/onboarding'
 import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
 import TrialLesson from './components/TrialLesson.vue'
@@ -10,9 +10,10 @@ import TrialResult from './components/TrialResult.vue'
 type Step = 'onboarding' | 'guardian' | 'trial' | 'result' | 'adult'
 const step = ref<Step>('onboarding')
 const score = ref(0)
-const studentId = ref('')
-const trial = ref<TrialAttemptResponse | null>(null)
 const trialRedeemed = ref(false)
+const trialAttemptId = ref('')
+const trialQuestion = ref<TrialQuestion | null>(null)
+const trialQuestionCount = ref(0)
 const trialPending = ref(false)
 const trialError = ref('')
 const onboardingPending = ref(false)
@@ -23,9 +24,17 @@ async function finishOnboarding(birthMonth: string) {
   onboardingError.value = ''
   try {
     const result = await createStudentOnboarding(birthMonth)
-    studentId.value = result.studentId
     sessionStorage.setItem('lingoquest.student.id', result.studentId)
-    step.value = result.onboardingStatus === 'pending_guardian' ? 'guardian' : 'adult'
+    const [guardian, capabilities] = await Promise.all([getGuardianStatus(), getCapabilities()])
+    const safelyRestricted = guardian.status === 'pending'
+      && capabilities.guardianLinkStatus === 'pending'
+      && !capabilities.canLearn
+      && !capabilities.canUploadVoice
+      && !capabilities.canPurchase
+
+    if (result.onboardingStatus === 'pending_guardian' && safelyRestricted) step.value = 'guardian'
+    else if (result.onboardingStatus === 'active' && capabilities.canLearn) step.value = 'adult'
+    else throw new Error('INCONSISTENT_ACCESS_POLICY')
   } catch {
     onboardingError.value = '安全設定を確認できませんでした。通信環境を確認して、もう一度お試しください。'
   } finally {
@@ -34,19 +43,18 @@ async function finishOnboarding(birthMonth: string) {
 }
 
 async function startTrial() {
-  if (!studentId.value || trialPending.value || trialRedeemed.value) return
+  if (trialRedeemed.value || trialPending.value) return
   trialPending.value = true
   trialError.value = ''
   try {
-    trial.value = await createTrialAttempt(studentId.value)
+    const attempt = await createTrialAttempt()
+    trialAttemptId.value = attempt.attemptId
+    trialQuestion.value = attempt.question
+    trialQuestionCount.value = attempt.questionCount
     step.value = 'trial'
   } catch (error) {
-    if (error instanceof ApiError && error.code === 'TRIAL_ALREADY_REDEEMED') {
-      trialRedeemed.value = true
-      trialError.value = 'このアカウントのおためしクエストは完了しています。'
-    } else {
-      trialError.value = 'おためしクエストを開始できませんでした。もう一度お試しください。'
-    }
+    if (error instanceof Error && error.message === 'REQUEST_FAILED_409') trialRedeemed.value = true
+    trialError.value = 'おためしクエストを開始できませんでした。時間をおいて、もう一度お試しください。'
   } finally {
     trialPending.value = false
   }
@@ -82,32 +90,24 @@ function completeTrial(value: number) {
         :submit-error="onboardingError"
         @submit="finishOnboarding"
       />
-      <template v-else-if="step === 'guardian'">
-        <GuardianWait
-          :trial-redeemed="trialRedeemed"
-          :trial-pending="trialPending"
-          @start-trial="startTrial"
-        />
-        <p
-          v-if="trialError"
-          role="alert"
-          class="restriction-note"
-        >
-          {{ trialError }}
-        </p>
-      </template>
+      <GuardianWait
+        v-else-if="step === 'guardian'"
+        :trial-redeemed="trialRedeemed"
+        :trial-pending="trialPending"
+        :trial-error="trialError"
+        @start-trial="startTrial"
+      />
       <TrialLesson
-        v-else-if="step === 'trial' && trial"
-        :student-id="studentId"
-        :attempt-id="trial.attemptId"
-        :question-count="trial.questionCount"
-        :first-question="trial.question"
+        v-else-if="step === 'trial' && trialQuestion"
+        :attempt-id="trialAttemptId"
+        :initial-question="trialQuestion"
+        :question-count="trialQuestionCount"
         @complete="completeTrial"
       />
       <TrialResult
-        v-else-if="step === 'result' && trial"
+        v-else-if="step === 'result'"
         :score="score"
-        :total="trial.questionCount"
+        :total="trialQuestionCount"
       />
       <section
         v-else

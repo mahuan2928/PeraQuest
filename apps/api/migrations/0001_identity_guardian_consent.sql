@@ -1,5 +1,3 @@
-BEGIN;
-
 CREATE TYPE user_role AS ENUM ('student', 'guardian', 'admin');
 CREATE TYPE client_platform AS ENUM ('ios', 'android', 'pc');
 CREATE TYPE guardian_link_status AS ENUM ('pending', 'verified', 'rejected', 'revoked');
@@ -84,5 +82,3 @@ CREATE TABLE line_links (
   return_target text NOT NULL CHECK (return_target IN ('app_deep_link', 'web_https')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
-
-COMMIT;

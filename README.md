@@ -4,9 +4,12 @@ Engineering foundation for the LingoQuest JP MVP: Eiken Grade 3 daily quests, AI
 
 ## Workspace
 
-- `apps/web` — Vue 3 + Vite client
+- `apps/web` — shared Vue 3 + Vite feature client
+- `apps/mobile` — installable iOS/Android Capacitor shells
+- `apps/desktop` — installable Windows/macOS/Linux Electron shell
 - `apps/api` — Fastify TypeScript API
 - `packages/contracts` — shared MVP contracts
+- `packages/platform` — cross-platform capability contract
 
 ## Start
 

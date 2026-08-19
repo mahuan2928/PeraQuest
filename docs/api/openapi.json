@@ -1,0 +1,803 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PeraQuest MVP API",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/students/onboarding": {
+      "post": {
+        "operationId": "onboardStudent",
+        "summary": "Create an Eiken Grade 3 learner profile and determine guardian requirements.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudentOnboardingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Student onboarded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentOnboardingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/v1/me/guardian-link": {
+      "get": {
+        "operationId": "getGuardianLink",
+        "summary": "Read the current learner's guardian-link state.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StudentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guardian-link state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianLink"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/me/consents/voice-processing": {
+      "put": {
+        "operationId": "putVoiceConsent",
+        "summary": "Record or withdraw the current voice-processing consent version.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StudentId"
+          },
+          {
+            "$ref": "#/components/parameters/GuardianId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceConsentWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Consent recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceConsent"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/me/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "summary": "Resolve server-authoritative learning, voice, commerce, notification, LINE-return, and entitlement capabilities.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StudentId"
+          },
+          {
+            "$ref": "#/components/parameters/ClientPlatform"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/me/voice-upload-ticket": {
+      "post": {
+        "operationId": "createVoiceUploadTicket",
+        "summary": "Request a signed upload ticket after the server repeats guardian and Consent Gate checks.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StudentId"
+          }
+        ],
+        "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "501": {
+            "description": "Gate passed, but object storage is not configured in this slice",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trial-attempts": {
+      "post": {
+        "operationId": "startOneTimeTrial",
+        "summary": "Consume the learner’s one-time trial eligibility and return the first question without its answer.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StudentId"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Trial started; starting consumes the one-time entitlement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrialAttempt"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Trial already redeemed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trial-attempts/{attemptId}/answers": {
+      "post": {
+        "operationId": "submitTrialAnswer",
+        "summary": "Submit exactly the current trial answer; raw answers and durable progress are not stored.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StudentId"
+          },
+          {
+            "name": "attemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrialAnswerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Answer evaluated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrialAnswerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Answer is duplicated or out of sequence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Attempt expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "StudentId": {
+        "name": "X-Student-Id",
+        "in": "header",
+        "required": true,
+        "description": "Scaffold-only identity header; replace with verified bearer-token middleware.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "GuardianId": {
+        "name": "X-Guardian-Id",
+        "in": "header",
+        "required": false,
+        "description": "Scaffold-only linked guardian identity, required when a minor's consent is written. Replace with verified actor claims.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ClientPlatform": {
+        "name": "X-Client-Platform",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/ClientPlatform"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid request",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Guardian or voice consent gate denied the operation",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Student not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ClientPlatform": {
+        "type": "string",
+        "enum": [
+          "ios",
+          "android",
+          "pc"
+        ]
+      },
+      "GuardianLinkStatus": {
+        "type": "string",
+        "enum": [
+          "not_required",
+          "pending",
+          "verified",
+          "rejected",
+          "revoked"
+        ]
+      },
+      "ConsentStatus": {
+        "type": "string",
+        "enum": [
+          "missing",
+          "granted",
+          "denied",
+          "withdrawn",
+          "outdated"
+        ]
+      },
+      "StudentOnboardingRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "birthMonth": {
+            "type": "string",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+          },
+          "targetExam": {
+            "const": "eiken_grade_3"
+          },
+          "authProvider": {
+            "type": "string",
+            "enum": [
+              "apple",
+              "google",
+              "email_magic_link"
+            ]
+          },
+          "client": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "platform": {
+                "$ref": "#/components/schemas/ClientPlatform"
+              },
+              "deviceId": {
+                "type": "string"
+              },
+              "appVersion": {
+                "type": "string"
+              },
+              "osVersion": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "platform"
+            ]
+          }
+        },
+        "required": [
+          "birthMonth",
+          "targetExam",
+          "authProvider",
+          "client"
+        ]
+      },
+      "StudentOnboardingResponse": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isMinor": {
+            "type": "boolean"
+          },
+          "guardianLinkStatus": {
+            "$ref": "#/components/schemas/GuardianLinkStatus"
+          },
+          "onboardingStatus": {
+            "type": "string",
+            "enum": [
+              "pending_guardian",
+              "active"
+            ]
+          }
+        },
+        "required": [
+          "studentId",
+          "isMinor",
+          "guardianLinkStatus",
+          "onboardingStatus"
+        ]
+      },
+      "GuardianLink": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/GuardianLinkStatus"
+          },
+          "purchaseAllowed": {
+            "type": "boolean"
+          },
+          "verifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "purchaseAllowed",
+          "verifiedAt"
+        ]
+      },
+      "VoiceConsentWrite": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "granted",
+              "denied",
+              "withdrawn"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ]
+      },
+      "VoiceConsent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "voice_processing"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConsentStatus"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "status",
+          "version"
+        ]
+      },
+      "Capabilities": {
+        "type": "object",
+        "properties": {
+          "examLevel": {
+            "const": "eiken_grade_3"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/ClientPlatform"
+          },
+          "canLearn": {
+            "type": "boolean"
+          },
+          "canUploadVoice": {
+            "type": "boolean"
+          },
+          "voiceUploadMode": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "signed_upload"
+            ]
+          },
+          "canPurchase": {
+            "type": "boolean"
+          },
+          "guardianLinkStatus": {
+            "$ref": "#/components/schemas/GuardianLinkStatus"
+          },
+          "voiceConsentStatus": {
+            "$ref": "#/components/schemas/ConsentStatus"
+          },
+          "consentVersionRequired": {
+            "type": "string"
+          },
+          "paymentChannels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "apple_app_store",
+                "google_play",
+                "web_checkout"
+              ]
+            }
+          },
+          "notificationChannels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ios_push",
+                "android_push",
+                "web_push",
+                "line"
+              ]
+            }
+          },
+          "lineReturnTargets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "app_deep_link",
+                "web_https"
+              ]
+            }
+          },
+          "entitlements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "examLevel",
+          "platform",
+          "canLearn",
+          "canUploadVoice",
+          "voiceUploadMode",
+          "canPurchase",
+          "guardianLinkStatus",
+          "voiceConsentStatus",
+          "consentVersionRequired",
+          "paymentChannels",
+          "notificationChannels",
+          "lineReturnTargets",
+          "entitlements"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "additionalProperties": true
+      },
+      "TrialQuestion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ability": {
+            "type": "string",
+            "enum": [
+              "vocabulary",
+              "grammar"
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "support": {
+            "type": "string"
+          },
+          "choices": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "ability",
+          "prompt",
+          "support",
+          "choices"
+        ]
+      },
+      "TrialAttempt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "questionCount": {
+            "type": "integer",
+            "const": 12
+          },
+          "question": {
+            "$ref": "#/components/schemas/TrialQuestion"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "progressPersisted": {
+            "type": "boolean",
+            "const": false
+          }
+        },
+        "required": [
+          "attemptId",
+          "questionCount",
+          "question",
+          "expiresAt",
+          "progressPersisted"
+        ]
+      },
+      "TrialAnswerRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "questionId": {
+            "type": "string"
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "questionId",
+          "answer"
+        ]
+      },
+      "TrialAnswerResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "correct": {
+            "type": "boolean"
+          },
+          "correctAnswer": {
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "completed": {
+            "type": "boolean"
+          },
+          "nextQuestion": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TrialQuestion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 12
+          },
+          "progressPersisted": {
+            "type": "boolean",
+            "const": false
+          }
+        },
+        "required": [
+          "correct",
+          "correctAnswer",
+          "explanation",
+          "completed",
+          "nextQuestion",
+          "score",
+          "progressPersisted"
+        ]
+      }
+    }
+  }
+}

@@ -1,14 +1,11 @@
-export interface TrialQuestion {
-  id: string
-  ability: 'vocabulary' | 'grammar'
-  prompt: string
-  support: string
-  choices: string[]
+import type { TrialQuestion } from '@peraquest/contracts'
+
+interface TrialQuestionInternal extends TrialQuestion {
   answer: string
   explanation: string
 }
 
-export const trialQuestions: TrialQuestion[] = [
+export const trialQuestions: TrialQuestionInternal[] = [
   { id: 'q1', ability: 'grammar', prompt: 'I ___ soccer after school.', support: '放課後にサッカーをします。', choices: ['play', 'plays', 'playing'], answer: 'play', explanation: '主語が I のとき、現在形の動詞は play のままです。' },
   { id: 'q2', ability: 'vocabulary', prompt: '「図書館」に合う英語は？', support: '場所を表す単語です。', choices: ['library', 'hospital', 'station'], answer: 'library', explanation: 'library は「図書館」です。' },
   { id: 'q3', ability: 'grammar', prompt: 'She ___ a new bag.', support: '彼女は新しいかばんを持っています。', choices: ['have', 'has', 'having'], answer: 'has', explanation: '三人称単数の She には has を使います。' },
@@ -23,5 +20,10 @@ export const trialQuestions: TrialQuestion[] = [
   { id: 'q12', ability: 'vocabulary', prompt: '「〜を探す」に合う表現は？', support: '___ my key', choices: ['look for', 'listen to', 'wait for'], answer: 'look for', explanation: 'look for は「〜を探す」という表現です。' },
 ]
 
-export const TRIAL_REDEEMED_KEY = 'lingoquest.trial.redeemed.v1'
-
+export const publicTrialQuestion = (question: TrialQuestionInternal): TrialQuestion => ({
+  id: question.id,
+  ability: question.ability,
+  prompt: question.prompt,
+  support: question.support,
+  choices: question.choices,
+})

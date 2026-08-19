@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { createStudentOnboarding } from './api/onboarding'
+import type { TrialQuestion } from '@peraquest/contracts'
+import { createStudentOnboarding, createTrialSession, getCapabilities, getGuardianStatus } from './api/onboarding'
 import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
 import TrialLesson from './components/TrialLesson.vue'
 import TrialResult from './components/TrialResult.vue'
-import { trialQuestions, TRIAL_REDEEMED_KEY } from './domain/trial'
 
 type Step = 'onboarding' | 'guardian' | 'trial' | 'result' | 'adult'
 const step = ref<Step>('onboarding')
 const score = ref(0)
-const trialRedeemed = ref(localStorage.getItem(TRIAL_REDEEMED_KEY) === 'true')
+const trialRedeemed = ref(false)
+const trialSessionId = ref('')
+const trialQuestions = ref<TrialQuestion[]>([])
+const trialPending = ref(false)
+const trialError = ref('')
 const onboardingPending = ref(false)
 const onboardingError = ref('')
 
@@ -20,20 +24,40 @@ async function finishOnboarding(birthMonth: string) {
   try {
     const result = await createStudentOnboarding(birthMonth)
     sessionStorage.setItem('lingoquest.student.id', result.studentId)
-    step.value = result.onboardingStatus === 'pending_guardian' ? 'guardian' : 'adult'
+    const [guardian, capabilities] = await Promise.all([getGuardianStatus(), getCapabilities()])
+    const safelyRestricted = guardian.status === 'pending'
+      && capabilities.guardianLinkStatus === 'pending'
+      && !capabilities.canLearn
+      && !capabilities.canUploadVoice
+      && !capabilities.canPurchase
+    if (result.onboardingStatus === 'pending_guardian' && safelyRestricted) step.value = 'guardian'
+    else if (result.onboardingStatus === 'active' && capabilities.canLearn) step.value = 'adult'
+    else throw new Error('INCONSISTENT_ACCESS_POLICY')
   } catch {
     onboardingError.value = '安全設定を確認できませんでした。通信環境を確認して、もう一度お試しください。'
   } finally {
     onboardingPending.value = false
   }
 }
-function startTrial() {
-  if (!trialRedeemed.value) step.value = 'trial'
+async function startTrial() {
+  if (trialRedeemed.value || trialPending.value) return
+  trialPending.value = true
+  trialError.value = ''
+  try {
+    const session = await createTrialSession()
+    trialSessionId.value = session.sessionId
+    trialQuestions.value = session.questions
+    step.value = 'trial'
+  } catch (error) {
+    if (error instanceof Error && error.message === 'REQUEST_FAILED_409') trialRedeemed.value = true
+    trialError.value = 'おためしクエストを開始できませんでした。時間をおいて、もう一度お試しください。'
+  } finally {
+    trialPending.value = false
+  }
 }
 function completeTrial(value: number) {
   score.value = value
   trialRedeemed.value = true
-  localStorage.setItem(TRIAL_REDEEMED_KEY, 'true')
   step.value = 'result'
 }
 </script>
@@ -64,11 +88,14 @@ function completeTrial(value: number) {
       <GuardianWait
         v-else-if="step === 'guardian'"
         :trial-redeemed="trialRedeemed"
+        :trial-pending="trialPending"
+        :trial-error="trialError"
         @start-trial="startTrial"
       />
       <TrialLesson
         v-else-if="step === 'trial'"
         :questions="trialQuestions"
+        :session-id="trialSessionId"
         @complete="completeTrial"
       />
       <TrialResult

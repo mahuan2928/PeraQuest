@@ -17,6 +17,9 @@ describe('OpenAPI document', () => {
       '/v1/me/capabilities',
       '/v1/me/consents/voice-processing',
       '/v1/me/guardian-link',
+      '/v1/me/trial-sessions',
+      '/v1/me/trial-sessions/{sessionId}/answers',
+      '/v1/me/trial-sessions/{sessionId}/complete',
       '/v1/me/voice-upload-ticket',
       '/v1/students/onboarding',
     ])

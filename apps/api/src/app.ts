@@ -9,9 +9,13 @@ import type {
   NotificationChannel,
   PaymentChannel,
   StudentOnboardingResponse,
+  TrialAnswerResponse,
+  TrialCompleteResponse,
+  TrialSessionResponse,
 } from '@peraquest/contracts'
 import { loadConfig } from './config.js'
 import { MemoryStudentRepository, type StudentRepository } from './repository.js'
+import { trialQuestionSeeds } from './trial-content.js'
 
 const platformSchema = z.enum(['ios', 'android', 'pc'])
 const onboardingSchema = z.object({
@@ -26,6 +30,7 @@ const onboardingSchema = z.object({
   }),
 })
 const consentSchema = z.object({ status: z.enum(['granted', 'denied', 'withdrawn']), version: z.string().min(1) })
+const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
 
 const isMinorAt = (birthMonth: string, now: Date): boolean => {
   const [year, month] = birthMonth.split('-').map(Number)
@@ -120,6 +125,53 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       lineReturnTargets: parsedPlatform.data === 'pc' ? ['web_https'] : ['app_deep_link', 'web_https'],
       entitlements: [],
     }
+  })
+
+  app.post('/v1/me/trial-sessions', async (request, reply): Promise<TrialSessionResponse | void> => {
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    const student = await repository.findById(studentId)
+    if (!student) return reply.code(404).send({ code: 'STUDENT_NOT_FOUND' })
+    if (student.guardianLinkStatus !== 'pending') return reply.code(403).send({ code: 'TRIAL_NOT_AVAILABLE' })
+    if (await repository.hasRedeemedTrial(studentId)) return reply.code(409).send({ code: 'TRIAL_ALREADY_REDEEMED' })
+    const sessionId = randomUUID()
+    await repository.createTrialSession({ id: sessionId, studentId, answers: new Map(), completed: false })
+    return {
+      sessionId,
+      questions: trialQuestionSeeds.map((question) => ({
+        id: question.id,
+        ability: question.ability,
+        prompt: question.prompt,
+        support: question.support,
+        choices: [...question.choices],
+      })),
+    }
+  })
+
+  app.post<{ Params: { sessionId: string } }>('/v1/me/trial-sessions/:sessionId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    const parsed = trialAnswerSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ code: 'INVALID_TRIAL_ANSWER' })
+    const session = await repository.findTrialSession(request.params.sessionId)
+    if (!session || session.studentId !== studentId) return reply.code(404).send({ code: 'TRIAL_SESSION_NOT_FOUND' })
+    if (session.completed) return reply.code(409).send({ code: 'TRIAL_ALREADY_REDEEMED' })
+    const question = trialQuestionSeeds.find(({ id }) => id === parsed.data.questionId)
+    if (!question) return reply.code(400).send({ code: 'UNKNOWN_TRIAL_QUESTION' })
+    const correct = parsed.data.answer === question.answer
+    session.answers.set(question.id, correct)
+    return { correct, correctAnswer: question.answer, explanation: question.explanation, answeredCount: session.answers.size }
+  })
+
+  app.post<{ Params: { sessionId: string } }>('/v1/me/trial-sessions/:sessionId/complete', async (request, reply): Promise<TrialCompleteResponse | void> => {
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    const session = await repository.findTrialSession(request.params.sessionId)
+    if (!session || session.studentId !== studentId) return reply.code(404).send({ code: 'TRIAL_SESSION_NOT_FOUND' })
+    if (session.completed || await repository.hasRedeemedTrial(studentId)) return reply.code(409).send({ code: 'TRIAL_ALREADY_REDEEMED' })
+    if (session.answers.size !== trialQuestionSeeds.length) return reply.code(409).send({ code: 'TRIAL_INCOMPLETE' })
+    await repository.completeTrialSession(session.id)
+    return { score: [...session.answers.values()].filter(Boolean).length, total: trialQuestionSeeds.length, durableProgressWritten: false }
   })
 
   app.post('/v1/me/voice-upload-ticket', async (request, reply) => {

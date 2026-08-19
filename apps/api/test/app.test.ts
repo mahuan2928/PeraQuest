@@ -81,6 +81,48 @@ describe('identity, consent, and capabilities slice', () => {
     expect(response.json()).toEqual({ code: 'INVALID_BIRTH_MONTH' })
   })
 
+  it('serves exactly one non-persistent trial through real endpoints', async () => {
+    const app = buildApp({ now: () => new Date('2026-08-19T00:00:00Z') })
+    apps.push(app)
+    const onboarding = await app.inject({
+      method: 'POST', url: '/v1/students/onboarding',
+      payload: { birthMonth: '2012-04', targetExam: 'eiken_grade_3', authProvider: 'email_magic_link', client: { platform: 'pc' } },
+    })
+    const studentId = onboarding.json<{ studentId: string }>().studentId
+    const headers = { 'x-student-id': studentId }
+    const created = await app.inject({ method: 'POST', url: '/v1/me/trial-sessions', headers })
+    expect(created.statusCode).toBe(200)
+    const session = created.json<{ sessionId: string; questions: Array<{ id: string; choices: string[]; answer?: string }> }>()
+    expect(session.questions).toHaveLength(12)
+    expect(session.questions[0]).not.toHaveProperty('answer')
+
+    for (const question of session.questions) {
+      const answer = await app.inject({
+        method: 'POST', url: `/v1/me/trial-sessions/${session.sessionId}/answers`, headers,
+        payload: { questionId: question.id, answer: question.choices[0] },
+      })
+      expect(answer.statusCode).toBe(200)
+      expect(answer.json()).toHaveProperty('explanation')
+    }
+
+    const completed = await app.inject({ method: 'POST', url: `/v1/me/trial-sessions/${session.sessionId}/complete`, headers })
+    expect(completed.statusCode).toBe(200)
+    expect(completed.json()).toMatchObject({ total: 12, durableProgressWritten: false })
+    const repeated = await app.inject({ method: 'POST', url: '/v1/me/trial-sessions', headers })
+    expect(repeated.statusCode).toBe(409)
+    expect(repeated.json()).toEqual({ code: 'TRIAL_ALREADY_REDEEMED' })
+  })
+
+  it('keeps trial unavailable when guardian status is not pending', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    const app = buildApp({ repository })
+    apps.push(app)
+    const response = await app.inject({ method: 'POST', url: '/v1/me/trial-sessions', headers: { 'x-student-id': 'adult-1' } })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ code: 'TRIAL_NOT_AVAILABLE' })
+  })
+
   it('keeps voice upload blocked when deployment flags are on but consent is absent', async () => {
     vi.stubEnv('VOICE_FEATURE_PUBLIC_ENABLED', 'true')
     vi.stubEnv('AI_VENDOR_APPROVED', 'true')

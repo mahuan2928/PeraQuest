@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ trialRedeemed: boolean }>()
+defineProps<{ trialRedeemed: boolean; trialPending: boolean; trialError: string }>()
 const emit = defineEmits<{ startTrial: [] }>()
 </script>
 
@@ -45,10 +45,10 @@ const emit = defineEmits<{ startTrial: [] }>()
         class="primary-action"
         data-testid="start-trial"
         type="button"
-        :disabled="trialRedeemed"
+        :disabled="trialRedeemed || trialPending"
         @click="emit('startTrial')"
       >
-        {{ trialRedeemed ? 'おためし済みです' : '1回だけ体験する' }}
+        {{ trialRedeemed ? 'おためし済みです' : trialPending ? '準備中…' : '1回だけ体験する' }}
       </button>
     </div>
     <p
@@ -56,7 +56,14 @@ const emit = defineEmits<{ startTrial: [] }>()
       class="redeemed-note"
       role="status"
     >
-      この端末でのおためしクエストは完了しています。保護者連携後に続きから学べます。
+      おためしクエストは完了しています。保護者連携後に続きから学べます。
+    </p>
+    <p
+      v-if="trialError"
+      class="field-error"
+      role="alert"
+    >
+      {{ trialError }}
     </p>
     <p class="restriction-note">
       保護者連携までは、音声アップロード・購入・長期学習記録は利用できません。

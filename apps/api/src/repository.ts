@@ -5,6 +5,7 @@ export interface StudentRecord {
   birthMonth: string
   isMinor: boolean
   guardianLinkStatus: GuardianLinkStatus
+  guardianId: string | null
 }
 
 export interface ConsentRecord {

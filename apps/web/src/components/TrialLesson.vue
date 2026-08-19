@@ -1,34 +1,67 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import type { TrialQuestion } from '../domain/trial'
+import type { TrialQuestion } from '@peraquest/contracts'
+import { submitTrialAnswer } from '../api/onboarding'
 
-const props = defineProps<{ questions: TrialQuestion[] }>()
+const props = defineProps<{
+  studentId: string
+  attemptId: string
+  questionCount: number
+  firstQuestion: TrialQuestion
+}>()
 const emit = defineEmits<{ complete: [score: number] }>()
 const index = ref(0)
+const current = ref<TrialQuestion>(props.firstQuestion)
 const selected = ref('')
 const submitted = ref(false)
-const score = ref(0)
+const submitting = ref(false)
+const answerError = ref('')
+const correct = ref(false)
+const correctAnswer = ref('')
+const explanation = ref('')
+const nextQuestion = ref<TrialQuestion | null>(null)
+const finalScore = ref<number | null>(null)
 const feedback = ref<HTMLElement | null>(null)
-const current = computed<TrialQuestion>(() => props.questions[index.value]!)
-const progress = computed(() => ((index.value + 1) / props.questions.length) * 100)
-const correct = computed(() => selected.value === current.value.answer)
+const progress = computed(() => ((index.value + 1) / props.questionCount) * 100)
 
 async function submitAnswer() {
-  if (!selected.value || submitted.value) return
-  submitted.value = true
-  if (correct.value) score.value += 1
-  await nextTick()
-  feedback.value?.focus()
+  if (!selected.value || submitted.value || submitting.value) return
+  submitting.value = true
+  answerError.value = ''
+  try {
+    const result = await submitTrialAnswer(props.studentId, props.attemptId, {
+      questionId: current.value.id,
+      answer: selected.value,
+    })
+    correct.value = result.correct
+    correctAnswer.value = result.correctAnswer
+    explanation.value = result.explanation
+    nextQuestion.value = result.nextQuestion
+    finalScore.value = result.score
+    submitted.value = true
+    await nextTick()
+    feedback.value?.focus()
+  } catch {
+    answerError.value = '回答を送信できませんでした。選択内容はそのままです。もう一度お試しください。'
+  } finally {
+    submitting.value = false
+  }
 }
 
 function next() {
-  if (index.value === props.questions.length - 1) {
-    emit('complete', score.value)
+  if (!nextQuestion.value) {
+    emit('complete', finalScore.value ?? 0)
     return
   }
+  current.value = nextQuestion.value
   index.value += 1
   selected.value = ''
   submitted.value = false
+  correct.value = false
+  correctAnswer.value = ''
+  explanation.value = ''
+  nextQuestion.value = null
+  finalScore.value = null
 }
 </script>
 
@@ -44,7 +77,7 @@ function next() {
         </p><strong>英検3級 · おためし</strong>
       </div>
       <p aria-live="polite">
-        {{ index + 1 }} / {{ questions.length }}
+        {{ index + 1 }} / {{ questionCount }}
       </p>
     </header>
     <div
@@ -52,12 +85,11 @@ function next() {
       role="progressbar"
       :aria-valuenow="index + 1"
       aria-valuemin="1"
-      :aria-valuemax="questions.length"
-      :aria-label="`問題 ${index + 1} / ${questions.length}`"
+      :aria-valuemax="questionCount"
+      :aria-label="`問題 ${index + 1} / ${questionCount}`"
     >
       <span :style="{ width: `${progress}%` }" />
     </div>
-
     <article class="question-card">
       <span class="ability-tag">{{ current.ability === 'grammar' ? '文法' : '単語' }}</span>
       <h1 id="question-title">
@@ -66,7 +98,7 @@ function next() {
       <p class="question-support">
         {{ current.support }}
       </p>
-      <fieldset :disabled="submitted">
+      <fieldset :disabled="submitted || submitting">
         <legend class="sr-only">
           答えを1つ選んでください
         </legend>
@@ -85,7 +117,13 @@ function next() {
           <span>{{ choice }}</span>
         </label>
       </fieldset>
-
+      <p
+        v-if="answerError"
+        role="alert"
+        class="restriction-note"
+      >
+        {{ answerError }}
+      </p>
       <div
         v-if="submitted"
         ref="feedback"
@@ -94,19 +132,18 @@ function next() {
         role="status"
         tabindex="-1"
       >
-        <strong>{{ correct ? '正解！' : `正解は「${current.answer}」` }}</strong>
-        <p>{{ current.explanation }}</p>
+        <strong>{{ correct ? '正解！' : `正解は「${correctAnswer}」` }}</strong>
+        <p>{{ explanation }}</p>
       </div>
-
       <button
         v-if="!submitted"
         class="primary-action"
         data-testid="submit-answer"
         type="button"
-        :disabled="!selected"
+        :disabled="!selected || submitting"
         @click="submitAnswer"
       >
-        答えを確認する
+        {{ submitting ? '送信中…' : '答えを確認する' }}
       </button>
       <button
         v-else
@@ -115,7 +152,7 @@ function next() {
         type="button"
         @click="next"
       >
-        {{ index === questions.length - 1 ? '結果を見る' : '次の問題へ' }}
+        {{ nextQuestion ? '次の問題へ' : '結果を見る' }}
       </button>
     </article>
   </section>

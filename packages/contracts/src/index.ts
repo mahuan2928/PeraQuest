@@ -55,6 +55,37 @@ export interface ConsentResponse {
   version: string | null
 }
 
+export interface TrialQuestion {
+  id: string
+  ability: 'vocabulary' | 'grammar'
+  prompt: string
+  support: string
+  choices: string[]
+}
+
+export interface TrialAttemptResponse {
+  attemptId: string
+  questionCount: number
+  question: TrialQuestion
+  expiresAt: string
+  progressPersisted: false
+}
+
+export interface TrialAnswerRequest {
+  questionId: string
+  answer: string
+}
+
+export interface TrialAnswerResponse {
+  correct: boolean
+  correctAnswer: string
+  explanation: string
+  completed: boolean
+  nextQuestion: TrialQuestion | null
+  score: number | null
+  progressPersisted: false
+}
+
 export interface CapabilityResponse {
   examLevel: ExamLevel
   platform: ClientPlatform

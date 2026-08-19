@@ -19,6 +19,8 @@ describe('OpenAPI document', () => {
       '/v1/me/guardian-link',
       '/v1/me/voice-upload-ticket',
       '/v1/students/onboarding',
+      '/v1/trial-attempts',
+      '/v1/trial-attempts/{attemptId}/answers',
     ])
     const operationIds = Object.values(document.paths).flatMap((path) => Object.values(path).map(({ operationId }) => operationId))
     expect(new Set(operationIds).size).toBe(operationIds.length)

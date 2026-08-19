@@ -9,9 +9,12 @@ import type {
   NotificationChannel,
   PaymentChannel,
   StudentOnboardingResponse,
+  TrialAnswerResponse,
+  TrialAttemptResponse,
 } from '@peraquest/contracts'
 import { loadConfig } from './config.js'
 import { MemoryStudentRepository, type StudentRepository } from './repository.js'
+import { publicTrialQuestion, trialQuestions } from './trial.js'
 
 const platformSchema = z.enum(['ios', 'android', 'pc'])
 const onboardingSchema = z.object({
@@ -26,6 +29,7 @@ const onboardingSchema = z.object({
   }),
 })
 const consentSchema = z.object({ status: z.enum(['granted', 'denied', 'withdrawn']), version: z.string().min(1) })
+const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
 
 const isMinorAt = (birthMonth: string, now: Date): boolean => {
   const [year, month] = birthMonth.split('-').map(Number)
@@ -119,6 +123,55 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       notificationChannels: clientChannels.notifications,
       lineReturnTargets: parsedPlatform.data === 'pc' ? ['web_https'] : ['app_deep_link', 'web_https'],
       entitlements: [],
+    }
+  })
+
+  app.post('/v1/trial-attempts', async (request, reply): Promise<TrialAttemptResponse | void> => {
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    const student = await repository.findById(studentId)
+    if (!student) return reply.code(404).send({ code: 'STUDENT_NOT_FOUND' })
+    if (!student.isMinor || student.guardianLinkStatus !== 'pending') return reply.code(403).send({ code: 'TRIAL_NOT_AVAILABLE' })
+    const attemptId = randomUUID()
+    const expiresAt = new Date(now().getTime() + 30 * 60 * 1000)
+    const result = await repository.startTrial(studentId, attemptId, expiresAt)
+    if (result.status === 'redeemed') return reply.code(409).send({ code: 'TRIAL_ALREADY_REDEEMED' })
+    return reply.code(201).send({
+      attemptId,
+      questionCount: trialQuestions.length,
+      question: publicTrialQuestion(trialQuestions[0]!),
+      expiresAt: expiresAt.toISOString(),
+      progressPersisted: false,
+    })
+  })
+
+  app.post<{ Params: { attemptId: string } }>('/v1/trial-attempts/:attemptId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    const parsed = trialAnswerSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ code: 'INVALID_TRIAL_ANSWER' })
+    const attempt = await repository.findTrialAttempt(request.params.attemptId)
+    if (!attempt || attempt.studentId !== studentId) return reply.code(404).send({ code: 'TRIAL_ATTEMPT_NOT_FOUND' })
+    if (attempt.expiresAt <= now()) {
+      await repository.completeTrialAttempt(attempt.id)
+      return reply.code(410).send({ code: 'TRIAL_ATTEMPT_EXPIRED' })
+    }
+    const question = trialQuestions[attempt.currentIndex]
+    if (!question || parsed.data.questionId !== question.id) return reply.code(409).send({ code: 'TRIAL_ANSWER_OUT_OF_SEQUENCE' })
+    const correct = parsed.data.answer === question.answer
+    const advanced = await repository.advanceTrialAttempt(attempt.id, attempt.currentIndex, correct)
+    if (!advanced) return reply.code(409).send({ code: 'TRIAL_ANSWER_ALREADY_SUBMITTED' })
+    const completed = advanced.currentIndex === trialQuestions.length
+    const nextQuestion = completed ? null : publicTrialQuestion(trialQuestions[advanced.currentIndex]!)
+    if (completed) await repository.completeTrialAttempt(attempt.id)
+    return {
+      correct,
+      correctAnswer: question.answer,
+      explanation: question.explanation,
+      completed,
+      nextQuestion,
+      score: completed ? advanced.score : null,
+      progressPersisted: false,
     }
   })
 

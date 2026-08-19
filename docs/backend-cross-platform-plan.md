@@ -35,3 +35,10 @@ Scope: iOS, Android, and PC clients for Eiken Grade 3 onboarding, guardian linka
 All clients send `X-Client-Platform`; authenticated calls currently use scaffold-only `X-Student-Id` until token middleware lands. A minor consent write additionally requires the matching scaffold-only `X-Guardian-Id`. These headers are not production authentication. Clients must consume capabilities rather than infer voice, payment, notification, or entitlement access locally.
 
 The machine-readable API contract is `docs/api/openapi.json`.
+
+## PR #6 one-time trial integration
+
+- `POST /v1/trial-attempts` atomically consumes the learner's single trial entitlement and returns question 1 without its answer. A repeated start returns `409 TRIAL_ALREADY_REDEEMED`.
+- `POST /v1/trial-attempts/{attemptId}/answers` accepts only the current question, returns feedback and the next answer-free question, and returns the score only on completion.
+- Both responses declare `progressPersisted: false`. Only a minimal durable redemption marker is retained; raw answers and scores are never written as long-term learning progress. Attempt counters are operational state, expire after 30 minutes, and are deleted on completion.
+- Production startup requires `DATABASE_URL`; without it the API refuses to start. Development/test may use the in-memory adapter.

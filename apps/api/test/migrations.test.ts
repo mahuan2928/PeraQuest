@@ -1,6 +1,8 @@
 import { PGlite } from '@electric-sql/pglite'
+import type { Pool } from 'pg'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
+import { PostgresStudentRepository } from '../src/repository.js'
 
 const databases: PGlite[] = []
 
@@ -26,7 +28,7 @@ describe('database migrations', () => {
     databases.push(database)
     const adapter = asMigrationDatabase(database)
 
-    await expect(runMigrations(adapter)).resolves.toEqual(['0001_identity_guardian_consent.sql'])
+    await expect(runMigrations(adapter)).resolves.toEqual(['0001_identity_guardian_consent.sql', '0002_one_time_trial.sql'])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
     const tables = await database.query<{ table_name: string }>(`
@@ -42,9 +44,36 @@ describe('database migrations', () => {
       'line_links',
       'schema_migrations',
       'subscription_entitlements',
+      'trial_attempts',
+      'trial_redemptions',
       'user_devices',
       'users',
     ])
+  })
+
+  it('stores only minimal redemption and short-lived trial state, not durable answers or scores', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const redemptionColumns = await database.query<{ column_name: string }>("SELECT column_name FROM information_schema.columns WHERE table_name = 'trial_redemptions' ORDER BY column_name")
+    expect(redemptionColumns.rows.map(({ column_name }) => column_name)).toEqual(['redeemed_at', 'student_id'])
+    const attemptColumns = await database.query<{ column_name: string }>("SELECT column_name FROM information_schema.columns WHERE table_name = 'trial_attempts' ORDER BY column_name")
+    expect(attemptColumns.rows.map(({ column_name }) => column_name)).not.toContain('answers')
+  })
+
+  it('enforces one-time redemption atomically through the PostgreSQL repository', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const client = { query: database.query.bind(database), release: () => undefined }
+    const pool = { query: database.query.bind(database), connect: async () => client } as unknown as Pool
+    const repository = new PostgresStudentRepository(pool)
+    await repository.create({ id: '00000000-0000-0000-0000-000000000001', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'pending', guardianId: null })
+    const results = await Promise.all([
+      repository.startTrial('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', new Date(Date.now() + 60_000)),
+      repository.startTrial('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000003', new Date(Date.now() + 60_000)),
+    ])
+    expect(results.map(({ status }) => status).sort()).toEqual(['created', 'redeemed'])
   })
 
   it('enforces one active guardian link for a student', async () => {

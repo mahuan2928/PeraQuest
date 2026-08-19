@@ -81,6 +81,68 @@ describe('identity, consent, and capabilities slice', () => {
     expect(response.json()).toEqual({ code: 'INVALID_BIRTH_MONTH' })
   })
 
+  it('allows one server-authoritative minor trial and never returns answers before submission', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'minor-1', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'pending', guardianId: null })
+    const app = buildApp({ repository, now: () => new Date('2026-08-19T00:00:00Z') })
+    apps.push(app)
+
+    const started = await app.inject({ method: 'POST', url: '/v1/trial-attempts', headers: { 'x-student-id': 'minor-1' } })
+    expect(started.statusCode).toBe(201)
+    const startBody = started.json()
+    expect(startBody).toMatchObject({ questionCount: 12, progressPersisted: false, question: { id: 'q1' } })
+    expect(startBody.question).not.toHaveProperty('answer')
+    expect(startBody.question).not.toHaveProperty('explanation')
+
+    let score = 0
+    let question = startBody.question
+    for (let index = 0; index < 12; index += 1) {
+      const answer = await app.inject({ method: 'POST', url: `/v1/trial-attempts/${startBody.attemptId}/answers`, headers: { 'x-student-id': 'minor-1' }, payload: { questionId: question.id, answer: question.choices[0] } })
+      expect(answer.statusCode).toBe(200)
+      const body = answer.json()
+      expect(body.progressPersisted).toBe(false)
+      if (body.correct) score += 1
+      if (index < 11) {
+        expect(body.score).toBeNull()
+        expect(body.nextQuestion).not.toHaveProperty('answer')
+        question = body.nextQuestion
+      } else {
+        expect(body).toMatchObject({ completed: true, nextQuestion: null, score })
+      }
+    }
+
+    const replay = await app.inject({ method: 'POST', url: '/v1/trial-attempts', headers: { 'x-student-id': 'minor-1' } })
+    expect(replay.statusCode).toBe(409)
+    expect(replay.json()).toEqual({ code: 'TRIAL_ALREADY_REDEEMED' })
+  })
+
+  it('atomically permits only one concurrent trial start', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'minor-1', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'pending', guardianId: null })
+    const app = buildApp({ repository })
+    apps.push(app)
+    const responses = await Promise.all([
+      app.inject({ method: 'POST', url: '/v1/trial-attempts', headers: { 'x-student-id': 'minor-1' } }),
+      app.inject({ method: 'POST', url: '/v1/trial-attempts', headers: { 'x-student-id': 'minor-1' } }),
+    ])
+    expect(responses.map(({ statusCode }) => statusCode).sort()).toEqual([201, 409])
+  })
+
+  it('rejects trial answers that are replayed or submitted out of sequence', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'minor-1', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'pending', guardianId: null })
+    const app = buildApp({ repository })
+    apps.push(app)
+    const started = await app.inject({ method: 'POST', url: '/v1/trial-attempts', headers: { 'x-student-id': 'minor-1' } })
+    const { attemptId } = started.json()
+    const outOfSequence = await app.inject({ method: 'POST', url: `/v1/trial-attempts/${attemptId}/answers`, headers: { 'x-student-id': 'minor-1' }, payload: { questionId: 'q2', answer: 'library' } })
+    expect(outOfSequence.statusCode).toBe(409)
+    const accepted = await app.inject({ method: 'POST', url: `/v1/trial-attempts/${attemptId}/answers`, headers: { 'x-student-id': 'minor-1' }, payload: { questionId: 'q1', answer: 'play' } })
+    expect(accepted.statusCode).toBe(200)
+    const replay = await app.inject({ method: 'POST', url: `/v1/trial-attempts/${attemptId}/answers`, headers: { 'x-student-id': 'minor-1' }, payload: { questionId: 'q1', answer: 'play' } })
+    expect(replay.statusCode).toBe(409)
+  })
+
   it('keeps voice upload blocked when deployment flags are on but consent is absent', async () => {
     vi.stubEnv('VOICE_FEATURE_PUBLIC_ENABLED', 'true')
     vi.stubEnv('AI_VENDOR_APPROVED', 'true')

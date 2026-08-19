@@ -1,0 +1,14 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+apps/web/src/*.js
+apps/web/src/*.d.ts
+
+apps/web/playwright-report/
+apps/web/test-results/

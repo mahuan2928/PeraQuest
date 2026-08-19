@@ -1,0 +1,48 @@
+name: Cross-platform release
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run lint && npm run typecheck && npm test && npm run build
+  android:
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - run: npm ci
+      - run: npm run build -w @peraquest/web && npm run native:sync -w @peraquest/mobile
+      - run: cd apps/mobile/android && ./gradlew bundleRelease
+  ios:
+    needs: quality
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build -w @peraquest/web && npm run native:sync -w @peraquest/mobile
+      - run: xcodebuild -workspace apps/mobile/ios/App/App.xcworkspace -scheme App -configuration Release archive
+  desktop:
+    needs: quality
+    strategy: { matrix: { os: [macos-latest, windows-latest, ubuntu-latest] } }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run package:desktop

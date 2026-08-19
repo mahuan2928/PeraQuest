@@ -9,3 +9,6 @@ coverage/
 *.tsbuildinfo
 apps/web/src/*.js
 apps/web/src/*.d.ts
+
+apps/web/playwright-report/
+apps/web/test-results/

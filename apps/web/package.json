@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run src",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@peraquest/contracts": "*",
@@ -18,6 +19,9 @@
     "@vitejs/plugin-vue": "^6.0.1",
     "vite": "^7.1.12",
     "vitest": "^4.0.8",
-    "vue-tsc": "^3.1.4"
+    "vue-tsc": "^3.1.4",
+    "@playwright/test": "^1.55.1",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.0.10"
   }
 }

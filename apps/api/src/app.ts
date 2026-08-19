@@ -63,9 +63,11 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     if (!parsed.success) return reply.code(400).send({ code: 'INVALID_ONBOARDING', details: parsed.error.issues })
     const id = randomUUID()
     const isMinor = isMinorAt(parsed.data.birthMonth, now())
+    const birthMonthDate = new Date(`${parsed.data.birthMonth}-01T00:00:00Z`)
+    if (birthMonthDate > now() || birthMonthDate.getUTCFullYear() < 1900) return reply.code(400).send({ code: 'INVALID_BIRTH_MONTH' })
     const guardianLinkStatus = isMinor ? 'pending' : 'not_required'
-    await repository.create({ id, birthMonth: parsed.data.birthMonth, isMinor, guardianLinkStatus })
-    return { studentId: id, isMinor, guardianLinkStatus, onboardingStatus: isMinor ? 'pending_guardian' : 'active' }
+    await repository.create({ id, birthMonth: parsed.data.birthMonth, isMinor, guardianLinkStatus, guardianId: null })
+    return reply.code(201).send({ studentId: id, isMinor, guardianLinkStatus, onboardingStatus: isMinor ? 'pending_guardian' : 'active' })
   })
 
   app.get('/v1/me/guardian-link', async (request, reply): Promise<GuardianLinkResponse | void> => {
@@ -86,13 +88,15 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const student = await repository.findById(studentId)
     if (!student) return reply.code(404).send({ code: 'STUDENT_NOT_FOUND' })
     if (student.isMinor && student.guardianLinkStatus !== 'verified') return reply.code(403).send({ code: 'GUARDIAN_VERIFICATION_REQUIRED' })
+    const guardianId = request.headers['x-guardian-id']
+    if (student.isMinor && (typeof guardianId !== 'string' || guardianId !== student.guardianId)) return reply.code(403).send({ code: 'GUARDIAN_AUTH_REQUIRED' })
     const consent = await repository.setVoiceConsent(studentId, parsed.data.status, parsed.data.version)
     return { type: 'voice_processing', ...consent }
   })
 
   app.get('/v1/me/capabilities', async (request, reply): Promise<CapabilityResponse | void> => {
     const studentId = studentIdFrom(request.headers)
-    const parsedPlatform = platformSchema.safeParse(request.headers['x-client-platform'] ?? 'pc')
+    const parsedPlatform = platformSchema.safeParse(request.headers['x-client-platform'])
     if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
     if (!parsedPlatform.success) return reply.code(400).send({ code: 'INVALID_CLIENT_PLATFORM' })
     const student = await repository.findById(studentId)

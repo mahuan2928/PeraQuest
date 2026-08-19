@@ -32,7 +32,7 @@ describe('identity, consent, and capabilities slice', () => {
         client: { platform: 'ios', deviceId: 'device-1', appVersion: '1.0.0', osVersion: '18' },
       },
     })
-    expect(response.statusCode).toBe(200)
+    expect(response.statusCode).toBe(201)
     expect(response.json()).toMatchObject({ isMinor: true, guardianLinkStatus: 'pending', onboardingStatus: 'pending_guardian' })
   })
 
@@ -42,7 +42,7 @@ describe('identity, consent, and capabilities slice', () => {
     ['pc', ['web_checkout'], ['web_push', 'line'], ['web_https']],
   ] as const)('returns %s-specific channels without changing account capabilities', async (platform, payments, notifications, lineTargets) => {
     const repository = new MemoryStudentRepository()
-    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required' })
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
     const app = buildApp({ repository })
     apps.push(app)
     const response = await app.inject({ method: 'GET', url: '/v1/me/capabilities', headers: { 'x-student-id': 'adult-1', 'x-client-platform': platform } })
@@ -50,12 +50,43 @@ describe('identity, consent, and capabilities slice', () => {
     expect(response.json()).toMatchObject({ platform, paymentChannels: payments, notificationChannels: notifications, lineReturnTargets: lineTargets, canUploadVoice: false })
   })
 
+  it('rejects capabilities requests without an explicit client platform', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    const app = buildApp({ repository })
+    apps.push(app)
+    const response = await app.inject({ method: 'GET', url: '/v1/me/capabilities', headers: { 'x-student-id': 'adult-1' } })
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toEqual({ code: 'INVALID_CLIENT_PLATFORM' })
+  })
+
+  it('prevents a verified minor from granting voice consent without the linked guardian identity', async () => {
+    vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'minor-1', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId: 'guardian-1' })
+    const app = buildApp({ repository })
+    apps.push(app)
+    const denied = await app.inject({ method: 'PUT', url: '/v1/me/consents/voice-processing', headers: { 'x-student-id': 'minor-1' }, payload: { status: 'granted', version: 'v1' } })
+    expect(denied.statusCode).toBe(403)
+    expect(denied.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
+    const granted = await app.inject({ method: 'PUT', url: '/v1/me/consents/voice-processing', headers: { 'x-student-id': 'minor-1', 'x-guardian-id': 'guardian-1' }, payload: { status: 'granted', version: 'v1' } })
+    expect(granted.statusCode).toBe(200)
+  })
+
+  it('rejects future birth months during onboarding', async () => {
+    const app = buildApp({ now: () => new Date('2026-08-19T00:00:00Z') })
+    apps.push(app)
+    const response = await app.inject({ method: 'POST', url: '/v1/students/onboarding', payload: { birthMonth: '2026-09', targetExam: 'eiken_grade_3', authProvider: 'email_magic_link', client: { platform: 'pc' } } })
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toEqual({ code: 'INVALID_BIRTH_MONTH' })
+  })
+
   it('keeps voice upload blocked when deployment flags are on but consent is absent', async () => {
     vi.stubEnv('VOICE_FEATURE_PUBLIC_ENABLED', 'true')
     vi.stubEnv('AI_VENDOR_APPROVED', 'true')
     vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
     const repository = new MemoryStudentRepository()
-    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required' })
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
     const app = buildApp({ repository })
     apps.push(app)
     const response = await app.inject({ method: 'POST', url: '/v1/me/voice-upload-ticket', headers: { 'x-student-id': 'adult-1' } })
@@ -68,7 +99,7 @@ describe('identity, consent, and capabilities slice', () => {
     vi.stubEnv('AI_VENDOR_APPROVED', 'true')
     vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
     const repository = new MemoryStudentRepository()
-    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required' })
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
     const app = buildApp({ repository })
     apps.push(app)
     const consent = await app.inject({ method: 'PUT', url: '/v1/me/consents/voice-processing', headers: { 'x-student-id': 'adult-1' }, payload: { status: 'granted', version: 'v1' } })

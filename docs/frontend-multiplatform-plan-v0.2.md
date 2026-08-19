@@ -1,6 +1,6 @@
 # Frontend implementation plan v0.2 — iOS, Android, and PC
 
-Status: implementation-ready plan, based on Architect PR #2 (`feat/mvp-foundation-ci`).
+Status: implementation-ready plan, based on the merged Architect foundation in `main`.
 
 ## Architecture decision
 
@@ -16,6 +16,7 @@ Add mobile delivery as a thin native shell around the same Vue application:
 
 - `apps/web`: shared Vue application and PC Web entry
 - `apps/mobile`: Capacitor configuration, iOS project, Android project, native permission adapters, deep-link/bootstrap glue
+- `apps/desktop`: Electron main/preload processes, secure renderer packaging, and installable PC artifacts
 - `packages/contracts`: platform-neutral API contracts only
 - future `packages/ui`: shared design tokens and reusable view components only when extraction is justified by actual reuse
 
@@ -38,7 +39,7 @@ Platform adapters behind typed interfaces:
 
 ```ts
 interface PlatformBridge {
-  platform: 'web' | 'ios' | 'android'
+  platform: 'web' | 'electron' | 'ios' | 'android'
   openExternal(url: string): Promise<void>
   getMicrophonePermission(): Promise<'granted' | 'denied' | 'prompt' | 'unavailable'>
   requestMicrophonePermission(): Promise<'granted' | 'denied' | 'unavailable'>
@@ -90,9 +91,9 @@ Required backend contracts (owner: Tom):
 
 The client must consume types from `packages/contracts`; no duplicate handwritten DTOs.
 
-## PC Web and responsive behavior
+## PC Web, Electron, and responsive behavior
 
-PC delivery remains the Vite production build from `apps/web`.
+PC delivery includes both the browser-hosted Vite build and an installable Electron application from `apps/desktop`. Electron must package the same Vue renderer, keep Node integration disabled, expose only a minimal typed preload bridge, enable context isolation and sandboxing, and produce signed installers for supported desktop platforms.
 
 Breakpoints are content-driven rather than device-name driven:
 
@@ -130,6 +131,7 @@ Deep links for guardian return flows must use universal links/app links with an 
 | Target | Build command / pipeline | Artifact |
 |---|---|---|
 | Shared/PC Web | Vite production build | `apps/web/dist/` static bundle |
+| Installable PC | Electron production packaging | signed Windows installer and signed/notarized macOS package |
 | iOS simulator | Capacitor sync + Xcode simulator build | `.app` simulator bundle |
 | iOS distribution | Xcode archive with managed signing | signed `.ipa` / TestFlight build |
 | Android QA | Capacitor sync + Gradle assemble | debug `.apk` |
@@ -148,6 +150,7 @@ Every PR:
 - unit tests
 - component tests
 - production Web build
+- Electron main/preload and renderer build
 - Playwright Chromium flow for PC Web
 
 Vertical-slice E2E cases:
@@ -165,6 +168,7 @@ Platform lanes after shell creation:
 | Lane | Tool | Coverage |
 |---|---|---|
 | PC Web | Playwright | Chromium required; Firefox/WebKit smoke |
+| Installable PC | Electron smoke/package verification | launch packaged renderer, preload boundary, deep-link bootstrap, update/error startup |
 | iOS | Xcode simulator + WebdriverIO/Appium | latest supported iOS plus one previous major |
 | Android | Android emulator + WebdriverIO/Appium | current target API plus minimum supported API |
 | Native build smoke | Xcode/Gradle | install, launch, deep-link bootstrap, offline/error startup |
@@ -173,14 +177,14 @@ Use stable `data-testid` values only at cross-platform automation boundaries. Pr
 
 ## Implementation order and conflict control
 
-1. Merge or approve the Architect foundation in PR #2.
-2. Create a feature branch from the merged foundation commit, not from an independently generated scaffold.
+1. Use the merged Architect foundation in `main`.
+2. Create feature branches from current `main`, not from an independently generated scaffold.
 3. Add the vertical slice inside existing `apps/web` and `packages/contracts` conventions.
 4. Add `apps/mobile` only after the Web slice and platform bridge contract are stable.
 5. Activate CI from the reviewed template when a workflow-scoped credential is available.
 6. Add native build lanes after signing ownership and bundle identifiers are confirmed.
 
-Until PR #2 is merged, dependent planning changes should target `feat/mvp-foundation-ci`. Do not edit PR #2 files or generate a competing root workspace, Vite app, API app, lockfile, or CI scaffold.
+Dependent implementation changes must target current `main`. Do not generate a competing root workspace, Vite app, API app, lockfile, or CI scaffold.
 
 ## Dependencies and blockers
 

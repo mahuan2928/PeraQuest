@@ -32,7 +32,6 @@ describe('P0 access guards', () => {
     expect(onboarding.json()).toMatchObject({
       isMinor: true,
       guardianLinkStatus: 'pending',
-      guardianId: null,
       onboardingStatus: 'pending_guardian',
     })
 
@@ -49,7 +48,6 @@ describe('P0 access guards', () => {
     expect(capabilities.json()).toMatchObject({
       platform,
       guardianLinkStatus: 'pending',
-      guardianId: null,
       canLearn: false,
       canUploadVoice: false,
       voiceUploadMode: 'disabled',

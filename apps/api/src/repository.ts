@@ -28,7 +28,7 @@ export interface StudentRepository {
   create(student: StudentRecord): Promise<void>
   findById(id: string): Promise<StudentRecord | null>
   getVoiceConsent(studentId: string, requiredVersion: string): Promise<ConsentRecord>
-  setVoiceConsent(studentId: string, status: Exclude<ConsentStatus, 'missing' | 'outdated'>, version: string): Promise<ConsentRecord>
+  setVoiceConsent(studentId: string, guardianId: string | null, status: Exclude<ConsentStatus, 'missing' | 'outdated'>, version: string): Promise<ConsentRecord>
   startTrial(studentId: string, attemptId: string, expiresAt: Date): Promise<TrialStartResult>
   findTrialAttempt(attemptId: string): Promise<TrialAttemptRecord | null>
   advanceTrialAttempt(attemptId: string, expectedIndex: number, correct: boolean): Promise<TrialAttemptRecord | null>
@@ -75,9 +75,9 @@ export class PostgresStudentRepository implements StudentRepository {
     return consent
   }
 
-  async setVoiceConsent(studentId: string, status: Exclude<ConsentStatus, 'missing' | 'outdated'>, version: string): Promise<ConsentRecord> {
-    await this.pool.query(`INSERT INTO consent_records (id, student_id, consent_type, status, version, granted_at, withdrawn_at)
-      VALUES (gen_random_uuid(), $1, 'voice_processing', $2, $3, CASE WHEN $2 = 'granted' THEN now() END, CASE WHEN $2 = 'withdrawn' THEN now() END)`, [studentId, status, version])
+  async setVoiceConsent(studentId: string, guardianId: string | null, status: Exclude<ConsentStatus, 'missing' | 'outdated'>, version: string): Promise<ConsentRecord> {
+    await this.pool.query(`INSERT INTO consent_records (id, student_id, guardian_id, consent_type, status, version, granted_at, withdrawn_at)
+      VALUES (gen_random_uuid(), $1, $2, 'voice_processing', $3, $4, CASE WHEN $3::consent_status = 'granted' THEN now() END, CASE WHEN $3::consent_status = 'withdrawn' THEN now() END)`, [studentId, guardianId, status, version])
     return { status, version }
   }
 
@@ -140,7 +140,7 @@ export class MemoryStudentRepository implements StudentRepository {
     return consent
   }
 
-  async setVoiceConsent(studentId: string, status: Exclude<ConsentStatus, 'missing' | 'outdated'>, version: string): Promise<ConsentRecord> {
+  async setVoiceConsent(studentId: string, guardianId: string | null, status: Exclude<ConsentStatus, 'missing' | 'outdated'>, version: string): Promise<ConsentRecord> {
     const consent = { status, version }
     this.consents.set(studentId, consent)
     return consent

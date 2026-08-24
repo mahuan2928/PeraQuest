@@ -54,6 +54,19 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   const config = loadConfig()
   const repository = options.repository ?? new MemoryStudentRepository()
   const now = options.now ?? (() => new Date())
+  const allowedOrigins = new Set(config.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean))
+
+  app.addHook('onRequest', async (request, reply) => {
+    const origin = request.headers.origin
+    if (origin && allowedOrigins.has(origin)) {
+      reply.header('access-control-allow-origin', origin)
+      reply.header('access-control-allow-headers', 'content-type, x-student-id, x-client-platform, x-guardian-id')
+      reply.header('access-control-allow-methods', 'GET, POST, PUT, OPTIONS')
+      reply.header('access-control-max-age', '86400')
+      reply.header('vary', 'Origin')
+    }
+    if (request.method === 'OPTIONS') return reply.code(204).send()
+  })
 
   const studentIdFrom = (headers: Record<string, unknown>): string | null => {
     const value = headers['x-student-id']

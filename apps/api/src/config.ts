@@ -8,6 +8,7 @@ const schema = z.object({
   VOICE_FEATURE_PUBLIC_ENABLED: booleanFlag.default(false),
   AI_VENDOR_APPROVED: booleanFlag.default(false),
   CONSENT_VERSION_REQUIRED: z.string().min(1).default('v0'),
+  CORS_ORIGIN: z.string().min(1).default('https://peraquest-dev.workers.dev'),
 })
 
 export const loadConfig = (environment: NodeJS.ProcessEnv = process.env) => schema.parse(environment)

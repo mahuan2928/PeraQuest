@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "peraquest",
+  "name": "peraquest-dev",
   "compatibility_date": "2026-08-19",
   "assets": {
     "directory": "./apps/web/dist/",

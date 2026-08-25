@@ -6,6 +6,7 @@ import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
 import TrialLesson from './components/TrialLesson.vue'
 import TrialResult from './components/TrialResult.vue'
+import KnowledgeMastery from './components/KnowledgeMastery.vue'
 
 type Step = 'onboarding' | 'guardian' | 'trial' | 'result' | 'adult'
 const step = ref<Step>('onboarding')
@@ -109,16 +110,7 @@ function completeTrial(value: number) {
         :score="score"
         :total="trialQuestionCount"
       />
-      <section
-        v-else
-        class="adult-panel"
-      >
-        <p class="eyebrow">
-          WELCOME
-        </p><h1>設定を確認しました</h1><p class="lead">
-          この垂直スライスは未成年の安全な初回体験を対象としています。
-        </p>
-      </section>
+      <KnowledgeMastery v-else />
     </div>
     <footer><span>© LingoQuest JP</span><span>安全とプライバシーを最優先に設計しています</span></footer>
   </main>

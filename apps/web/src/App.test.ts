@@ -65,6 +65,32 @@ function installSuccessfulApi() {
   }))
 }
 
+function installActiveApi() {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/v1/students/onboarding') {
+      return jsonResponse({
+        studentId: 'student-active',
+        isMinor: false,
+        guardianLinkStatus: 'not_required',
+        onboardingStatus: 'active',
+      }, 201)
+    }
+    if (url === '/v1/me/guardian-link') {
+      return jsonResponse({ status: 'not_required', purchaseAllowed: true, verifiedAt: null })
+    }
+    if (url === '/v1/me/capabilities') {
+      return jsonResponse({
+        guardianLinkStatus: 'not_required',
+        canLearn: true,
+        canUploadVoice: true,
+        canPurchase: true,
+      })
+    }
+    throw new Error(`Unexpected request: ${url}`)
+  }))
+}
+
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
@@ -146,6 +172,20 @@ describe('minor onboarding vertical slice', () => {
     await wrapper.get('[data-testid="start-trial"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain(firstQuestion.prompt))
     expect(localStorage.length).toBe(0)
+  })
+
+  it('switches to the knowledge mastery page for an active learner', async () => {
+    installActiveApi()
+    const wrapper = mount(App)
+
+    expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="birth-month"]').setValue('2000-04')
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => expect(wrapper.get('#mastery-title').text()).toBe('知識マップ'))
+    expect(wrapper.text()).toContain('全体の掌握度')
+    expect(wrapper.get('[data-testid="mastery-demo-notice"]').text()).toContain('実際の学習データではありません')
+    expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(false)
   })
 
   it('fails closed when onboarding policy cannot be loaded', async () => {

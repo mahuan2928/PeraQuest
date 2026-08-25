@@ -1,17 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { knowledgeGroups, type KnowledgePoint } from '../data/knowledge'
-
-const emit = defineEmits<{
-  practice: [point: KnowledgePoint]
-}>()
-
-const currentPointId = ref(knowledgeGroups[0]?.points[0]?.id ?? '')
-
-function startPractice(point: KnowledgePoint) {
-  currentPointId.value = point.id
-  emit('practice', point)
-}
+import { knowledgeGroups } from '../data/knowledge'
 </script>
 
 <template>
@@ -58,7 +46,6 @@ function startPractice(point: KnowledgePoint) {
             v-for="point in group.points"
             :key="point.id"
             class="knowledge-item"
-            :class="{ 'knowledge-item--current': currentPointId === point.id }"
           >
             <div class="knowledge-item__main">
               <div class="knowledge-item__title-row">
@@ -89,12 +76,11 @@ function startPractice(point: KnowledgePoint) {
             <button
               class="practice-button"
               type="button"
-              :aria-current="currentPointId === point.id ? 'true' : undefined"
-              :aria-label="`${point.title}を練習する`"
-              @click="startPractice(point)"
+              disabled
+              :aria-label="`${point.title}の練習はDemoでは利用できません`"
+              data-testid="practice-unavailable"
             >
-              練習する
-              <span aria-hidden="true">↗</span>
+              練習する（Demoでは利用できません）
             </button>
           </li>
         </ul>
@@ -129,7 +115,6 @@ function startPractice(point: KnowledgePoint) {
 .knowledge-list { margin: 0; padding: 0; list-style: none; }
 .knowledge-item { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding: 22px 24px; border-bottom: 1px solid var(--line); transition: background .18s ease, transform .18s ease; }
 .knowledge-item:last-child { border-bottom: 0; }
-.knowledge-item--current { background: #f5f9df; }
 .knowledge-item__main { min-width: 0; flex: 1; }
 .knowledge-item__title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 12px; }
 .knowledge-item h3 { margin: 0; font-size: 1.12rem; }
@@ -146,7 +131,8 @@ function startPractice(point: KnowledgePoint) {
 .last-practiced { margin: 9px 0 0 !important; font-size: .72rem !important; }
 .practice-button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 10px; min-height: 46px; padding: 9px 13px; border: 2px solid var(--ink); color: white; background: var(--green); font-size: .8rem; font-weight: 900; box-shadow: 4px 4px 0 var(--ink); transition: transform .16s ease, box-shadow .16s ease, background .16s ease; }
 .practice-button span { font-size: 1.05rem; }
-.practice-button:hover { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); background: var(--orange); }
+.practice-button:disabled { cursor: not-allowed; opacity: .62; box-shadow: 2px 2px 0 var(--ink); }
+.practice-button:hover:disabled { transform: none; background: var(--green); }
 .practice-button:focus-visible { outline: 4px solid #68bfff; outline-offset: 3px; }
 @media (max-width: 680px) {
   .mastery-header { align-items: start; flex-direction: column; gap: 22px; }

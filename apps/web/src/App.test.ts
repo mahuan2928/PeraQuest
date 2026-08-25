@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.vue'
 import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
+import KnowledgeMastery from './components/KnowledgeMastery.vue'
 import TrialLesson from './components/TrialLesson.vue'
 
 const firstQuestion: TrialQuestion = {
@@ -186,6 +187,23 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('全体の掌握度')
     expect(wrapper.get('[data-testid="mastery-demo-notice"]').text()).toContain('実際の学習データではありません')
     expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(false)
+  })
+
+  it('keeps demo practice unavailable without emitting or calling an API', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(KnowledgeMastery)
+    const buttons = wrapper.findAll('[data-testid="practice-unavailable"]')
+
+    expect(buttons.length).toBeGreaterThan(0)
+    expect(buttons.every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+    expect(wrapper.text()).toContain('Demoでは利用できません')
+
+    const firstButton = buttons.at(0)
+    expect(firstButton).toBeDefined()
+    await firstButton!.trigger('click')
+    expect(wrapper.emitted('practice')).toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('fails closed when onboarding policy cannot be loaded', async () => {

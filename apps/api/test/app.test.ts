@@ -73,6 +73,35 @@ describe('identity, consent, and capabilities slice', () => {
     expect(granted.statusCode).toBe(200)
   })
 
+  it('rejects a guardian impersonating another linked guardian or student', async () => {
+    vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'minor-a', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId: 'guardian-a' })
+    await repository.create({ id: 'minor-b', birthMonth: '2012-05', isMinor: true, guardianLinkStatus: 'verified', guardianId: 'guardian-b' })
+    const app = buildApp({ repository })
+    apps.push(app)
+
+    const wrongGuardian = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers: { 'x-student-id': 'minor-a', 'x-guardian-id': 'guardian-b' },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(wrongGuardian.statusCode).toBe(403)
+    expect(wrongGuardian.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
+
+    const crossUser = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers: { 'x-student-id': 'minor-b', 'x-guardian-id': 'guardian-a' },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(crossUser.statusCode).toBe(403)
+    expect(crossUser.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
+    await expect(repository.getVoiceConsent('minor-a', 'v1')).resolves.toEqual({ status: 'missing', version: null })
+    await expect(repository.getVoiceConsent('minor-b', 'v1')).resolves.toEqual({ status: 'missing', version: null })
+  })
+
   it('rejects future birth months during onboarding', async () => {
     const app = buildApp({ now: () => new Date('2026-08-19T00:00:00Z') })
     apps.push(app)

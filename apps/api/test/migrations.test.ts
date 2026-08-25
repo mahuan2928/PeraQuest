@@ -1,8 +1,9 @@
 import { PGlite } from '@electric-sql/pglite'
 import type { Pool } from 'pg'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
 import { PostgresStudentRepository } from '../src/repository.js'
+import { buildApp } from '../src/app.js'
 
 const databases: PGlite[] = []
 
@@ -74,6 +75,38 @@ describe('database migrations', () => {
       repository.startTrial('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000003', new Date(Date.now() + 60_000)),
     ])
     expect(results.map(({ status }) => status).sort()).toEqual(['created', 'redeemed'])
+  })
+
+  it('persists the consenting guardian on consent records and rejects cross-user impersonation', async () => {
+    vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const studentA = '00000000-0000-0000-0000-000000000011'
+    const studentB = '00000000-0000-0000-0000-000000000012'
+    const guardianA = '00000000-0000-0000-0000-000000000021'
+    const guardianB = '00000000-0000-0000-0000-000000000022'
+    await database.query(`INSERT INTO users (id, role, birth_month, is_minor) VALUES
+      ('${studentA}', 'student', '2012-04-01', true),
+      ('${studentB}', 'student', '2012-05-01', true),
+      ('${guardianA}', 'guardian', NULL, false),
+      ('${guardianB}', 'guardian', NULL, false)`)
+    await database.query(`INSERT INTO guardian_links (id, student_id, guardian_id, status) VALUES
+      ('00000000-0000-0000-0000-000000000031', '${studentA}', '${guardianA}', 'verified'),
+      ('00000000-0000-0000-0000-000000000032', '${studentB}', '${guardianB}', 'verified')`)
+    const pool = { query: database.query.bind(database), connect: async () => ({ query: database.query.bind(database), release: () => undefined }) } as unknown as Pool
+    const app = buildApp({ repository: new PostgresStudentRepository(pool) })
+    const rejected = await app.inject({ method: 'PUT', url: '/v1/me/consents/voice-processing', headers: { 'x-student-id': studentB, 'x-guardian-id': guardianA }, payload: { status: 'granted', version: 'v1' } })
+    expect(rejected.statusCode).toBe(403)
+    expect(rejected.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
+    const accepted = await app.inject({ method: 'PUT', url: '/v1/me/consents/voice-processing', headers: { 'x-student-id': studentA, 'x-guardian-id': guardianA }, payload: { status: 'granted', version: 'v1' } })
+    expect(accepted.statusCode).toBe(200)
+    const records = await database.query<{ guardian_id: string; student_id: string }>
+      ('SELECT guardian_id, student_id FROM consent_records WHERE student_id = $1', [studentA])
+    expect(records.rows).toEqual([{ guardian_id: guardianA, student_id: studentA }])
+    const rejectedRecords = await database.query('SELECT 1 FROM consent_records WHERE student_id = $1', [studentB])
+    expect(rejectedRecords.rows).toEqual([])
+    await app.close()
   })
 
   it('enforces one active guardian link for a student', async () => {

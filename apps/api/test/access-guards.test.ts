@@ -94,7 +94,7 @@ describe('P0 access guards', () => {
       guardianId: null,
       })
       if (consentState !== 'missing') {
-        await repository.setVoiceConsent('student-voice-guard', consentState, 'v1')
+        await repository.setVoiceConsent('student-voice-guard', null, consentState, 'v1')
       }
       const app = buildApp({ repository })
       apps.push(app)

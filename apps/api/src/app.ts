@@ -92,9 +92,10 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const student = await repository.findById(studentId)
     if (!student) return reply.code(404).send({ code: 'STUDENT_NOT_FOUND' })
     if (student.isMinor && student.guardianLinkStatus !== 'verified') return reply.code(403).send({ code: 'GUARDIAN_VERIFICATION_REQUIRED' })
-    const guardianId = request.headers['x-guardian-id']
-    if (student.isMinor && (typeof guardianId !== 'string' || guardianId !== student.guardianId)) return reply.code(403).send({ code: 'GUARDIAN_AUTH_REQUIRED' })
-    const consent = await repository.setVoiceConsent(studentId, parsed.data.status, parsed.data.version)
+    const guardianHeader = request.headers['x-guardian-id']
+    const guardianId = typeof guardianHeader === 'string' ? guardianHeader : null
+    if (student.isMinor && (guardianId === null || guardianId !== student.guardianId)) return reply.code(403).send({ code: 'GUARDIAN_AUTH_REQUIRED' })
+    const consent = await repository.setVoiceConsent(studentId, student.isMinor ? guardianId : null, parsed.data.status, parsed.data.version)
     return { type: 'voice_processing', ...consent }
   })
 

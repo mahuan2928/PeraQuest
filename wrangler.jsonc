@@ -2,6 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "peraquest-dev",
   "compatibility_date": "2026-08-19",
+  // API is deployed separately; set VITE_API_BASE_URL in the build environment.
   "assets": {
     "directory": "./apps/web/dist/",
     "not_found_handling": "single-page-application"

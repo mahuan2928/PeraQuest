@@ -71,6 +71,9 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       if (origin !== allowedOrigin) return reply.code(403).send({ code: 'CORS_ORIGIN_DENIED' })
       return reply.code(204).send()
     }
+    // Requests carrying an Origin must be from the configured web client. Requests
+    // without Origin are still handled by the endpoint's normal authentication.
+    if (origin !== undefined && origin !== allowedOrigin) return reply.code(403).send({ code: 'CORS_ORIGIN_DENIED' })
   })
 
   const studentIdFrom = (headers: Record<string, unknown>): string | null => {

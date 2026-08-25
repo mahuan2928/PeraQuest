@@ -7,7 +7,15 @@ import type {
   TrialAttemptResponse,
 } from '@peraquest/contracts'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+export function normalizeApiBaseUrl(baseUrl: string | undefined): string {
+  return (baseUrl ?? '').replace(/\/+$/, '')
+}
+
+const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL)
+
+export function buildApiUrl(path: string, baseUrl = API_BASE_URL): string {
+  return `${baseUrl}${path}`
+}
 
 function detectClientPlatform(): 'ios' | 'android' | 'pc' {
   if (/Android/i.test(navigator.userAgent)) return 'android'
@@ -25,7 +33,7 @@ function studentHeaders(): HeadersInit {
 }
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${url}`, init)
+  const response = await fetch(buildApiUrl(url), init)
   if (!response.ok) {
     const error = new Error(`REQUEST_FAILED_${response.status}`)
     Object.assign(error, { status: response.status })

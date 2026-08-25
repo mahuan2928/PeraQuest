@@ -101,3 +101,110 @@ export interface CapabilityResponse {
   lineReturnTargets: Array<'app_deep_link' | 'web_https'>
   entitlements: string[]
 }
+
+export const userRoles = ['student', 'guardian', 'admin', 'service'] as const
+export type UserRole = (typeof userRoles)[number]
+
+export const authMethods = ['bearer', 'legacy_student_header', 'legacy_guardian_header', 'service_token'] as const
+export type AuthMethod = (typeof authMethods)[number]
+
+/** Server-resolved actor. Never accept role or subject from an unverified client payload. */
+export interface AuthActor {
+  id: string
+  role: UserRole
+  method: AuthMethod
+}
+
+export interface AuthorizationProjection {
+  canLearn: boolean
+  canUploadVoice: boolean
+  canPurchase: boolean
+}
+
+export interface GuardianLinkProjection {
+  studentId: string
+  status: GuardianLinkStatus
+  revision: number
+  authorization: AuthorizationProjection
+  guardianId?: string | null
+  verifiedAt?: string | null
+}
+
+export type ConsentType = 'voice_processing'
+
+export interface ConsentProjection {
+  studentId: string
+  type: ConsentType
+  status: ConsentStatus
+  version: string | null
+  revision: number
+  actor: AuthActor | null
+  recordedAt?: string | null
+}
+
+export const stableErrorCodes = [
+  'AUTH_REQUIRED',
+  'AUTH_INVALID',
+  'AUTH_FORBIDDEN',
+  'CORS_ORIGIN_DENIED',
+  'INVALID_ONBOARDING',
+  'INVALID_BIRTH_MONTH',
+  'INVALID_CLIENT_PLATFORM',
+  'INVALID_CONSENT_VERSION',
+  'INVALID_TRIAL_ANSWER',
+  'STUDENT_NOT_FOUND',
+  'GUARDIAN_VERIFICATION_REQUIRED',
+  'GUARDIAN_AUTH_REQUIRED',
+  'TRIAL_NOT_AVAILABLE',
+  'TRIAL_ALREADY_REDEEMED',
+  'TRIAL_ATTEMPT_NOT_FOUND',
+  'TRIAL_ATTEMPT_EXPIRED',
+  'TRIAL_ANSWER_OUT_OF_SEQUENCE',
+  'TRIAL_ANSWER_ALREADY_SUBMITTED',
+  'VOICE_CONSENT_REQUIRED',
+  'SIGNED_UPLOAD_NOT_CONFIGURED',
+  'IDEMPOTENCY_KEY_REQUIRED',
+  'IDEMPOTENCY_REPLAY',
+  'REVISION_REQUIRED',
+  'REVISION_CONFLICT',
+  'NOT_FOUND',
+  'VALIDATION_FAILED',
+  'INTERNAL_ERROR',
+] as const
+export type StableErrorCode = (typeof stableErrorCodes)[number]
+
+/** Deliberately fixed, non-sensitive fields; do not pass raw validation/provider errors. */
+export interface SafeErrorDetails {
+  field?: string
+  reason?: 'invalid' | 'missing' | 'expired' | 'conflict' | 'not_allowed'
+  resource?: 'student' | 'guardian_link' | 'consent' | 'trial_attempt' | 'request'
+  revision?: number
+  retryAfterSeconds?: number
+}
+
+export interface ErrorResponse {
+  code: StableErrorCode
+  details?: SafeErrorDetails
+}
+
+export const legacyHeaderDeprecation = {
+  headers: ['x-student-id', 'x-guardian-id'],
+  sunset: '2027-01-01',
+  replacement: 'Authorization: Bearer <token>',
+} as const
+
+const safeDetailReasons = ['invalid', 'missing', 'expired', 'conflict', 'not_allowed'] as const
+const safeDetailResources = ['student', 'guardian_link', 'consent', 'trial_attempt', 'request'] as const
+
+/** Keep error payloads deterministic and prevent raw validation/provider data from escaping. */
+export function sanitizeErrorDetails(input: unknown): SafeErrorDetails | undefined {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined
+  const value = input as Record<string, unknown>
+  const details: SafeErrorDetails = {}
+  if (typeof value.field === 'string') details.field = value.field
+  if (typeof value.reason === 'string' && (safeDetailReasons as readonly string[]).includes(value.reason)) details.reason = value.reason as Exclude<SafeErrorDetails['reason'], undefined>
+  if (typeof value.resource === 'string' && (safeDetailResources as readonly string[]).includes(value.resource)) details.resource = value.resource as Exclude<SafeErrorDetails['resource'], undefined>
+  if (typeof value.revision === 'number' && Number.isInteger(value.revision) && value.revision >= 0) details.revision = value.revision
+  if (typeof value.retryAfterSeconds === 'number' && Number.isInteger(value.retryAfterSeconds) && value.retryAfterSeconds >= 0) details.retryAfterSeconds = value.retryAfterSeconds
+  return Object.keys(details).length > 0 ? details : undefined
+}

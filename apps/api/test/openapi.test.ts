@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 interface OpenApiDocument {
   openapi: string
   paths: Record<string, Record<string, { operationId?: string }>>
-  components: { parameters: Record<string, unknown> }
+  components: { parameters: Record<string, unknown>; schemas: Record<string, unknown>; securitySchemes: Record<string, unknown> }
 }
 
 describe('OpenAPI document', () => {
@@ -26,5 +26,13 @@ describe('OpenAPI document', () => {
     expect(new Set(operationIds).size).toBe(operationIds.length)
     expect(document.components.parameters).toHaveProperty('ClientPlatform')
     expect(document.components.parameters).toHaveProperty('GuardianId')
+    expect(document.components.parameters.IdempotencyKey).toBeDefined()
+    expect(document.components.parameters.IfMatchRevision).toBeDefined()
+    expect(document.components.schemas).toHaveProperty('AuthActor')
+    expect(document.components.schemas).toHaveProperty('GuardianLinkProjection')
+    expect(document.components.schemas).toHaveProperty('ConsentProjection')
+    expect(document.components.schemas).toHaveProperty('ErrorResponse')
+    expect(document.components.securitySchemes).toHaveProperty('BearerAuth')
+    expect(document.components.parameters.StudentId).toMatchObject({ deprecated: true })
   })
 })

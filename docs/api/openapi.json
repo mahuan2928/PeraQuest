@@ -31,8 +31,33 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XResourceRevision"
+          }
+        ]
       }
     },
     "/v1/students/onboarding": {
@@ -62,8 +87,25 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
-        }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XResourceRevision"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
       }
     },
     "/v1/me/guardian-link": {
@@ -73,6 +115,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/StudentId"
+          },
+          {
+            "$ref": "#/components/parameters/XResourceRevision"
           }
         ],
         "responses": {
@@ -91,8 +136,25 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": []
+          }
+        ]
       }
     },
     "/v1/me/consents/voice-processing": {
@@ -105,6 +167,12 @@
           },
           {
             "$ref": "#/components/parameters/GuardianId"
+          },
+          {
+            "$ref": "#/components/parameters/XResourceRevision"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "requestBody": {
@@ -139,8 +207,19 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": []
+          }
+        ]
       }
     },
     "/v1/me/capabilities": {
@@ -153,6 +232,9 @@
           },
           {
             "$ref": "#/components/parameters/ClientPlatform"
+          },
+          {
+            "$ref": "#/components/parameters/XResourceRevision"
           }
         ],
         "responses": {
@@ -174,8 +256,22 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": []
+          }
+        ]
       }
     },
     "/v1/me/voice-upload-ticket": {
@@ -185,6 +281,12 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/StudentId"
+          },
+          {
+            "$ref": "#/components/parameters/XResourceRevision"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "responses": {
@@ -200,8 +302,25 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": []
+          }
+        ]
       }
     },
     "/v1/trial-attempts": {
@@ -211,6 +330,12 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/StudentId"
+          },
+          {
+            "$ref": "#/components/parameters/XResourceRevision"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "responses": {
@@ -242,8 +367,19 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": []
+          }
+        ]
       }
     },
     "/v1/trial-attempts/{attemptId}/answers": {
@@ -262,6 +398,12 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "$ref": "#/components/parameters/XResourceRevision"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "requestBody": {
@@ -313,8 +455,19 @@
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": []
+          }
+        ]
       }
     }
   },
@@ -324,19 +477,23 @@
         "name": "X-Student-Id",
         "in": "header",
         "required": true,
-        "description": "Scaffold-only identity header; replace with verified bearer-token middleware.",
+        "description": "Scaffold-only identity header; replace with verified bearer-token middleware. Deprecated: use Authorization Bearer actor claims.",
         "schema": {
           "type": "string"
-        }
+        },
+        "deprecated": true,
+        "x-sunset": "2027-01-01"
       },
       "GuardianId": {
         "name": "X-Guardian-Id",
         "in": "header",
         "required": false,
-        "description": "Scaffold-only linked guardian identity, required when a minor's consent is written. Replace with verified actor claims.",
+        "description": "Scaffold-only linked guardian identity, required when a minor's consent is written. Replace with verified actor claims. Deprecated: use Authorization Bearer actor claims.",
         "schema": {
           "type": "string"
-        }
+        },
+        "deprecated": true,
+        "x-sunset": "2027-01-01"
       },
       "ClientPlatform": {
         "name": "X-Client-Platform",
@@ -344,6 +501,37 @@
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/ClientPlatform"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Required for state-changing APIs; retries return IDEMPOTENCY_REPLAY.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      },
+      "IfMatchRevision": {
+        "name": "If-Match-Revision",
+        "in": "header",
+        "required": false,
+        "description": "Expected resource revision for optimistic concurrency.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "XResourceRevision": {
+        "name": "X-Resource-Revision",
+        "in": "header",
+        "required": false,
+        "description": "Revision returned by the server for the resource projection.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -384,6 +572,16 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict or idempotency replay",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
             }
           }
         }
@@ -653,15 +851,18 @@
       },
       "Error": {
         "type": "object",
-        "properties": {
-          "code": {
-            "type": "string"
-          }
-        },
+        "additionalProperties": false,
         "required": [
           "code"
         ],
-        "additionalProperties": true
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/StableErrorCode"
+          },
+          "details": {
+            "$ref": "#/components/schemas/SafeErrorDetails"
+          }
+        }
       },
       "TrialQuestion": {
         "type": "object",
@@ -797,7 +998,253 @@
           "score",
           "progressPersisted"
         ]
+      },
+      "AuthActor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "role",
+          "method"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian",
+              "admin",
+              "service"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "bearer",
+              "legacy_student_header",
+              "legacy_guardian_header",
+              "service_token"
+            ]
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/StableErrorCode"
+          },
+          "details": {
+            "$ref": "#/components/schemas/SafeErrorDetails"
+          }
+        }
+      },
+      "StableErrorCode": {
+        "type": "string",
+        "enum": [
+          "AUTH_REQUIRED",
+          "AUTH_INVALID",
+          "AUTH_FORBIDDEN",
+          "CORS_ORIGIN_DENIED",
+          "INVALID_ONBOARDING",
+          "INVALID_BIRTH_MONTH",
+          "INVALID_CLIENT_PLATFORM",
+          "INVALID_CONSENT_VERSION",
+          "INVALID_TRIAL_ANSWER",
+          "STUDENT_NOT_FOUND",
+          "GUARDIAN_VERIFICATION_REQUIRED",
+          "GUARDIAN_AUTH_REQUIRED",
+          "TRIAL_NOT_AVAILABLE",
+          "TRIAL_ALREADY_REDEEMED",
+          "TRIAL_ATTEMPT_NOT_FOUND",
+          "TRIAL_ATTEMPT_EXPIRED",
+          "TRIAL_ANSWER_OUT_OF_SEQUENCE",
+          "TRIAL_ANSWER_ALREADY_SUBMITTED",
+          "VOICE_CONSENT_REQUIRED",
+          "SIGNED_UPLOAD_NOT_CONFIGURED",
+          "IDEMPOTENCY_KEY_REQUIRED",
+          "IDEMPOTENCY_REPLAY",
+          "REVISION_REQUIRED",
+          "REVISION_CONFLICT",
+          "NOT_FOUND",
+          "VALIDATION_FAILED",
+          "INTERNAL_ERROR"
+        ]
+      },
+      "SafeErrorDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "invalid",
+              "missing",
+              "expired",
+              "conflict",
+              "not_allowed"
+            ]
+          },
+          "resource": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian_link",
+              "consent",
+              "trial_attempt",
+              "request"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "AuthorizationProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "canLearn",
+          "canUploadVoice",
+          "canPurchase"
+        ],
+        "properties": {
+          "canLearn": {
+            "type": "boolean"
+          },
+          "canUploadVoice": {
+            "type": "boolean"
+          },
+          "canPurchase": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GuardianLinkProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "studentId",
+          "status",
+          "revision",
+          "authorization"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuardianLinkStatus"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "authorization": {
+            "$ref": "#/components/schemas/AuthorizationProjection"
+          },
+          "guardianId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ConsentProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "studentId",
+          "type",
+          "status",
+          "version",
+          "revision",
+          "actor"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "string"
+          },
+          "type": {
+            "const": "voice_processing"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConsentStatus"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Verified actor token."
+      },
+      "LegacyStudentHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Student-Id",
+        "description": "Deprecated compatibility identity; use BearerAuth."
       }
     }
+  },
+  "x-legacy-header-deprecation": {
+    "headers": [
+      "X-Student-Id",
+      "X-Guardian-Id"
+    ],
+    "sunset": "2027-01-01",
+    "replacement": "Authorization: Bearer <token>"
   }
 }

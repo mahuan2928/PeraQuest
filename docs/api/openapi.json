@@ -54,14 +54,6 @@
             "$ref": "#/components/responses/Conflict"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "LegacyStudentHeader": []
-          }
-        ],
         "parameters": []
       }
     },
@@ -163,15 +155,7 @@
           "409": {
             "$ref": "#/components/responses/Conflict"
           }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "LegacyStudentHeader": []
-          }
-        ]
+        }
       }
     },
     "/v1/me/consents/voice-processing": {
@@ -238,18 +222,6 @@
             "$ref": "#/components/responses/Conflict"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "LegacyStudentHeader": [],
-            "LegacyGuardianHeader": []
-          },
-          {
-            "LegacyStudentHeader": []
-          }
-        ],
         "description": "Consent writes may be attributed to the verified guardian actor. Legacy X-Guardian-Id is deprecated and retained only for compatibility."
       }
     },
@@ -300,15 +272,7 @@
           "409": {
             "$ref": "#/components/responses/Conflict"
           }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "LegacyStudentHeader": []
-          }
-        ]
+        }
       }
     },
     "/v1/me/voice-upload-ticket": {
@@ -349,15 +313,7 @@
           "409": {
             "$ref": "#/components/responses/Conflict"
           }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "LegacyStudentHeader": []
-          }
-        ]
+        }
       }
     },
     "/v1/trial-attempts": {
@@ -417,15 +373,7 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "LegacyStudentHeader": []
-          }
-        ]
+        }
       }
     },
     "/v1/trial-attempts/{attemptId}/answers": {
@@ -514,15 +462,7 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "LegacyStudentHeader": []
-          }
-        ]
+        }
       }
     }
   },
@@ -561,8 +501,8 @@
       "IdempotencyKey": {
         "name": "Idempotency-Key",
         "in": "header",
-        "required": true,
-        "description": "Required on every state-changing operation. Reuse of a key returns IDEMPOTENCY_REPLAY.",
+        "required": false,
+        "description": "planned future contract: Idempotency-Key will be required once runtime idempotency support is implemented. Not implemented in this slice.",
         "schema": {
           "type": "string",
           "minLength": 1,
@@ -572,8 +512,8 @@
       "IfMatchRevision": {
         "name": "If-Match-Revision",
         "in": "header",
-        "required": true,
-        "description": "Required on state-changing requests that update a revisioned resource.",
+        "required": false,
+        "description": "planned future contract: If-Match-Revision will be required for revisioned writes once runtime revision support is implemented. Not implemented in this slice.",
         "schema": {
           "type": "integer",
           "minimum": 0
@@ -1285,19 +1225,19 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "Verified actor token."
+        "description": "Planned future contract: verified actor bearer authentication. Not implemented in this slice; current runtime uses the deprecated compatibility header."
       },
       "LegacyStudentHeader": {
         "type": "apiKey",
         "in": "header",
         "name": "X-Student-Id",
-        "description": "Deprecated compatibility identity; use BearerAuth."
+        "description": "Deprecated compatibility identity used by the current scaffold runtime; replace with planned BearerAuth middleware."
       },
       "LegacyGuardianHeader": {
         "type": "apiKey",
         "in": "header",
         "name": "X-Guardian-Id",
-        "description": "Deprecated compatibility guardian actor; use verified bearer actor claims."
+        "description": "Deprecated compatibility guardian actor used by the current scaffold runtime; replace with planned BearerAuth middleware."
       }
     }
   },
@@ -1308,5 +1248,10 @@
     ],
     "sunset": "2027-01-01",
     "replacement": "Authorization: Bearer <token>"
+  },
+  "x-runtime-contract-status": {
+    "authentication": "planned: BearerAuth is not implemented; current runtime accepts deprecated X-Student-Id/X-Guardian-Id headers",
+    "idempotency": "planned: Idempotency-Key is not implemented and is not currently required",
+    "revision": "planned: If-Match-Revision is not implemented and is not currently required"
   }
 }

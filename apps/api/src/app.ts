@@ -61,6 +61,11 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   const config = loadConfig()
   const repository = options.repository ?? new MemoryStudentRepository()
   const now = options.now ?? (() => new Date())
+  app.setErrorHandler((error, _request, reply) => {
+    // Keep provider/raw/stack/token details server-side; the public contract exposes only a stable code.
+    return sendError(reply, 500, 'INTERNAL_ERROR')
+  })
+
   const allowedOrigin = config.CORS_ORIGIN
   const corsHeaders = {
     'access-control-allow-origin': allowedOrigin,

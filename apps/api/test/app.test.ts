@@ -135,6 +135,25 @@ describe('identity, consent, and capabilities slice', () => {
     expect(invalidConsent.json()).toEqual({ code: 'INVALID_CONSENT_VERSION', details: { field: 'version', reason: 'invalid', resource: 'consent' } })
   })
 
+  it('redacts unexpected provider exceptions to the stable internal error contract', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    repository.findById = async () => {
+      const error = new Error('provider=acme raw=upstream stack=secret-stack token=secret-token')
+      error.stack = 'Error: provider=acme raw=upstream token=secret-token\\n at provider/client.ts:1:1'
+      throw error
+    }
+    const app = buildApp({ repository })
+    apps.push(app)
+    const response = await app.inject({ method: 'GET', url: '/v1/me/guardian-link', headers: { 'x-student-id': 'adult-1' } })
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toEqual({ code: 'INTERNAL_ERROR' })
+    expect(response.body).not.toContain('provider=acme')
+    expect(response.body).not.toContain('raw=upstream')
+    expect(response.body).not.toContain('secret-stack')
+    expect(response.body).not.toContain('secret-token')
+  })
+
   it('rejects future birth months during onboarding', async () => {
     const app = buildApp({ now: () => new Date('2026-08-19T00:00:00Z') })
     apps.push(app)

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 interface OpenApiDocument {
   openapi: string
-  paths: Record<string, Record<string, { operationId?: string }>>
+  paths: Record<string, Record<string, { operationId?: string; parameters?: Array<{ $ref?: string }>; security?: unknown }>>
   components: { parameters: Record<string, unknown>; schemas: Record<string, unknown>; securitySchemes: Record<string, unknown> }
 }
 
@@ -26,13 +26,18 @@ describe('OpenAPI document', () => {
     expect(new Set(operationIds).size).toBe(operationIds.length)
     expect(document.components.parameters).toHaveProperty('ClientPlatform')
     expect(document.components.parameters).toHaveProperty('GuardianId')
-    expect(document.components.parameters.IdempotencyKey).toBeDefined()
+    expect(document.components.parameters.IdempotencyKey).toMatchObject({ required: true })
+    expect(document.components.parameters.LegacyGuardianHeader).toBeDefined()
     expect(document.components.parameters.IfMatchRevision).toBeDefined()
     expect(document.components.schemas).toHaveProperty('AuthActor')
     expect(document.components.schemas).toHaveProperty('GuardianLinkProjection')
     expect(document.components.schemas).toHaveProperty('ConsentProjection')
     expect(document.components.schemas).toHaveProperty('ErrorResponse')
     expect(document.components.securitySchemes).toHaveProperty('BearerAuth')
+    expect(document.components.securitySchemes).toHaveProperty('LegacyGuardianHeader')
+    const writeOperations = Object.values(document.paths).flatMap((item) => Object.entries(item).filter(([method]) => ['post', 'put', 'patch', 'delete'].includes(method)).map(([, operation]) => operation as { parameters?: Array<{ $ref?: string }> }))
+    expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey'))).toBe(true)
+    expect(document.paths['/v1/me/consents/voice-processing']?.put?.security).toBeDefined()
     expect(document.components.parameters.StudentId).toMatchObject({ deprecated: true })
   })
 })

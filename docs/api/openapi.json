@@ -30,6 +30,15 @@
                   ]
                 }
               }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
             }
           },
           "400": {
@@ -53,11 +62,7 @@
             "LegacyStudentHeader": []
           }
         ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/XResourceRevision"
-          }
-        ]
+        "parameters": []
       }
     },
     "/v1/students/onboarding": {
@@ -83,6 +88,15 @@
                   "$ref": "#/components/schemas/StudentOnboardingResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
             }
           },
           "400": {
@@ -100,9 +114,6 @@
         },
         "parameters": [
           {
-            "$ref": "#/components/parameters/XResourceRevision"
-          },
-          {
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ]
@@ -115,9 +126,6 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/StudentId"
-          },
-          {
-            "$ref": "#/components/parameters/XResourceRevision"
           }
         ],
         "responses": {
@@ -127,6 +135,15 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GuardianLink"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -169,10 +186,10 @@
             "$ref": "#/components/parameters/GuardianId"
           },
           {
-            "$ref": "#/components/parameters/XResourceRevision"
+            "$ref": "#/components/parameters/IdempotencyKey"
           },
           {
-            "$ref": "#/components/parameters/IdempotencyKey"
+            "$ref": "#/components/parameters/IfMatchRevision"
           }
         ],
         "requestBody": {
@@ -192,6 +209,15 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/VoiceConsent"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -217,9 +243,14 @@
             "BearerAuth": []
           },
           {
+            "LegacyStudentHeader": [],
+            "LegacyGuardianHeader": []
+          },
+          {
             "LegacyStudentHeader": []
           }
-        ]
+        ],
+        "description": "Consent writes may be attributed to the verified guardian actor. Legacy X-Guardian-Id is deprecated and retained only for compatibility."
       }
     },
     "/v1/me/capabilities": {
@@ -232,9 +263,6 @@
           },
           {
             "$ref": "#/components/parameters/ClientPlatform"
-          },
-          {
-            "$ref": "#/components/parameters/XResourceRevision"
           }
         ],
         "responses": {
@@ -244,6 +272,15 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -283,10 +320,10 @@
             "$ref": "#/components/parameters/StudentId"
           },
           {
-            "$ref": "#/components/parameters/XResourceRevision"
+            "$ref": "#/components/parameters/IdempotencyKey"
           },
           {
-            "$ref": "#/components/parameters/IdempotencyKey"
+            "$ref": "#/components/parameters/IfMatchRevision"
           }
         ],
         "responses": {
@@ -332,10 +369,10 @@
             "$ref": "#/components/parameters/StudentId"
           },
           {
-            "$ref": "#/components/parameters/XResourceRevision"
+            "$ref": "#/components/parameters/IdempotencyKey"
           },
           {
-            "$ref": "#/components/parameters/IdempotencyKey"
+            "$ref": "#/components/parameters/IfMatchRevision"
           }
         ],
         "responses": {
@@ -345,6 +382,15 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrialAttempt"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -400,10 +446,10 @@
             }
           },
           {
-            "$ref": "#/components/parameters/XResourceRevision"
+            "$ref": "#/components/parameters/IdempotencyKey"
           },
           {
-            "$ref": "#/components/parameters/IdempotencyKey"
+            "$ref": "#/components/parameters/IfMatchRevision"
           }
         ],
         "requestBody": {
@@ -423,6 +469,15 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrialAnswerResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -506,8 +561,8 @@
       "IdempotencyKey": {
         "name": "Idempotency-Key",
         "in": "header",
-        "required": false,
-        "description": "Required for state-changing APIs; retries return IDEMPOTENCY_REPLAY.",
+        "required": true,
+        "description": "Required on every state-changing operation. Reuse of a key returns IDEMPOTENCY_REPLAY.",
         "schema": {
           "type": "string",
           "minLength": 1,
@@ -517,21 +572,22 @@
       "IfMatchRevision": {
         "name": "If-Match-Revision",
         "in": "header",
-        "required": false,
-        "description": "Expected resource revision for optimistic concurrency.",
+        "required": true,
+        "description": "Required on state-changing requests that update a revisioned resource.",
         "schema": {
           "type": "integer",
           "minimum": 0
         }
       },
-      "XResourceRevision": {
-        "name": "X-Resource-Revision",
+      "LegacyGuardianHeader": {
+        "name": "X-Guardian-Id",
         "in": "header",
         "required": false,
-        "description": "Revision returned by the server for the resource projection.",
+        "deprecated": true,
+        "x-sunset": "2027-01-01",
+        "description": "Deprecated compatibility guardian actor for consent writes; use verified bearer actor claims.",
         "schema": {
-          "type": "integer",
-          "minimum": 0
+          "type": "string"
         }
       }
     },
@@ -1236,6 +1292,12 @@
         "in": "header",
         "name": "X-Student-Id",
         "description": "Deprecated compatibility identity; use BearerAuth."
+      },
+      "LegacyGuardianHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Guardian-Id",
+        "description": "Deprecated compatibility guardian actor; use verified bearer actor claims."
       }
     }
   },

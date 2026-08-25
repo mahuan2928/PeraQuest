@@ -121,6 +121,20 @@ describe('identity, consent, and capabilities slice', () => {
     await expect(repository.getVoiceConsent('minor-b', 'v1')).resolves.toEqual({ status: 'missing', version: null })
   })
 
+  it('returns only allowlisted, redacted details for validation errors', async () => {
+    vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    const app = buildApp({ repository })
+    apps.push(app)
+    const invalidOnboarding = await app.inject({ method: 'POST', url: '/v1/students/onboarding', payload: { birthMonth: 'not-a-month' } })
+    expect(invalidOnboarding.statusCode).toBe(400)
+    expect(invalidOnboarding.json()).toEqual({ code: 'INVALID_ONBOARDING', details: { reason: 'invalid', resource: 'request' } })
+    const invalidConsent = await app.inject({ method: 'PUT', url: '/v1/me/consents/voice-processing', headers: { 'x-student-id': 'adult-1' }, payload: { status: 'granted', version: 'wrong' } })
+    expect(invalidConsent.statusCode).toBe(400)
+    expect(invalidConsent.json()).toEqual({ code: 'INVALID_CONSENT_VERSION', details: { field: 'version', reason: 'invalid', resource: 'consent' } })
+  })
+
   it('rejects future birth months during onboarding', async () => {
     const app = buildApp({ now: () => new Date('2026-08-19T00:00:00Z') })
     apps.push(app)

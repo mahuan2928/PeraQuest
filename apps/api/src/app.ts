@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import Fastify from 'fastify'
+import Fastify, { type FastifyReply } from 'fastify'
 import { z } from 'zod'
+import { sanitizeErrorDetails } from '@peraquest/contracts'
 import type {
   CapabilityResponse,
   ClientPlatform,
@@ -11,6 +12,7 @@ import type {
   StudentOnboardingResponse,
   TrialAnswerResponse,
   TrialAttemptResponse,
+  StableErrorCode,
 } from '@peraquest/contracts'
 import { loadConfig } from './config.js'
 import { MemoryStudentRepository, type StudentRepository } from './repository.js'
@@ -30,6 +32,11 @@ const onboardingSchema = z.object({
 })
 const consentSchema = z.object({ status: z.enum(['granted', 'denied', 'withdrawn']), version: z.string().min(1) })
 const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
+
+const sendError = (reply: FastifyReply, statusCode: number, code: StableErrorCode, details?: unknown) => {
+  const safeDetails = sanitizeErrorDetails(details)
+  return reply.code(statusCode).send(safeDetails === undefined ? { code } : { code, details: safeDetails })
+}
 
 const isMinorAt = (birthMonth: string, now: Date): boolean => {
   const [year, month] = birthMonth.split('-').map(Number)
@@ -68,12 +75,12 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       for (const [name, value] of Object.entries(corsHeaders)) reply.header(name, value)
     }
     if (request.method === 'OPTIONS') {
-      if (origin !== allowedOrigin) return reply.code(403).send({ code: 'CORS_ORIGIN_DENIED' })
+      if (origin !== allowedOrigin) return sendError(reply, 403, 'CORS_ORIGIN_DENIED')
       return reply.code(204).send()
     }
     // Requests carrying an Origin must be from the configured web client. Requests
     // without Origin are still handled by the endpoint's normal authentication.
-    if (origin !== undefined && origin !== allowedOrigin) return reply.code(403).send({ code: 'CORS_ORIGIN_DENIED' })
+    if (origin !== undefined && origin !== allowedOrigin) return sendError(reply, 403, 'CORS_ORIGIN_DENIED')
   })
 
   const studentIdFrom = (headers: Record<string, unknown>): string | null => {
@@ -85,11 +92,11 @@ export const buildApp = (options: BuildAppOptions = {}) => {
 
   app.post('/v1/students/onboarding', async (request, reply): Promise<StudentOnboardingResponse | void> => {
     const parsed = onboardingSchema.safeParse(request.body)
-    if (!parsed.success) return reply.code(400).send({ code: 'INVALID_ONBOARDING', details: parsed.error.issues })
+    if (!parsed.success) return sendError(reply, 400, 'INVALID_ONBOARDING', { reason: 'invalid', resource: 'request' })
     const id = randomUUID()
     const isMinor = isMinorAt(parsed.data.birthMonth, now())
     const birthMonthDate = new Date(`${parsed.data.birthMonth}-01T00:00:00Z`)
-    if (birthMonthDate > now() || birthMonthDate.getUTCFullYear() < 1900) return reply.code(400).send({ code: 'INVALID_BIRTH_MONTH' })
+    if (birthMonthDate > now() || birthMonthDate.getUTCFullYear() < 1900) return sendError(reply, 400, 'INVALID_BIRTH_MONTH')
     const guardianLinkStatus = isMinor ? 'pending' : 'not_required'
     await repository.create({ id, birthMonth: parsed.data.birthMonth, isMinor, guardianLinkStatus, guardianId: null })
     return reply.code(201).send({ studentId: id, isMinor, guardianLinkStatus, onboardingStatus: isMinor ? 'pending_guardian' : 'active' })
@@ -97,25 +104,25 @@ export const buildApp = (options: BuildAppOptions = {}) => {
 
   app.get('/v1/me/guardian-link', async (request, reply): Promise<GuardianLinkResponse | void> => {
     const studentId = studentIdFrom(request.headers)
-    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const student = await repository.findById(studentId)
-    if (!student) return reply.code(404).send({ code: 'STUDENT_NOT_FOUND' })
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     return { status: student.guardianLinkStatus, purchaseAllowed: student.guardianLinkStatus === 'verified', verifiedAt: null }
   })
 
   app.put('/v1/me/consents/voice-processing', async (request, reply): Promise<ConsentResponse | void> => {
     const studentId = studentIdFrom(request.headers)
-    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const parsed = consentSchema.safeParse(request.body)
     if (!parsed.success || parsed.data.version !== config.CONSENT_VERSION_REQUIRED) {
-      return reply.code(400).send({ code: 'INVALID_CONSENT_VERSION', requiredVersion: config.CONSENT_VERSION_REQUIRED })
+      return sendError(reply, 400, 'INVALID_CONSENT_VERSION', { field: 'version', reason: 'invalid', resource: 'consent' })
     }
     const student = await repository.findById(studentId)
-    if (!student) return reply.code(404).send({ code: 'STUDENT_NOT_FOUND' })
-    if (student.isMinor && student.guardianLinkStatus !== 'verified') return reply.code(403).send({ code: 'GUARDIAN_VERIFICATION_REQUIRED' })
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    if (student.isMinor && student.guardianLinkStatus !== 'verified') return sendError(reply, 403, 'GUARDIAN_VERIFICATION_REQUIRED')
     const guardianHeader = request.headers['x-guardian-id']
     const guardianId = typeof guardianHeader === 'string' ? guardianHeader : null
-    if (student.isMinor && (guardianId === null || guardianId !== student.guardianId)) return reply.code(403).send({ code: 'GUARDIAN_AUTH_REQUIRED' })
+    if (student.isMinor && (guardianId === null || guardianId !== student.guardianId)) return sendError(reply, 403, 'GUARDIAN_AUTH_REQUIRED')
     const consent = await repository.setVoiceConsent(studentId, student.isMinor ? guardianId : null, parsed.data.status, parsed.data.version)
     return { type: 'voice_processing', ...consent }
   })
@@ -123,10 +130,10 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   app.get('/v1/me/capabilities', async (request, reply): Promise<CapabilityResponse | void> => {
     const studentId = studentIdFrom(request.headers)
     const parsedPlatform = platformSchema.safeParse(request.headers['x-client-platform'])
-    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
-    if (!parsedPlatform.success) return reply.code(400).send({ code: 'INVALID_CLIENT_PLATFORM' })
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
+    if (!parsedPlatform.success) return sendError(reply, 400, 'INVALID_CLIENT_PLATFORM')
     const student = await repository.findById(studentId)
-    if (!student) return reply.code(404).send({ code: 'STUDENT_NOT_FOUND' })
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     const voiceConsent = await repository.getVoiceConsent(studentId, config.CONSENT_VERSION_REQUIRED)
     const clientChannels = channelsFor(parsedPlatform.data)
     const guardianSatisfied = !student.isMinor || student.guardianLinkStatus === 'verified'
@@ -150,14 +157,14 @@ export const buildApp = (options: BuildAppOptions = {}) => {
 
   app.post('/v1/trial-attempts', async (request, reply): Promise<TrialAttemptResponse | void> => {
     const studentId = studentIdFrom(request.headers)
-    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const student = await repository.findById(studentId)
-    if (!student) return reply.code(404).send({ code: 'STUDENT_NOT_FOUND' })
-    if (!student.isMinor || student.guardianLinkStatus !== 'pending') return reply.code(403).send({ code: 'TRIAL_NOT_AVAILABLE' })
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    if (!student.isMinor || student.guardianLinkStatus !== 'pending') return sendError(reply, 403, 'TRIAL_NOT_AVAILABLE')
     const attemptId = randomUUID()
     const expiresAt = new Date(now().getTime() + 30 * 60 * 1000)
     const result = await repository.startTrial(studentId, attemptId, expiresAt)
-    if (result.status === 'redeemed') return reply.code(409).send({ code: 'TRIAL_ALREADY_REDEEMED' })
+    if (result.status === 'redeemed') return sendError(reply, 409, 'TRIAL_ALREADY_REDEEMED')
     return reply.code(201).send({
       attemptId,
       questionCount: trialQuestions.length,
@@ -169,20 +176,20 @@ export const buildApp = (options: BuildAppOptions = {}) => {
 
   app.post<{ Params: { attemptId: string } }>('/v1/trial-attempts/:attemptId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {
     const studentId = studentIdFrom(request.headers)
-    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const parsed = trialAnswerSchema.safeParse(request.body)
-    if (!parsed.success) return reply.code(400).send({ code: 'INVALID_TRIAL_ANSWER' })
+    if (!parsed.success) return sendError(reply, 400, 'INVALID_TRIAL_ANSWER')
     const attempt = await repository.findTrialAttempt(request.params.attemptId)
-    if (!attempt || attempt.studentId !== studentId) return reply.code(404).send({ code: 'TRIAL_ATTEMPT_NOT_FOUND' })
+    if (!attempt || attempt.studentId !== studentId) return sendError(reply, 404, 'TRIAL_ATTEMPT_NOT_FOUND')
     if (attempt.expiresAt <= now()) {
       await repository.completeTrialAttempt(attempt.id)
-      return reply.code(410).send({ code: 'TRIAL_ATTEMPT_EXPIRED' })
+      return sendError(reply, 410, 'TRIAL_ATTEMPT_EXPIRED')
     }
     const question = trialQuestions[attempt.currentIndex]
-    if (!question || parsed.data.questionId !== question.id) return reply.code(409).send({ code: 'TRIAL_ANSWER_OUT_OF_SEQUENCE' })
+    if (!question || parsed.data.questionId !== question.id) return sendError(reply, 409, 'TRIAL_ANSWER_OUT_OF_SEQUENCE')
     const correct = parsed.data.answer === question.answer
     const advanced = await repository.advanceTrialAttempt(attempt.id, attempt.currentIndex, correct)
-    if (!advanced) return reply.code(409).send({ code: 'TRIAL_ANSWER_ALREADY_SUBMITTED' })
+    if (!advanced) return sendError(reply, 409, 'TRIAL_ANSWER_ALREADY_SUBMITTED')
     const completed = advanced.currentIndex === trialQuestions.length
     const nextQuestion = completed ? null : publicTrialQuestion(trialQuestions[advanced.currentIndex]!)
     if (completed) await repository.completeTrialAttempt(attempt.id)
@@ -199,13 +206,13 @@ export const buildApp = (options: BuildAppOptions = {}) => {
 
   app.post('/v1/me/voice-upload-ticket', async (request, reply) => {
     const studentId = studentIdFrom(request.headers)
-    if (!studentId) return reply.code(401).send({ code: 'AUTH_REQUIRED' })
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const student = await repository.findById(studentId)
-    if (!student) return reply.code(404).send({ code: 'STUDENT_NOT_FOUND' })
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     const consent = await repository.getVoiceConsent(studentId, config.CONSENT_VERSION_REQUIRED)
     const allowed = (!student.isMinor || student.guardianLinkStatus === 'verified') && consent.status === 'granted' && config.VOICE_FEATURE_PUBLIC_ENABLED && config.AI_VENDOR_APPROVED
-    if (!allowed) return reply.code(403).send({ code: 'VOICE_CONSENT_REQUIRED' })
-    return reply.code(501).send({ code: 'SIGNED_UPLOAD_NOT_CONFIGURED' })
+    if (!allowed) return sendError(reply, 403, 'VOICE_CONSENT_REQUIRED')
+    return sendError(reply, 501, 'SIGNED_UPLOAD_NOT_CONFIGURED')
   })
 
   return app

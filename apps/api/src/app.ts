@@ -54,6 +54,27 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   const config = loadConfig()
   const repository = options.repository ?? new MemoryStudentRepository()
   const now = options.now ?? (() => new Date())
+  const allowedOrigin = config.CORS_ORIGIN
+  const corsHeaders = {
+    'access-control-allow-origin': allowedOrigin,
+    'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
+    'access-control-allow-headers': 'content-type,x-student-id,x-client-platform,x-guardian-id',
+    vary: 'Origin',
+  }
+
+  app.addHook('onRequest', async (request, reply) => {
+    const origin = request.headers.origin
+    if (origin === allowedOrigin) {
+      for (const [name, value] of Object.entries(corsHeaders)) reply.header(name, value)
+    }
+    if (request.method === 'OPTIONS') {
+      if (origin !== allowedOrigin) return reply.code(403).send({ code: 'CORS_ORIGIN_DENIED' })
+      return reply.code(204).send()
+    }
+    // Requests carrying an Origin must be from the configured web client. Requests
+    // without Origin are still handled by the endpoint's normal authentication.
+    if (origin !== undefined && origin !== allowedOrigin) return reply.code(403).send({ code: 'CORS_ORIGIN_DENIED' })
+  })
 
   const studentIdFrom = (headers: Record<string, unknown>): string | null => {
     const value = headers['x-student-id']

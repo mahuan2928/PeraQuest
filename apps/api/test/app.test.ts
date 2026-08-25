@@ -19,6 +19,25 @@ describe('identity, consent, and capabilities slice', () => {
     expect(response.json()).toEqual({ status: 'ok' })
   })
 
+  it('returns strict CORS headers for the configured origin and handles preflight', async () => {
+    vi.stubEnv('CORS_ORIGIN', 'https://dev.example.test')
+    const app = buildApp()
+    apps.push(app)
+
+    const preflight = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/students/onboarding',
+      headers: { origin: 'https://dev.example.test', 'access-control-request-method': 'POST' },
+    })
+    expect(preflight.statusCode).toBe(204)
+    expect(preflight.headers['access-control-allow-origin']).toBe('https://dev.example.test')
+    expect(preflight.headers['access-control-allow-methods']).toContain('POST')
+
+    const denied = await app.inject({ method: 'OPTIONS', url: '/health', headers: { origin: 'https://evil.example.test' } })
+    expect(denied.statusCode).toBe(403)
+    expect(denied.json()).toEqual({ code: 'CORS_ORIGIN_DENIED' })
+  })
+
   it('onboards a minor into pending guardian state', async () => {
     const app = buildApp({ now: () => new Date('2026-08-19T00:00:00Z') })
     apps.push(app)

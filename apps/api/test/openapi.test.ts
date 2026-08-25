@@ -4,8 +4,9 @@ import { describe, expect, it } from 'vitest'
 
 interface OpenApiDocument {
   openapi: string
-  paths: Record<string, Record<string, { operationId?: string }>>
-  components: { parameters: Record<string, unknown> }
+  paths: Record<string, Record<string, { operationId?: string; parameters?: Array<{ $ref?: string }>; security?: unknown }>>
+  components: { parameters: Record<string, { required?: boolean; description?: string; deprecated?: boolean }>; schemas: Record<string, unknown>; securitySchemes: Record<string, { description?: string }> }
+  ['x-runtime-contract-status']?: Record<string, string>
 }
 
 describe('OpenAPI document', () => {
@@ -26,5 +27,28 @@ describe('OpenAPI document', () => {
     expect(new Set(operationIds).size).toBe(operationIds.length)
     expect(document.components.parameters).toHaveProperty('ClientPlatform')
     expect(document.components.parameters).toHaveProperty('GuardianId')
+    expect(document.components.parameters.IdempotencyKey!).toMatchObject({ required: false })
+    expect(document.components.parameters.IdempotencyKey!.description).toContain('planned')
+    expect(document.components.parameters.IdempotencyKey!.description).toContain('Not implemented')
+    expect(document.components.parameters.LegacyGuardianHeader).toBeDefined()
+    expect(document.components.parameters.IfMatchRevision!).toMatchObject({ required: false })
+    expect(document.components.parameters.IfMatchRevision!.description).toContain('planned')
+    expect(document.components.parameters.IfMatchRevision!.description).toContain('Not implemented')
+    expect(document.components.schemas).toHaveProperty('AuthActor')
+    expect(document.components.schemas).toHaveProperty('GuardianLinkProjection')
+    expect(document.components.schemas).toHaveProperty('ConsentProjection')
+    expect(document.components.schemas).toHaveProperty('ErrorResponse')
+    expect(document.components.securitySchemes).toHaveProperty('BearerAuth')
+    expect(document.components.securitySchemes).toHaveProperty('LegacyGuardianHeader')
+    const writeOperations = Object.values(document.paths).flatMap((item) => Object.entries(item).filter(([method]) => ['post', 'put', 'patch', 'delete'].includes(method)).map(([, operation]) => operation as { parameters?: Array<{ $ref?: string }>; security?: unknown }))
+    expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey'))).toBe(true)
+    expect(writeOperations.every((operation) => operation.security === undefined)).toBe(true)
+    expect(document.components.securitySchemes.BearerAuth).toMatchObject({ description: expect.stringContaining('Not implemented') })
+    expect(document['x-runtime-contract-status']).toMatchObject({
+      authentication: expect.stringContaining('planned'),
+      idempotency: expect.stringContaining('not currently required'),
+      revision: expect.stringContaining('not currently required'),
+    })
+    expect(document.components.parameters.StudentId).toMatchObject({ deprecated: true })
   })
 })

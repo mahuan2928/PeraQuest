@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { MemoryStudentRepository } from '../src/repository.js'
 
 describe('Origin enforcement', () => {
   const apps: ReturnType<typeof buildApp>[] = []
+
+  beforeEach(() => { vi.stubEnv('ALLOW_LEGACY_TEST_HEADERS', 'true') })
 
   afterEach(async () => {
     vi.unstubAllEnvs()

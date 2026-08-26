@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite'
 import type { Pool } from 'pg'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
 import { PostgresStudentRepository } from '../src/repository.js'
 import { buildApp } from '../src/app.js'
@@ -19,6 +19,8 @@ const asMigrationDatabase = (database: PGlite): MigrationDatabase => ({
 })
 
 describe('database migrations', () => {
+  beforeEach(() => { vi.stubEnv('ALLOW_LEGACY_TEST_HEADERS', 'true') })
+
   afterEach(async () => {
     await Promise.all(databases.map((database) => database.close()))
     databases.length = 0

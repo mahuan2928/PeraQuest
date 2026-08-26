@@ -95,7 +95,10 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     if (origin !== undefined && origin !== allowedOrigin) return sendError(reply, 403, 'CORS_ORIGIN_DENIED')
   })
 
-  const studentIdFor = (request: { authActor: AuthActor; headers: Record<string, unknown> }): string => request.authActor.method === 'legacy_guardian_header' && typeof request.headers['x-student-id'] === 'string' ? request.headers['x-student-id'] : request.authActor.id
+  const studentIdFrom = (headers: Record<string, unknown>): string | null => {
+    const value = headers['x-student-id']
+    return typeof value === 'string' && value.length > 0 ? value : null
+  }
 
   const protectedPath = (url: string): boolean => url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
@@ -134,15 +137,16 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.get('/v1/me/guardian-link', async (request, reply): Promise<GuardianLinkResponse | void> => {
-    const studentId = studentIdFor(request)
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     return { status: student.guardianLinkStatus, purchaseAllowed: student.guardianLinkStatus === 'verified', verifiedAt: null }
   })
 
   app.put('/v1/me/consents/voice-processing', async (request, reply): Promise<ConsentResponse | void> => {
-    const auth = request.authActor
-    const studentId = studentIdFor(request)
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const parsed = consentSchema.safeParse(request.body)
     if (!parsed.success || parsed.data.version !== config.CONSENT_VERSION_REQUIRED) {
       return sendError(reply, 400, 'INVALID_CONSENT_VERSION', { field: 'version', reason: 'invalid', resource: 'consent' })
@@ -150,16 +154,17 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     if (student.isMinor && student.guardianLinkStatus !== 'verified') return sendError(reply, 403, 'GUARDIAN_VERIFICATION_REQUIRED')
-    const guardianId = auth.role === 'guardian' ? auth.id : null
-    if (student.isMinor && (auth.role !== 'guardian' || guardianId === null || guardianId !== student.guardianId)) return sendError(reply, 403, 'GUARDIAN_AUTH_REQUIRED')
+    const guardianHeader = request.headers['x-guardian-id']
+    const guardianId = typeof guardianHeader === 'string' ? guardianHeader : null
+    if (student.isMinor && (guardianId === null || guardianId !== student.guardianId)) return sendError(reply, 403, 'GUARDIAN_AUTH_REQUIRED')
     const consent = await repository.setVoiceConsent(studentId, student.isMinor ? guardianId : null, parsed.data.status, parsed.data.version)
     return { type: 'voice_processing', ...consent }
   })
 
   app.get('/v1/me/capabilities', async (request, reply): Promise<CapabilityResponse | void> => {
-    const studentId = studentIdFor(request)
-    const parsedPlatform = platformSchema.safeParse(request.headers['x-client-platform'])
+    const studentId = studentIdFrom(request.headers)
     if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
+    const parsedPlatform = platformSchema.safeParse(request.headers['x-client-platform'])
     if (!parsedPlatform.success) return sendError(reply, 400, 'INVALID_CLIENT_PLATFORM')
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
@@ -185,7 +190,8 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.post('/v1/trial-attempts', async (request, reply): Promise<TrialAttemptResponse | void> => {
-    const studentId = studentIdFor(request)
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     if (!student.isMinor || student.guardianLinkStatus !== 'pending') return sendError(reply, 403, 'TRIAL_NOT_AVAILABLE')
@@ -203,7 +209,8 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.post<{ Params: { attemptId: string } }>('/v1/trial-attempts/:attemptId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {
-    const studentId = studentIdFor(request)
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const parsed = trialAnswerSchema.safeParse(request.body)
     if (!parsed.success) return sendError(reply, 400, 'INVALID_TRIAL_ANSWER')
     const attempt = await repository.findTrialAttempt(request.params.attemptId)
@@ -232,7 +239,8 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.post('/v1/me/voice-upload-ticket', async (request, reply) => {
-    const studentId = studentIdFor(request)
+    const studentId = studentIdFrom(request.headers)
+    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     const consent = await repository.getVoiceConsent(studentId, config.CONSENT_VERSION_REQUIRED)

@@ -42,6 +42,48 @@ describe('AuthActor adapter', () => {
     await development.close()
   })
 
+  it('leaves the existing Guardian consent policy to the route guard', async () => {
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('ALLOW_LEGACY_TEST_HEADERS', 'true')
+    vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'minor-1', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId: 'guardian-1' })
+    const app = buildApp({ repository })
+
+    const missingGuardian = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers: { 'x-student-id': 'minor-1' },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(missingGuardian.statusCode).toBe(403)
+    expect(missingGuardian.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
+
+    const linkedGuardian = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers: { 'x-student-id': 'minor-1', 'x-guardian-id': 'guardian-1' },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(linkedGuardian.statusCode).toBe(200)
+    await app.close()
+  })
+
+  it('does not infer a target student from a bearer guardian actor', async () => {
+    vi.stubEnv('AUTH_ISSUER', claims.iss)
+    const guardianResolver = { resolve: async () => ({ id: 'guardian-1', role: 'guardian' as const }) }
+    const app = buildApp({ tokenVerifier: verifier, authUserResolver: guardianResolver })
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers: { authorization: 'Bearer token' },
+      payload: { status: 'granted', version: 'v0' },
+    })
+    expect(response.statusCode).toBe(401)
+    expect(response.json()).toEqual({ code: 'AUTH_REQUIRED' })
+    await app.close()
+  })
+
   it('rejects bearer and legacy identity mixing', async () => {
     vi.stubEnv('ALLOW_LEGACY_TEST_HEADERS', 'true')
     const app = buildApp({ tokenVerifier: verifier, authUserResolver: resolver })

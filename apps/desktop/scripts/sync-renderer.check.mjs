@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import process from 'node:process'
+import { URL } from 'node:url'
 import { promisify } from 'node:util'
 import test from 'node:test'
 import { syncRenderer } from './sync-renderer.mjs'
@@ -13,17 +14,22 @@ async function fixture() {
   return { root, source: `${root}/source`, target: `${root}/target` }
 }
 
-test('copies regular files, nested directories, modes, and removes stale output', async () => {
-  const { root, source, target } = await fixture()
+test('direct execution copies regular files, modes, and removes stale output', async () => {
+  const { root } = await fixture()
+  const source = `${root}/apps/web/dist`
+  const target = `${root}/apps/desktop/dist/renderer`
+  const script = `${root}/apps/desktop/scripts/sync-renderer.mjs`
   try {
     await mkdir(`${source}/assets/icons`, { recursive: true })
+    await mkdir(`${root}/apps/desktop/scripts`, { recursive: true })
+    await copyFile(new URL('sync-renderer.mjs', import.meta.url), script)
     await writeFile(`${source}/index.html`, '<!doctype html>')
     await writeFile(`${source}/assets/icons/app.svg`, '<svg />')
     await chmod(`${source}/assets/icons/app.svg`, 0o754)
     await mkdir(target, { recursive: true })
     await writeFile(`${target}/stale.txt`, 'must disappear')
 
-    await syncRenderer({ source, target })
+    await execFileAsync(process.execPath, [script])
 
     assert.equal(await readFile(`${target}/index.html`, 'utf8'), '<!doctype html>')
     assert.equal(await readFile(`${target}/assets/icons/app.svg`, 'utf8'), '<svg />')

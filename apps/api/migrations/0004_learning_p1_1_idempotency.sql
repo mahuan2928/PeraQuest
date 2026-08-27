@@ -177,23 +177,49 @@ CREATE TRIGGER stage_exams_identity_immutability_trg
 BEFORE UPDATE OR DELETE ON stage_exams
 FOR EACH ROW EXECUTE FUNCTION enforce_stage_exam_identity_immutability();
 
-CREATE OR REPLACE FUNCTION enforce_idempotency_record_identity_immutability()
+CREATE OR REPLACE FUNCTION enforce_idempotency_record_lifecycle()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status <> 'in_progress' THEN
+      RAISE EXCEPTION 'idempotency records must start in_progress' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.status = 'completed' THEN
+      RAISE EXCEPTION 'completed idempotency record is immutable' USING ERRCODE = '55000';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF OLD.status = 'completed' THEN
+    RAISE EXCEPTION 'completed idempotency record is immutable' USING ERRCODE = '55000';
+  END IF;
+
   IF NEW.id IS DISTINCT FROM OLD.id OR
      NEW.student_id IS DISTINCT FROM OLD.student_id OR
      NEW.operation_scope IS DISTINCT FROM OLD.operation_scope OR
      NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key OR
      NEW.request_hash IS DISTINCT FROM OLD.request_hash OR
-     NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+     NEW.created_at IS DISTINCT FROM OLD.created_at OR
+     NEW.expires_at IS DISTINCT FROM OLD.expires_at THEN
     RAISE EXCEPTION 'idempotency record identity is immutable' USING ERRCODE = '55000';
+  END IF;
+
+  IF OLD.status <> 'in_progress' OR NEW.status <> 'completed' THEN
+    RAISE EXCEPTION 'idempotency record may transition only once from in_progress to completed' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.completed_at IS DISTINCT FROM CURRENT_TIMESTAMP THEN
+    RAISE EXCEPTION 'idempotency completion must use database current time' USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
 END;
 $$;
-CREATE TRIGGER idempotency_records_identity_immutability_trg
-BEFORE UPDATE ON idempotency_records
-FOR EACH ROW EXECUTE FUNCTION enforce_idempotency_record_identity_immutability();
+CREATE TRIGGER idempotency_records_lifecycle_trg
+BEFORE INSERT OR UPDATE OR DELETE ON idempotency_records
+FOR EACH ROW EXECUTE FUNCTION enforce_idempotency_record_lifecycle();
 
 CREATE OR REPLACE FUNCTION enforce_stage_exam_version_mutability()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -380,32 +406,11 @@ BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'stage attempts cannot be deleted' USING ERRCODE = '55000';
   END IF;
-  IF OLD.status <> 'open' THEN
-    RAISE EXCEPTION 'terminal stage attempt is immutable' USING ERRCODE = '55000';
-  END IF;
-  IF NEW.id IS DISTINCT FROM OLD.id OR
-     NEW.student_id IS DISTINCT FROM OLD.student_id OR
-     NEW.exam_version_id IS DISTINCT FROM OLD.exam_version_id OR
-     NEW.started_at IS DISTINCT FROM OLD.started_at OR
-     NEW.expires_at IS DISTINCT FROM OLD.expires_at OR
-     NEW.created_at IS DISTINCT FROM OLD.created_at THEN
-    RAISE EXCEPTION 'stage attempt identity and creation window are immutable' USING ERRCODE = '55000';
-  END IF;
-  IF NEW.status NOT IN ('passed', 'failed', 'expired') THEN
-    RAISE EXCEPTION 'stage attempt may transition only once from open to terminal' USING ERRCODE = '23514';
-  END IF;
-  IF NEW.updated_at IS DISTINCT FROM CURRENT_TIMESTAMP THEN
-    RAISE EXCEPTION 'terminal transition must set updated_at to database current time' USING ERRCODE = '23514';
-  END IF;
-  IF NEW.status IN ('passed', 'failed') AND NEW.submitted_at IS DISTINCT FROM CURRENT_TIMESTAMP THEN
-    RAISE EXCEPTION 'submission transition must set submitted_at to database current time' USING ERRCODE = '23514';
-  END IF;
-  IF NEW.status = 'expired' AND (
-    NEW.expired_at IS DISTINCT FROM CURRENT_TIMESTAMP OR CURRENT_TIMESTAMP < OLD.expires_at
-  ) THEN
-    RAISE EXCEPTION 'expiry transition must occur at or after expiry using database current time' USING ERRCODE = '23514';
-  END IF;
-  RETURN NEW;
+
+  -- P1.1 persists only the attempt envelope. It has no submitted-answer/evidence
+  -- rows from which PostgreSQL could independently derive exact earned points.
+  -- P1.3 must replace this guard when its grading runtime and evidence storage land.
+  RAISE EXCEPTION 'stage attempt terminal transitions require P1.3 grading runtime' USING ERRCODE = '55000';
 END;
 $$;
 CREATE TRIGGER stage_attempt_transition_trg

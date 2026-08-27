@@ -248,4 +248,113 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
       await Promise.all([publisher.end(), childWriter.end()])
     }
   }, 30_000)
+
+  it('rejects forged direct-SQL attempt outcomes until persisted grading evidence exists', async () => {
+    const schema = await createSchema()
+    const client = await connect(schema)
+    try {
+      await runMigrations(client)
+      await seedCompleteDraft(client)
+      await client.query(`
+        UPDATE stage_exam_versions
+        SET status = 'published', published_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [ids.version])
+      await client.query(`
+        INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
+        VALUES ('00000000-0000-0000-0000-000000000301', $1, $2,
+                CURRENT_TIMESTAMP + interval '20 minutes')
+      `, [ids.student, ids.version])
+
+      for (const transition of [
+        `SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1,
+             passed = true, updated_at = CURRENT_TIMESTAMP`,
+        `SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0,
+             passed = false, updated_at = CURRENT_TIMESTAMP`,
+        `SET status = 'expired', expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP`,
+      ]) {
+        await expect(client.query(`
+          UPDATE stage_attempts ${transition}
+          WHERE id = '00000000-0000-0000-0000-000000000301'
+        `)).rejects.toThrow(/P1.3 grading runtime/)
+      }
+
+      const attempt = await client.query<{ status: string; score: string | null; passed: boolean | null }>(`
+        SELECT status, score::text AS score, passed
+        FROM stage_attempts
+        WHERE id = '00000000-0000-0000-0000-000000000301'
+      `)
+      expect(attempt.rows).toEqual([{ status: 'open', score: null, passed: null }])
+    } finally {
+      await client.end()
+    }
+  }, 30_000)
+
+  it('allows one direct-SQL idempotency completion and rejects every completed-row mutation', async () => {
+    const schema = await createSchema()
+    const client = await connect(schema)
+    try {
+      await runMigrations(client)
+      await client.query(`INSERT INTO users (id, role, is_minor) VALUES ($1, 'student', false)`, [ids.student])
+      await expect(client.query(`
+        INSERT INTO idempotency_records
+          (student_id, operation_scope, idempotency_key, request_hash, status, http_status,
+           response_headers, response_body, completed_at, expires_at)
+        VALUES ($1, 'stage_attempt.start:v1:forged', 'request-forged', decode(repeat('ab', 32), 'hex'),
+                'completed', 201, '{}'::jsonb, '{}'::jsonb, CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP + interval '1 day')
+      `, [ids.student])).rejects.toThrow(/must start in_progress/)
+      await client.query(`
+        INSERT INTO idempotency_records
+          (student_id, operation_scope, idempotency_key, request_hash, expires_at)
+        VALUES ($1, 'stage_attempt.start:v1:one', 'request-1', decode(repeat('ab', 32), 'hex'),
+                CURRENT_TIMESTAMP + interval '1 day')
+      `, [ids.student])
+      await client.query(`
+        UPDATE idempotency_records
+        SET status = 'completed', http_status = 201,
+            response_headers = '{"content-type":"application/json"}'::jsonb,
+            response_body = '{"attempt_id":"one"}'::jsonb,
+            completed_at = CURRENT_TIMESTAMP
+        WHERE student_id = $1 AND operation_scope = 'stage_attempt.start:v1:one'
+      `, [ids.student])
+
+      for (const mutation of [
+        'http_status = 202',
+        `response_headers = '{"x-replayed":"true"}'::jsonb`,
+        `response_body = '{"attempt_id":"forged"}'::jsonb`,
+        'completed_at = CURRENT_TIMESTAMP',
+        `status = 'in_progress', http_status = NULL, response_headers = NULL, response_body = NULL, completed_at = NULL`,
+      ]) {
+        await expect(client.query(`
+          UPDATE idempotency_records SET ${mutation}
+          WHERE student_id = $1 AND operation_scope = 'stage_attempt.start:v1:one'
+        `, [ids.student])).rejects.toThrow(/completed idempotency record is immutable/)
+      }
+      await expect(client.query(`
+        DELETE FROM idempotency_records
+        WHERE student_id = $1 AND operation_scope = 'stage_attempt.start:v1:one'
+      `, [ids.student])).rejects.toThrow(/completed idempotency record is immutable/)
+
+      const snapshot = await client.query<{
+        status: string
+        http_status: number
+        response_headers: unknown
+        response_body: unknown
+      }>(`
+        SELECT status, http_status, response_headers, response_body
+        FROM idempotency_records
+        WHERE student_id = $1 AND operation_scope = 'stage_attempt.start:v1:one'
+      `, [ids.student])
+      expect(snapshot.rows).toEqual([{
+        status: 'completed',
+        http_status: 201,
+        response_headers: { 'content-type': 'application/json' },
+        response_body: { attempt_id: 'one' },
+      }])
+    } finally {
+      await client.end()
+    }
+  }, 30_000)
+
 })

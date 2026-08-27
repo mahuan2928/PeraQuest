@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { Client } from 'pg'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { runMigrations } from '../src/migrate.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
+
+if (process.env.CI && !connectionString) {
+  throw new Error('TEST_DATABASE_URL is required in CI for PostgreSQL concurrency tests')
+}
+
 const describePostgres = connectionString ? describe : describe.skip
 const schemas: string[] = []
 
@@ -102,12 +107,6 @@ const childWrites = [
     publicationSucceeds: true,
   },
 ] as const
-
-beforeAll(() => {
-  if (!connectionString && process.env.CI) {
-    throw new Error('TEST_DATABASE_URL is required in CI for PostgreSQL concurrency tests')
-  }
-})
 
 afterEach(async () => {
   if (!connectionString) return

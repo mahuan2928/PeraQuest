@@ -1,0 +1,127 @@
+name: Pull request CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CI: 1
+
+concurrency:
+  group: pr-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Install, audit, and quality checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      matrix: ${{ steps.changes.outputs.matrix }}
+      has-builds: ${{ steps.changes.outputs.has-builds }}
+      trial-e2e: ${{ steps.changes.outputs.trial-e2e }}
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install from the root lockfile with lifecycle scripts
+        run: npm ci
+      - name: Audit high and critical production vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Test CI path selection
+        run: npm run test:ci
+      - name: Select dependent checks
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/select-builds.mjs "$BASE_SHA" "$HEAD_SHA"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: quality
+    if: needs.quality.outputs.has-builds == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.quality.outputs.matrix) }}
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up Java for Android smoke check
+        if: matrix.name == 'mobile'
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install from the root lockfile with lifecycle scripts
+        run: npm ci
+      - name: Build Web or API
+        if: matrix.name == 'web' || matrix.name == 'api'
+        run: npm run build -w "${{ matrix.workspace }}"
+      - name: Build Desktop source only
+        if: matrix.name == 'desktop'
+        run: npm run build:source -w @peraquest/desktop
+      - name: Validate Mobile native projects
+        if: matrix.name == 'mobile'
+        shell: bash
+        run: |
+          npm run build -w @peraquest/web
+          npm run build -w @peraquest/mobile
+          npm exec -w @peraquest/mobile -- cap sync android
+          npm exec -w @peraquest/mobile -- cap sync ios
+          test -f apps/mobile/ios/App/App.xcodeproj/project.pbxproj
+          test -f apps/mobile/ios/App/App/Info.plist
+          chmod +x apps/mobile/android/gradlew
+          (cd apps/mobile/android && ./gradlew tasks --no-daemon)
+
+  trial-e2e:
+    name: Trial Playwright E2E
+    needs: quality
+    if: needs.quality.outputs.trial-e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      ALLOW_LEGACY_TEST_HEADERS: 'true'
+      CORS_ORIGIN: http://127.0.0.1:4173
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install from the root lockfile with lifecycle scripts
+        run: npm ci
+      - name: Install Chromium system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Run Trial E2E against test-mode API
+        run: npm run test:e2e -w @peraquest/web -- --project=pc-chromium

@@ -21,7 +21,8 @@
     "package:desktop": "npm run package -w @peraquest/desktop",
     "build:cloudflare": "npm run build -w @peraquest/web",
     "deploy:cloudflare": "npm run build:cloudflare && npx --yes wrangler@4.124.0 deploy",
-    "deploy": "npm run deploy:cloudflare"
+    "deploy": "npm run deploy:cloudflare",
+    "test:ci": "node --test scripts/ci/*.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

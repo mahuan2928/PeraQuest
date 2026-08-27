@@ -5,6 +5,7 @@ import type {
   TrialAnswerRequest,
   TrialAnswerResponse,
   TrialAttemptResponse,
+  StableErrorCode,
 } from '@peraquest/contracts'
 
 export function normalizeApiBaseUrl(baseUrl: string | undefined): string {
@@ -32,12 +33,22 @@ function studentHeaders(): HeadersInit {
   }
 }
 
+export class ApiRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code?: StableErrorCode,
+  ) {
+    super(`REQUEST_FAILED_${status}`)
+    this.name = 'ApiRequestError'
+  }
+}
+
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(buildApiUrl(url), init)
   if (!response.ok) {
-    const error = new Error(`REQUEST_FAILED_${response.status}`)
-    Object.assign(error, { status: response.status })
-    throw error
+    const payload = await response.json().catch(() => null) as { code?: unknown } | null
+    const code = typeof payload?.code === 'string' ? payload.code as StableErrorCode : undefined
+    throw new ApiRequestError(response.status, code)
   }
   return response.json() as Promise<T>
 }

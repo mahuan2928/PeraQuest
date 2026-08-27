@@ -13,8 +13,10 @@ import type {
   TrialAnswerResponse,
   TrialAttemptResponse,
   StableErrorCode,
+  AuthActor,
 } from '@peraquest/contracts'
 import { loadConfig } from './config.js'
+import { AuthFailure, createAuthActor, defaultTokenVerifier, legacyActor, parseBearerToken, type AuthUserResolver, type TokenVerifier } from './auth.js'
 import { MemoryStudentRepository, type StudentRepository } from './repository.js'
 import { publicTrialQuestion, trialQuestions } from './trial.js'
 
@@ -54,12 +56,16 @@ const channelsFor = (platform: ClientPlatform): { payments: PaymentChannel[]; no
 export interface BuildAppOptions {
   repository?: StudentRepository
   now?: () => Date
+  tokenVerifier?: TokenVerifier
+  authUserResolver?: AuthUserResolver
 }
 
 export const buildApp = (options: BuildAppOptions = {}) => {
   const app = Fastify({ logger: false })
   const config = loadConfig()
   const repository = options.repository ?? new MemoryStudentRepository()
+  const tokenVerifier = options.tokenVerifier ?? defaultTokenVerifier
+  const authUserResolver = options.authUserResolver ?? { resolve: async () => null }
   const now = options.now ?? (() => new Date())
   app.setErrorHandler((error, _request, reply) => {
     // Keep provider/raw/stack/token details server-side; the public contract exposes only a stable code.
@@ -67,10 +73,11 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   const allowedOrigin = config.CORS_ORIGIN
+  app.decorateRequest('authActor', null as unknown as AuthActor)
   const corsHeaders = {
     'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
-    'access-control-allow-headers': 'content-type,x-student-id,x-client-platform,x-guardian-id',
+    'access-control-allow-headers': 'content-type,authorization,x-client-platform',
     vary: 'Origin',
   }
 
@@ -92,6 +99,28 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const value = headers['x-student-id']
     return typeof value === 'string' && value.length > 0 ? value : null
   }
+
+  const protectedPath = (url: string): boolean => url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
+  app.addHook('preValidation', async (request, reply) => {
+    if (!protectedPath(request.url)) return
+    try {
+      const authorization = request.headers.authorization
+      if (authorization !== undefined) {
+        if (request.headers['x-student-id'] !== undefined || request.headers['x-guardian-id'] !== undefined) throw new AuthFailure('AUTH_INVALID')
+        const token = parseBearerToken(authorization)
+        request.authActor = await createAuthActor(token, { issuer: config.AUTH_ISSUER, audience: config.AUTH_AUDIENCE, jwksUrl: config.AUTH_JWKS_URL, clockSkewSeconds: config.AUTH_CLOCK_SKEW_SECONDS }, tokenVerifier, authUserResolver, () => now().getTime())
+        return
+      }
+      if (config.ALLOW_LEGACY_TEST_HEADERS) {
+        const actor = legacyActor(request.headers)
+        if (actor) { request.authActor = actor; return }
+      }
+      throw new AuthFailure('AUTH_REQUIRED')
+    } catch (error) {
+      const code = error instanceof AuthFailure ? error.code : 'AUTH_INVALID'
+      return reply.code(401).send({ code })
+    }
+  })
 
   app.get('/health', async () => ({ status: 'ok' as const }))
 
@@ -134,8 +163,8 @@ export const buildApp = (options: BuildAppOptions = {}) => {
 
   app.get('/v1/me/capabilities', async (request, reply): Promise<CapabilityResponse | void> => {
     const studentId = studentIdFrom(request.headers)
-    const parsedPlatform = platformSchema.safeParse(request.headers['x-client-platform'])
     if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
+    const parsedPlatform = platformSchema.safeParse(request.headers['x-client-platform'])
     if (!parsedPlatform.success) return sendError(reply, 400, 'INVALID_CLIENT_PLATFORM')
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')

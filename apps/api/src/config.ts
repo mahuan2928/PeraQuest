@@ -22,6 +22,7 @@ const schema = z.object({
   AI_VENDOR_APPROVED: booleanFlag.default(false),
   CONSENT_VERSION_REQUIRED: z.string().min(1).default('v0'),
   ALLOW_LEGACY_TEST_HEADERS: booleanFlag.default(false),
+  AUTH_PROVIDER: z.enum(['apple', 'google', 'email_magic_link']).default('email_magic_link'),
   AUTH_ISSUER: z.string().url().default('https://issuer.example.test'),
   AUTH_AUDIENCE: z.string().min(1).default('peraquest-api'),
   AUTH_JWKS_URL: z.string().url().default('https://issuer.example.test/.well-known/jwks.json'),
@@ -32,9 +33,11 @@ const schema = z.object({
   AUTH_JWKS_TIMEOUT_MS: z.coerce.number().int().positive().max(30_000).default(5_000),
 })
 
-const productionAuthKeys = ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_JWKS_URL'] as const
+const productionAuthKeys = ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_JWKS_URL', 'AUTH_PROVIDER'] as const
 
-export const loadConfig = (environment: NodeJS.ProcessEnv = process.env) => {
+export type RuntimeConfig = z.infer<typeof schema>
+
+export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): RuntimeConfig => {
   const config = schema.parse(environment)
   if (config.NODE_ENV === 'production') {
     for (const key of productionAuthKeys) {

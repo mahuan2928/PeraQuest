@@ -16,6 +16,7 @@ describe('runtime configuration', () => {
     expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow('AUTH_ISSUER is required in production')
     expect(() => loadConfig({
       NODE_ENV: 'production',
+      AUTH_PROVIDER: 'email_magic_link',
       AUTH_ISSUER: 'http://issuer.example.test',
       AUTH_AUDIENCE: 'peraquest-api',
       AUTH_JWKS_URL: 'http://issuer.example.test/jwks',
@@ -25,10 +26,12 @@ describe('runtime configuration', () => {
   it('accepts explicit HTTPS production auth configuration', () => {
     const config = loadConfig({
       NODE_ENV: 'production',
+      AUTH_PROVIDER: 'email_magic_link',
       AUTH_ISSUER: 'https://issuer.example.test',
       AUTH_AUDIENCE: 'peraquest-api',
       AUTH_JWKS_URL: 'https://issuer.example.test/.well-known/jwks.json',
     })
     expect(config.ALLOW_LEGACY_TEST_HEADERS).toBe(false)
+    expect(config.AUTH_PROVIDER).toBe('email_magic_link')
   })
 })

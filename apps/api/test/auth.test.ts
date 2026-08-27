@@ -30,6 +30,7 @@ describe('AuthActor adapter', () => {
   it('fails closed in production and allows explicit legacy adapter only in development', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('ALLOW_LEGACY_TEST_HEADERS', 'true')
+    vi.stubEnv('AUTH_PROVIDER', 'email_magic_link')
     vi.stubEnv('AUTH_ISSUER', 'https://issuer.test')
     vi.stubEnv('AUTH_AUDIENCE', 'peraquest-api')
     vi.stubEnv('AUTH_JWKS_URL', 'https://issuer.test/jwks')

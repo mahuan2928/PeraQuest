@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import type { TrialQuestion } from '@peraquest/contracts'
 import { computed, nextTick, ref } from 'vue'
-import { submitTrialAnswer } from '../api/onboarding'
+import { ApiRequestError, submitTrialAnswer } from '../api/onboarding'
 
 const props = defineProps<{
   attemptId: string
   initialQuestion: TrialQuestion
   questionCount: number
 }>()
-const emit = defineEmits<{ complete: [score: number] }>()
+const emit = defineEmits<{ complete: [score: number], expired: [] }>()
 const questionNumber = ref(1)
 const current = ref<TrialQuestion>(props.initialQuestion)
 const selected = ref('')
@@ -20,11 +20,12 @@ const explanation = ref('')
 const completedScore = ref<number | null>(null)
 const nextQuestion = ref<TrialQuestion | null>(null)
 const serviceError = ref('')
+const attemptExpired = ref(false)
 const feedback = ref<HTMLElement | null>(null)
 const progress = computed(() => (questionNumber.value / props.questionCount) * 100)
 
 async function submitAnswer() {
-  if (!selected.value || submitted.value || submitting.value) return
+  if (!selected.value || submitted.value || submitting.value || attemptExpired.value) return
   submitting.value = true
   serviceError.value = ''
   try {
@@ -40,8 +41,15 @@ async function submitAnswer() {
     submitted.value = true
     await nextTick()
     feedback.value?.focus()
-  } catch {
-    serviceError.value = '答えを送信できませんでした。回答はそのままです。もう一度お試しください。'
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 410 && error.code === 'TRIAL_ATTEMPT_EXPIRED') {
+      attemptExpired.value = true
+      selected.value = ''
+      serviceError.value = 'おためしクエストの有効期限が切れました。'
+      emit('expired')
+    } else {
+      serviceError.value = '答えを送信できませんでした。回答はそのままです。もう一度お試しください。'
+    }
   } finally {
     submitting.value = false
   }
@@ -102,7 +110,7 @@ function next() {
       <p class="question-support">
         {{ current.support }}
       </p>
-      <fieldset :disabled="submitted || submitting">
+      <fieldset :disabled="submitted || submitting || attemptExpired">
         <legend class="sr-only">
           答えを1つ選んでください
         </legend>
@@ -146,7 +154,7 @@ function next() {
         class="primary-action"
         data-testid="submit-answer"
         type="button"
-        :disabled="!selected || submitting"
+        :disabled="!selected || submitting || attemptExpired"
         @click="submitAnswer"
       >
         {{ submitting ? '送信中…' : '答えを確認する' }}

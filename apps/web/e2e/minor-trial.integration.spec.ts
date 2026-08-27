@@ -1,7 +1,27 @@
 import { expect, test } from '@playwright/test'
+import { buildApp } from '../../api/src/app'
 
 const STUDENT_ID_KEY = 'lingoquest.student.id'
 const LEGACY_TRIAL_KEY = 'lingoquest.trial.redeemed.v1'
+let expiryClock = new Date('2026-08-27T00:00:00.000Z')
+let expiryApi: ReturnType<typeof buildApp>
+let expiryApiOrigin = ''
+
+test.beforeAll(async () => {
+  process.env.NODE_ENV = 'test'
+  process.env.ALLOW_LEGACY_TEST_HEADERS = 'true'
+  process.env.CORS_ORIGIN = 'http://127.0.0.1:4173'
+  expiryApi = buildApp({ now: () => expiryClock })
+  expiryApiOrigin = await expiryApi.listen({ host: '127.0.0.1', port: 0 })
+})
+
+test.afterAll(async () => {
+  await expiryApi.close()
+})
+
+test.beforeEach(() => {
+  expiryClock = new Date('2026-08-27T00:00:00.000Z')
+})
 
 test('real API keeps a minor gated and enforces one non-persistent trial on the server', async ({ page }) => {
   const trialRequests: Array<{ url: string; body: unknown }> = []
@@ -52,6 +72,40 @@ test('real API keeps a minor gated and enforces one non-persistent trial on the 
 
   const replay = await page.request.post('/v1/trial-attempts', { headers: { 'x-student-id': studentId! } })
   expect(replay.status()).toBe(409)
+})
+
+test('real API 410 expiry returns to GuardianWait and never starts a second trial', async ({ page }) => {
+  let trialStarts = 0
+  await page.route('**/v1/**', async (route) => {
+    const requestUrl = new URL(route.request().url())
+    const response = await route.fetch({
+      url: `${expiryApiOrigin}${requestUrl.pathname}${requestUrl.search}`,
+    })
+    await route.fulfill({ response })
+  })
+  page.on('request', (request) => {
+    if (request.method() !== 'POST') return
+    if (new URL(request.url()).pathname === '/v1/trial-attempts') trialStarts += 1
+  })
+
+  await page.goto('/')
+  await page.getByTestId('birth-month').fill('2012-04')
+  await page.getByTestId('onboarding-submit').click()
+  await page.getByTestId('start-trial').click()
+  await expect(page.getByText('TRIAL QUEST')).toBeVisible()
+  expiryClock = new Date('2026-08-27T00:31:00.000Z')
+  await page.getByRole('radio').first().check()
+  const expiredResponse = page.waitForResponse((response) =>
+    response.url().includes('/answers') && response.status() === 410)
+  await page.getByTestId('submit-answer').click()
+  expect(await (await expiredResponse).json()).toEqual({ code: 'TRIAL_ATTEMPT_EXPIRED' })
+
+  await expect(page.getByRole('heading', { name: /保護者の方との/ })).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('有効期限が切れました')
+  await expect(page.getByText(/新しいおためしは開始せず、保護者の方に連携/)).toBeVisible()
+  await expect(page.getByTestId('start-trial')).toBeDisabled()
+  await expect(page.getByText('TRIAL QUEST')).toHaveCount(0)
+  expect(trialStarts).toBe(1)
 })
 
 test('trial API failure keeps the minor on the restricted guardian screen', async ({ page }) => {

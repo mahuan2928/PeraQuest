@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { TrialQuestion } from '@peraquest/contracts'
-import { createStudentOnboarding, createTrialAttempt, getCapabilities, getGuardianStatus } from './api/onboarding'
+import { ApiRequestError, createStudentOnboarding, createTrialAttempt, getCapabilities, getGuardianStatus } from './api/onboarding'
 import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
 import TrialLesson from './components/TrialLesson.vue'
@@ -58,7 +58,7 @@ async function startTrial() {
     trialStatus.value = 'idle'
     step.value = 'trial'
   } catch (error) {
-    if (error instanceof Error && error.message === 'REQUEST_FAILED_409') {
+    if (error instanceof ApiRequestError && error.status === 409 && error.code === 'TRIAL_ALREADY_REDEEMED') {
       trialRedeemed.value = true
       trialStatus.value = 'expired'
       trialError.value = 'このアカウントのおためしクエストは利用済みか、有効期限が切れています。'
@@ -69,6 +69,16 @@ async function startTrial() {
   } finally {
     trialPending.value = false
   }
+}
+
+function expireTrial() {
+  trialAttemptId.value = ''
+  trialQuestion.value = null
+  trialQuestionCount.value = 0
+  trialRedeemed.value = true
+  trialStatus.value = 'expired'
+  trialError.value = 'おためしクエストの有効期限が切れました。新しいおためしは開始せず、保護者の方に連携をお願いしてください。'
+  step.value = 'guardian'
 }
 
 function completeTrial(value: number) {
@@ -117,6 +127,7 @@ function completeTrial(value: number) {
         :initial-question="trialQuestion"
         :question-count="trialQuestionCount"
         @complete="completeTrial"
+        @expired="expireTrial"
       />
       <TrialResult
         v-else-if="step === 'result'"

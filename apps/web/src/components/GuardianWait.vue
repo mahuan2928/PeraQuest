@@ -77,7 +77,9 @@ const emit = defineEmits<{ startTrial: [] }>()
       class="redeemed-note"
       role="status"
     >
-      このアカウントのおためしクエストは完了しています。保護者連携後に続きから学べます。
+      {{ trialStatus === 'expired'
+        ? 'このおためしは終了しました。新しいおためしは開始せず、保護者連携後に学習を続けてください。'
+        : 'このアカウントのおためしクエストは完了しています。保護者連携後に続きから学べます。' }}
     </p>
     <p class="restriction-note">
       保護者連携までは、音声アップロード・購入・長期学習記録は利用できません。

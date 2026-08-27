@@ -136,6 +136,22 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('接続エラー')
   })
 
+  it('stops retries on the same attempt after a structured 410 expiry', async () => {
+    sessionStorage.setItem('lingoquest.student.id', 'student-test')
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ code: 'TRIAL_ATTEMPT_EXPIRED' }, 410))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(TrialLesson, {
+      props: { attemptId: 'expired-attempt', initialQuestion: firstQuestion, questionCount: 2 },
+    })
+
+    await wrapper.get('input[value="play"]').setValue(true)
+    await wrapper.get('[data-testid="submit-answer"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('expired')).toEqual([[]]))
+    expect(wrapper.get('[data-testid="submit-answer"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="submit-answer"]').trigger('click')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('uses server questions and submits answers in order', async () => {
     sessionStorage.setItem('lingoquest.student.id', 'student-test')
     const fetchMock = vi.fn()
@@ -224,6 +240,31 @@ describe('minor onboarding vertical slice', () => {
     await firstButton!.trigger('click')
     expect(wrapper.emitted('practice')).toBeUndefined()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('returns an expired answer attempt to GuardianWait without starting a second trial', async () => {
+    installSuccessfulApi()
+    const fetchMock = vi.mocked(fetch)
+    const baseImplementation = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/answers')) return jsonResponse({ code: 'TRIAL_ATTEMPT_EXPIRED' }, 410)
+      return baseImplementation(input, init)
+    })
+
+    const wrapper = mount(App)
+    await wrapper.get('[data-testid="birth-month"]').setValue('2012-04')
+    await wrapper.get('form').trigger('submit')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="start-trial"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="start-trial"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain(firstQuestion.prompt))
+    await wrapper.get('input[value="play"]').setValue(true)
+    await wrapper.get('[data-testid="submit-answer"]').trigger('click')
+
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('有効期限が切れました'))
+    expect(wrapper.get('[data-testid="start-trial"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('新しいおためしは開始せず、保護者の方に連携')
+    expect(wrapper.text()).not.toContain(firstQuestion.prompt)
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/v1/trial-attempts')).toHaveLength(1)
   })
 
   it('fails closed when onboarding policy cannot be loaded', async () => {

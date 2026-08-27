@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.vue'
 import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
+import KnowledgeMastery from './components/KnowledgeMastery.vue'
 import TrialLesson from './components/TrialLesson.vue'
 
 const firstQuestion: TrialQuestion = {
@@ -60,6 +61,32 @@ function installSuccessfulApi() {
         expiresAt: '2026-08-19T14:00:00.000Z',
         progressPersisted: false,
       }, 201)
+    }
+    throw new Error(`Unexpected request: ${url}`)
+  }))
+}
+
+function installActiveApi() {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/v1/students/onboarding') {
+      return jsonResponse({
+        studentId: 'student-active',
+        isMinor: false,
+        guardianLinkStatus: 'not_required',
+        onboardingStatus: 'active',
+      }, 201)
+    }
+    if (url === '/v1/me/guardian-link') {
+      return jsonResponse({ status: 'not_required', purchaseAllowed: true, verifiedAt: null })
+    }
+    if (url === '/v1/me/capabilities') {
+      return jsonResponse({
+        guardianLinkStatus: 'not_required',
+        canLearn: true,
+        canUploadVoice: true,
+        canPurchase: true,
+      })
     }
     throw new Error(`Unexpected request: ${url}`)
   }))
@@ -146,6 +173,37 @@ describe('minor onboarding vertical slice', () => {
     await wrapper.get('[data-testid="start-trial"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain(firstQuestion.prompt))
     expect(localStorage.length).toBe(0)
+  })
+
+  it('switches to the knowledge mastery page for an active learner', async () => {
+    installActiveApi()
+    const wrapper = mount(App)
+
+    expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="birth-month"]').setValue('2000-04')
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => expect(wrapper.get('#mastery-title').text()).toBe('知識マップ'))
+    expect(wrapper.text()).toContain('全体の掌握度')
+    expect(wrapper.get('[data-testid="mastery-demo-notice"]').text()).toContain('実際の学習データではありません')
+    expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(false)
+  })
+
+  it('keeps demo practice unavailable without emitting or calling an API', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(KnowledgeMastery)
+    const buttons = wrapper.findAll('[data-testid="practice-unavailable"]')
+
+    expect(buttons.length).toBeGreaterThan(0)
+    expect(buttons.every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+    expect(wrapper.text()).toContain('Demoでは利用できません')
+
+    const firstButton = buttons.at(0)
+    expect(firstButton).toBeDefined()
+    await firstButton!.trigger('click')
+    expect(wrapper.emitted('practice')).toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('fails closed when onboarding policy cannot be loaded', async () => {

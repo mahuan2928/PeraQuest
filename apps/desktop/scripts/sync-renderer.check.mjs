@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import process from 'node:process'
 import { URL } from 'node:url'
 import { promisify } from 'node:util'
@@ -22,7 +22,10 @@ test('direct execution copies regular files, modes, and removes stale output', a
   try {
     await mkdir(`${source}/assets/icons`, { recursive: true })
     await mkdir(`${root}/apps/desktop/scripts`, { recursive: true })
-    await copyFile(new URL('sync-renderer.mjs', import.meta.url), script)
+    const scriptSource = new URL('sync-renderer.mjs', import.meta.url)
+    const scriptMode = (await lstat(scriptSource)).mode & 0o777
+    await writeFile(script, await readFile(scriptSource))
+    await chmod(script, scriptMode)
     await writeFile(`${source}/index.html`, '<!doctype html>')
     await writeFile(`${source}/assets/icons/app.svg`, '<svg />')
     await chmod(`${source}/assets/icons/app.svg`, 0o754)

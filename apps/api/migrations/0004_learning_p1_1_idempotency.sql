@@ -99,6 +99,8 @@ CREATE TABLE stage_attempts (
   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CHECK (expires_at > started_at),
+  CHECK (submitted_at IS NULL OR submitted_at >= started_at),
+  CHECK (updated_at >= created_at),
   CHECK (
     (status = 'open' AND submitted_at IS NULL AND expired_at IS NULL AND score IS NULL AND passed IS NULL) OR
     (status = 'passed' AND submitted_at IS NOT NULL AND expired_at IS NULL AND score IS NOT NULL AND passed IS TRUE) OR
@@ -146,6 +148,52 @@ CREATE INDEX idempotency_records_expiry_idx
 CREATE INDEX idempotency_records_in_progress_idx
   ON idempotency_records(created_at)
   WHERE status = 'in_progress';
+
+CREATE OR REPLACE FUNCTION enforce_stage_exam_identity_immutability()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND (
+    NEW.id IS DISTINCT FROM OLD.id OR
+    NEW.exam_level IS DISTINCT FROM OLD.exam_level OR
+    NEW.stage IS DISTINCT FROM OLD.stage OR
+    NEW.code IS DISTINCT FROM OLD.code OR
+    NEW.created_at IS DISTINCT FROM OLD.created_at
+  ) THEN
+    RAISE EXCEPTION 'stage exam business identity is immutable' USING ERRCODE = '55000';
+  END IF;
+
+  IF TG_OP = 'DELETE' AND EXISTS (
+    SELECT 1 FROM stage_exam_versions
+    WHERE exam_id = OLD.id AND status = 'published'
+  ) THEN
+    RAISE EXCEPTION 'stage exam with a published version cannot be deleted' USING ERRCODE = '55000';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER stage_exams_identity_immutability_trg
+BEFORE UPDATE OR DELETE ON stage_exams
+FOR EACH ROW EXECUTE FUNCTION enforce_stage_exam_identity_immutability();
+
+CREATE OR REPLACE FUNCTION enforce_idempotency_record_identity_immutability()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.id IS DISTINCT FROM OLD.id OR
+     NEW.student_id IS DISTINCT FROM OLD.student_id OR
+     NEW.operation_scope IS DISTINCT FROM OLD.operation_scope OR
+     NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key OR
+     NEW.request_hash IS DISTINCT FROM OLD.request_hash OR
+     NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'idempotency record identity is immutable' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER idempotency_records_identity_immutability_trg
+BEFORE UPDATE ON idempotency_records
+FOR EACH ROW EXECUTE FUNCTION enforce_idempotency_record_identity_immutability();
 
 CREATE OR REPLACE FUNCTION enforce_stage_exam_version_mutability()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -326,23 +374,43 @@ CREATE TRIGGER stage_attempt_insert_validate_trg
 BEFORE INSERT ON stage_attempts
 FOR EACH ROW EXECUTE FUNCTION validate_stage_attempt_insert();
 
-CREATE OR REPLACE FUNCTION enforce_stage_attempt_identity_and_terminal_immutability()
+CREATE OR REPLACE FUNCTION enforce_stage_attempt_transition()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'stage attempts cannot be deleted' USING ERRCODE = '55000';
+  END IF;
   IF OLD.status <> 'open' THEN
     RAISE EXCEPTION 'terminal stage attempt is immutable' USING ERRCODE = '55000';
   END IF;
-  IF NEW.student_id <> OLD.student_id OR NEW.exam_version_id <> OLD.exam_version_id OR
-     NEW.started_at <> OLD.started_at OR NEW.expires_at <> OLD.expires_at OR
-     NEW.created_at <> OLD.created_at THEN
+  IF NEW.id IS DISTINCT FROM OLD.id OR
+     NEW.student_id IS DISTINCT FROM OLD.student_id OR
+     NEW.exam_version_id IS DISTINCT FROM OLD.exam_version_id OR
+     NEW.started_at IS DISTINCT FROM OLD.started_at OR
+     NEW.expires_at IS DISTINCT FROM OLD.expires_at OR
+     NEW.created_at IS DISTINCT FROM OLD.created_at THEN
     RAISE EXCEPTION 'stage attempt identity and creation window are immutable' USING ERRCODE = '55000';
+  END IF;
+  IF NEW.status NOT IN ('passed', 'failed', 'expired') THEN
+    RAISE EXCEPTION 'stage attempt may transition only once from open to terminal' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.updated_at IS DISTINCT FROM CURRENT_TIMESTAMP THEN
+    RAISE EXCEPTION 'terminal transition must set updated_at to database current time' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.status IN ('passed', 'failed') AND NEW.submitted_at IS DISTINCT FROM CURRENT_TIMESTAMP THEN
+    RAISE EXCEPTION 'submission transition must set submitted_at to database current time' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.status = 'expired' AND (
+    NEW.expired_at IS DISTINCT FROM CURRENT_TIMESTAMP OR CURRENT_TIMESTAMP < OLD.expires_at
+  ) THEN
+    RAISE EXCEPTION 'expiry transition must occur at or after expiry using database current time' USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
 END;
 $$;
-CREATE TRIGGER stage_attempt_update_validate_trg
-BEFORE UPDATE ON stage_attempts
-FOR EACH ROW EXECUTE FUNCTION enforce_stage_attempt_identity_and_terminal_immutability();
+CREATE TRIGGER stage_attempt_transition_trg
+BEFORE UPDATE OR DELETE ON stage_attempts
+FOR EACH ROW EXECUTE FUNCTION enforce_stage_attempt_transition();
 
 -- Trial attempts are transient. Remove historical rows outside the new window,
 -- then replace whichever real legacy expiry CHECK exists instead of guessing its name.
@@ -358,7 +426,8 @@ BEGIN
     FROM pg_constraint
     WHERE conrelid = 'trial_attempts'::regclass
       AND contype = 'c'
-      AND pg_get_constraintdef(oid) ILIKE '%expires_at%'
+      AND pg_get_expr(conbin, conrelid) =
+        '(expires_at <= (created_at + ''24:00:00''::interval))'
   LOOP
     EXECUTE format('ALTER TABLE trial_attempts DROP CONSTRAINT %I', constraint_row.conname);
   END LOOP;

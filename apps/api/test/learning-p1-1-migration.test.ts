@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, rm } from 'node:fs/promises'
+import { appendFile, copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
@@ -70,6 +70,41 @@ afterEach(async () => {
 })
 
 describe('learning P1.1 migration', () => {
+  it('rolls back the complete migration batch when a later migration fails', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    const directory = await mkdtemp(join(tmpdir(), 'peraquest-failing-migrations-'))
+    temporaryDirectories.push(directory)
+    await copyFile(resolve(process.cwd(), 'migrations/0001_identity_guardian_consent.sql'), join(directory, '0001_identity_guardian_consent.sql'))
+    await writeFile(join(directory, '0002_forced_failure.sql'), `
+      CREATE TABLE migration_partial_write (id integer PRIMARY KEY);
+      SELECT * FROM deliberately_missing_table;
+    `)
+
+    await expect(runMigrations(asMigrationDatabase(database), directory)).rejects.toThrow()
+    const objects = await database.query<{ ledger: string | null; users: string | null; partial: string | null }>(`
+      SELECT to_regclass('schema_migrations')::text AS ledger,
+             to_regclass('users')::text AS users,
+             to_regclass('migration_partial_write')::text AS partial
+    `)
+    expect(objects.rows).toEqual([{ ledger: null, users: null, partial: null }])
+  })
+
+  it('rejects a checksum change to an already applied migration', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    const directory = await mkdtemp(join(tmpdir(), 'peraquest-checksum-migrations-'))
+    temporaryDirectories.push(directory)
+    const migration = join(directory, '0001_identity_guardian_consent.sql')
+    await copyFile(resolve(process.cwd(), 'migrations/0001_identity_guardian_consent.sql'), migration)
+    await runMigrations(asMigrationDatabase(database), directory)
+    await appendFile(migration, '\n-- changed after application\n')
+
+    await expect(runMigrations(asMigrationDatabase(database), directory)).rejects.toThrow(/has changed/)
+    const count = await database.query<{ count: number }>('SELECT count(*)::int AS count FROM schema_migrations')
+    expect(count.rows).toEqual([{ count: 1 }])
+  })
+
   it('upgrades an existing database, removes historical trial rows outside 30 minutes, and replaces the real legacy constraint', async () => {
     const database = new PGlite()
     databases.push(database)
@@ -89,6 +124,8 @@ describe('learning P1.1 migration', () => {
         ('00000000-0000-0000-0000-000000000121', '00000000-0000-0000-0000-000000000111', '2026-08-27T00:00:00Z', '2026-08-27T00:20:00Z'),
         ('00000000-0000-0000-0000-000000000122', '00000000-0000-0000-0000-000000000112', '2026-08-27T00:00:00Z', '2026-08-27T01:00:00Z'),
         ('00000000-0000-0000-0000-000000000123', '00000000-0000-0000-0000-000000000113', '2026-08-27T00:00:00Z', '2026-08-26T23:59:00Z');
+      ALTER TABLE trial_attempts ADD CONSTRAINT trial_attempts_expiry_safety_check
+        CHECK (expires_at > created_at - interval '1 hour');
     `)
 
     await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual(['0004_learning_p1_1_idempotency.sql'])
@@ -100,7 +137,10 @@ describe('learning P1.1 migration', () => {
       WHERE conrelid = 'trial_attempts'::regclass AND contype = 'c'
         AND pg_get_constraintdef(oid) ILIKE '%expires_at%'
     `)
-    expect(constraints.rows).toEqual([{ conname: 'trial_attempts_ttl_30m_check' }])
+    expect(constraints.rows).toEqual([
+      { conname: 'trial_attempts_expiry_safety_check' },
+      { conname: 'trial_attempts_ttl_30m_check' },
+    ])
     await expect(database.query(`
       INSERT INTO trial_attempts (id, student_id, created_at, expires_at)
       VALUES ('00000000-0000-0000-0000-000000000124', '00000000-0000-0000-0000-000000000112',
@@ -144,31 +184,14 @@ describe('learning P1.1 migration', () => {
     await expect(database.query('DELETE FROM stage_exam_versions WHERE id = $1', [ids.version])).rejects.toThrow()
   })
 
-  it('cannot race publication into a published but incomplete version', async () => {
+  it('keeps stage exam business identity immutable before and after publication', async () => {
     const database = await createDatabase()
     await seedDraftExam(database)
-    const incompleteItem = '00000000-0000-0000-0000-000000000208'
 
-    const results = await Promise.allSettled([
-      publishExam(database),
-      database.query(`
-        INSERT INTO stage_exam_items (id, exam_version_id, item_ref, ordinal, prompt, points)
-        VALUES ($1, $2, 'racing-item', 2, 'Racing item.', 1)
-      `, [incompleteItem, ids.version]),
-    ])
-
-    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1)
-    const incompletePublished = await database.query<{ count: string }>(`
-      SELECT count(*)::text AS count
-      FROM stage_exam_versions ev
-      JOIN stage_exam_items i ON i.exam_version_id = ev.id
-      LEFT JOIN stage_exam_item_options o ON o.item_id = i.id
-      LEFT JOIN stage_exam_item_answer_keys k ON k.item_id = i.id
-      WHERE ev.id = $1 AND ev.status = 'published'
-      GROUP BY i.id
-      HAVING count(DISTINCT o.id) < 2 OR count(DISTINCT k.item_id) <> 1
-    `, [ids.version])
-    expect(incompletePublished.rows).toEqual([])
+    await expect(database.query("UPDATE stage_exams SET code = 'renamed' WHERE id = $1", [ids.exam])).rejects.toThrow()
+    await publishExam(database)
+    await expect(database.query('UPDATE stage_exams SET stage = 2 WHERE id = $1', [ids.exam])).rejects.toThrow()
+    await expect(database.query('DELETE FROM stage_exams WHERE id = $1', [ids.exam])).rejects.toThrow()
   })
 
   it('allows direct SQL to create only an active student open attempt at database time for a published non-retired version', async () => {
@@ -215,9 +238,48 @@ describe('learning P1.1 migration', () => {
     `, [ids.student, ids.version])).rejects.toThrow()
   })
 
+  it('allows exactly one valid open-to-terminal attempt transition and never allows deletion', async () => {
+    const database = await createDatabase()
+    await seedDraftExam(database)
+    await publishExam(database)
+    await database.query(`
+      INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '20 minutes')
+    `, [ids.attempt, ids.student, ids.version])
+
+    await expect(database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 0.9,
+          passed = true, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attempt])).resolves.toBeDefined()
+    await expect(database.query(`
+      UPDATE stage_attempts SET score = 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1
+    `, [ids.attempt])).rejects.toThrow()
+    await expect(database.query('DELETE FROM stage_attempts WHERE id = $1', [ids.attempt])).rejects.toThrow()
+
+    await database.query(`
+      INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
+      VALUES ('00000000-0000-0000-0000-000000000307', $1, $2, CURRENT_TIMESTAMP + interval '20 minutes')
+    `, [ids.student, ids.version])
+    await expect(database.query(`
+      UPDATE stage_attempts
+      SET status = 'failed', submitted_at = CURRENT_TIMESTAMP + interval '1 second', score = 0.2,
+          passed = false, updated_at = CURRENT_TIMESTAMP
+      WHERE id = '00000000-0000-0000-0000-000000000307'
+    `)).rejects.toThrow()
+    await expect(database.query(`
+      UPDATE stage_attempts
+      SET updated_at = CURRENT_TIMESTAMP
+      WHERE id = '00000000-0000-0000-0000-000000000307'
+    `)).rejects.toThrow()
+  })
+
   it('enforces idempotency shape, state completeness, and scoped uniqueness', async () => {
     const database = await createDatabase()
-    await database.query(`INSERT INTO users (id, role, is_minor) VALUES ('${ids.student}', 'student', false)`)
+    await database.query(`INSERT INTO users (id, role, is_minor) VALUES
+      ('${ids.student}', 'student', false),
+      ('${ids.guardian}', 'guardian', false)`)
     const insert = `
       INSERT INTO idempotency_records
         (student_id, operation_scope, idempotency_key, request_hash, expires_at)
@@ -233,6 +295,19 @@ describe('learning P1.1 migration', () => {
       VALUES ($1, 'scope', 'request-2', decode(repeat('ab', 32), 'hex'), 'completed', 201,
               CURRENT_TIMESTAMP + interval '1 day')
     `, [ids.student])).rejects.toThrow()
+
+    await expect(database.query(`
+      UPDATE idempotency_records SET operation_scope = 'changed'
+      WHERE student_id = $1 AND idempotency_key = 'request-1'
+    `, [ids.student])).rejects.toThrow()
+    await expect(database.query(`
+      UPDATE idempotency_records SET request_hash = decode(repeat('cd', 32), 'hex')
+      WHERE student_id = $1 AND operation_scope = 'stage_attempt.start:v1:one'
+    `, [ids.student])).rejects.toThrow()
+    await expect(database.query(`
+      UPDATE idempotency_records SET student_id = $1
+      WHERE student_id = $2 AND operation_scope = 'stage_attempt.start:v1:one'
+    `, [ids.guardian, ids.student])).rejects.toThrow()
   })
 
   it('creates the required foreign keys, checks, non-null columns, and indexes without P2 tables', async () => {

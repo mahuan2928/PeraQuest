@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import Fastify, { type FastifyReply } from 'fastify'
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { sanitizeErrorDetails } from '@peraquest/contracts'
 import type {
@@ -15,8 +15,8 @@ import type {
   StableErrorCode,
   AuthActor,
 } from '@peraquest/contracts'
-import { loadConfig } from './config.js'
-import { AuthFailure, createAuthActor, defaultTokenVerifier, legacyActor, parseBearerToken, type AuthUserResolver, type TokenVerifier } from './auth.js'
+import { loadConfig, type RuntimeConfig } from './config.js'
+import { AuthFailure, createAuthActor, createJwksTokenVerifier, legacyActor, parseBearerToken, type AuthConfig, type AuthUserResolver, type TokenVerifier } from './auth.js'
 import { MemoryStudentRepository, type StudentRepository } from './repository.js'
 import { publicTrialQuestion, trialQuestions } from './trial.js'
 
@@ -58,13 +58,24 @@ export interface BuildAppOptions {
   now?: () => Date
   tokenVerifier?: TokenVerifier
   authUserResolver?: AuthUserResolver
+  config?: RuntimeConfig
 }
 
 export const buildApp = (options: BuildAppOptions = {}) => {
   const app = Fastify({ logger: false })
-  const config = loadConfig()
+  const config = options.config ?? loadConfig()
   const repository = options.repository ?? new MemoryStudentRepository()
-  const tokenVerifier = options.tokenVerifier ?? defaultTokenVerifier
+  const authConfig: AuthConfig = {
+    issuer: config.AUTH_ISSUER,
+    audience: config.AUTH_AUDIENCE,
+    jwksUrl: config.AUTH_JWKS_URL,
+    clockSkewSeconds: config.AUTH_CLOCK_SKEW_SECONDS,
+    maxTokenTtlSeconds: config.AUTH_MAX_TOKEN_TTL_SECONDS,
+    jwksCacheMaxAgeMs: config.AUTH_JWKS_CACHE_MAX_AGE_MS,
+    jwksCooldownMs: config.AUTH_JWKS_COOLDOWN_MS,
+    jwksTimeoutMs: config.AUTH_JWKS_TIMEOUT_MS,
+  }
+  const tokenVerifier = options.tokenVerifier ?? createJwksTokenVerifier(authConfig)
   const authUserResolver = options.authUserResolver ?? { resolve: async () => null }
   const now = options.now ?? (() => new Date())
   app.setErrorHandler((error, _request, reply) => {
@@ -100,6 +111,14 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return typeof value === 'string' && value.length > 0 ? value : null
   }
 
+  const studentActorId = (request: FastifyRequest, reply: FastifyReply): string | null => {
+    if (request.authActor.role !== 'student') {
+      sendError(reply, 403, 'AUTH_FORBIDDEN')
+      return null
+    }
+    return request.authActor.id
+  }
+
   const protectedPath = (url: string): boolean => url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return
@@ -108,7 +127,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       if (authorization !== undefined) {
         if (request.headers['x-student-id'] !== undefined || request.headers['x-guardian-id'] !== undefined) throw new AuthFailure('AUTH_INVALID')
         const token = parseBearerToken(authorization)
-        request.authActor = await createAuthActor(token, { issuer: config.AUTH_ISSUER, audience: config.AUTH_AUDIENCE, jwksUrl: config.AUTH_JWKS_URL, clockSkewSeconds: config.AUTH_CLOCK_SKEW_SECONDS }, tokenVerifier, authUserResolver, () => now().getTime())
+        request.authActor = await createAuthActor(token, authConfig, tokenVerifier, authUserResolver, () => now().getTime())
         return
       }
       if (config.ALLOW_LEGACY_TEST_HEADERS) {
@@ -137,8 +156,8 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.get('/v1/me/guardian-link', async (request, reply): Promise<GuardianLinkResponse | void> => {
-    const studentId = studentIdFrom(request.headers)
-    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
+    const studentId = studentActorId(request, reply)
+    if (!studentId) return
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     return { status: student.guardianLinkStatus, purchaseAllowed: student.guardianLinkStatus === 'verified', verifiedAt: null }
@@ -162,8 +181,8 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.get('/v1/me/capabilities', async (request, reply): Promise<CapabilityResponse | void> => {
-    const studentId = studentIdFrom(request.headers)
-    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
+    const studentId = studentActorId(request, reply)
+    if (!studentId) return
     const parsedPlatform = platformSchema.safeParse(request.headers['x-client-platform'])
     if (!parsedPlatform.success) return sendError(reply, 400, 'INVALID_CLIENT_PLATFORM')
     const student = await repository.findById(studentId)
@@ -190,8 +209,8 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.post('/v1/trial-attempts', async (request, reply): Promise<TrialAttemptResponse | void> => {
-    const studentId = studentIdFrom(request.headers)
-    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
+    const studentId = studentActorId(request, reply)
+    if (!studentId) return
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     if (!student.isMinor || student.guardianLinkStatus !== 'pending') return sendError(reply, 403, 'TRIAL_NOT_AVAILABLE')
@@ -209,8 +228,8 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.post<{ Params: { attemptId: string } }>('/v1/trial-attempts/:attemptId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {
-    const studentId = studentIdFrom(request.headers)
-    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
+    const studentId = studentActorId(request, reply)
+    if (!studentId) return
     const parsed = trialAnswerSchema.safeParse(request.body)
     if (!parsed.success) return sendError(reply, 400, 'INVALID_TRIAL_ANSWER')
     const attempt = await repository.findTrialAttempt(request.params.attemptId)
@@ -239,8 +258,8 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.post('/v1/me/voice-upload-ticket', async (request, reply) => {
-    const studentId = studentIdFrom(request.headers)
-    if (!studentId) return sendError(reply, 401, 'AUTH_REQUIRED')
+    const studentId = studentActorId(request, reply)
+    if (!studentId) return
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     const consent = await repository.getVoiceConsent(studentId, config.CONSENT_VERSION_REQUIRED)

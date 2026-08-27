@@ -1,5 +1,26 @@
 import type { Pool } from 'pg'
-import type { ConsentStatus, GuardianLinkStatus } from '@peraquest/contracts'
+import type { ConsentStatus, GuardianLinkStatus, UserRole } from '@peraquest/contracts'
+import type { AuthUser, AuthUserResolver } from './auth.js'
+
+export class PostgresAuthUserResolver implements AuthUserResolver {
+  constructor(
+    private readonly pool: Pool,
+    private readonly provider: 'apple' | 'google' | 'email_magic_link',
+  ) {}
+
+  async resolve(_issuer: string, providerSubject: string): Promise<AuthUser | null> {
+    const result = await this.pool.query<{ id: string; role: UserRole }>(`
+      SELECT u.id, u.role
+      FROM auth_identities ai
+      JOIN users u ON u.id = ai.user_id
+      WHERE ai.provider = $1
+        AND ai.provider_subject = $2
+        AND u.deleted_at IS NULL
+      LIMIT 1
+    `, [this.provider, providerSubject])
+    return result.rows[0] ?? null
+  }
+}
 
 export interface StudentRecord {
   id: string

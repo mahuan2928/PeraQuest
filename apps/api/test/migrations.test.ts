@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite'
 import type { Pool } from 'pg'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
-import { PostgresStudentRepository } from '../src/repository.js'
+import { PostgresAuthUserResolver, PostgresStudentRepository } from '../src/repository.js'
 import { buildApp } from '../src/app.js'
 
 const databases: PGlite[] = []
@@ -52,6 +52,27 @@ describe('database migrations', () => {
       'user_devices',
       'users',
     ])
+  })
+
+  it('resolves only active users in the configured provider namespace', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    await database.query(`INSERT INTO users (id, role, birth_month, is_minor, deleted_at) VALUES
+      ('00000000-0000-0000-0000-000000000041', 'student', '2012-04-01', true, NULL),
+      ('00000000-0000-0000-0000-000000000042', 'student', '2012-05-01', true, now()),
+      ('00000000-0000-0000-0000-000000000043', 'guardian', NULL, false, NULL)`)
+    await database.query(`INSERT INTO auth_identities (id, user_id, provider, provider_subject) VALUES
+      ('00000000-0000-0000-0000-000000000051', '00000000-0000-0000-0000-000000000041', 'email_magic_link', 'active-sub'),
+      ('00000000-0000-0000-0000-000000000052', '00000000-0000-0000-0000-000000000042', 'email_magic_link', 'deleted-sub'),
+      ('00000000-0000-0000-0000-000000000053', '00000000-0000-0000-0000-000000000043', 'google', 'other-provider-sub')`)
+    const pool = { query: database.query.bind(database) } as unknown as Pool
+    const resolver = new PostgresAuthUserResolver(pool, 'email_magic_link')
+
+    await expect(resolver.resolve('https://issuer.test', 'active-sub')).resolves.toEqual({ id: '00000000-0000-0000-0000-000000000041', role: 'student' })
+    await expect(resolver.resolve('https://issuer.test', 'missing-sub')).resolves.toBeNull()
+    await expect(resolver.resolve('https://issuer.test', 'deleted-sub')).resolves.toBeNull()
+    await expect(resolver.resolve('https://issuer.test', 'other-provider-sub')).resolves.toBeNull()
   })
 
   it('stores only minimal redemption and short-lived trial state, not durable answers or scores', async () => {

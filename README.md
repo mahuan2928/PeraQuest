@@ -34,7 +34,9 @@ npm run build
 
 The active workflow is `.github/workflows/ci.yml`. It runs only validation on Linux: it does not deploy, publish, package a release, or write to Cloudflare, Render, or production.
 
-Every pull request performs a full lifecycle-script-enabled `npm ci` from the single root `package-lock.json`, blocks high/critical production dependency findings with `npm audit`, then runs lint, typecheck, and tests. Builds and Trial E2E are selected from the PR diff; only documentation-only changes are exempt, while unknown code or configuration paths fail safe to all builds and Trial E2E:
+Every pull request performs a full lifecycle-script-enabled `npm ci` from the single root `package-lock.json`, blocks high/critical production dependency findings with `npm audit`, then runs lint, typecheck, and tests. The quality job starts an isolated PostgreSQL 16 service, waits for its health check, creates `peraquest_ci`, and exposes only that runner-local database through `TEST_DATABASE_URL`; it never connects to a developer machine or Render. PostgreSQL tests may skip locally when the variable is absent, but fail immediately instead of skipping when `CI=1`.
+
+Builds and Trial E2E are selected from the PR diff; only documentation-only changes are exempt, while unknown code or configuration paths fail safe to all builds and Trial E2E:
 
 | Changed scope | Build gates |
 | --- | --- |

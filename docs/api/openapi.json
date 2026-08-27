@@ -1045,6 +1045,13 @@
       },
       "StableErrorCode": {
         "type": "string",
+        "description": "Stable error-code registry. IDEMPOTENCY_REPLAY is deprecated and retained only for compatibility; P1.1 does not emit it.",
+        "x-deprecated-values": [
+          "IDEMPOTENCY_REPLAY"
+        ],
+        "x-compatibility-only-values": [
+          "IDEMPOTENCY_REPLAY"
+        ],
         "enum": [
           "AUTH_REQUIRED",
           "AUTH_INVALID",
@@ -1067,6 +1074,7 @@
           "VOICE_CONSENT_REQUIRED",
           "SIGNED_UPLOAD_NOT_CONFIGURED",
           "IDEMPOTENCY_KEY_REQUIRED",
+          "IDEMPOTENCY_REPLAY",
           "REVISION_REQUIRED",
           "REVISION_CONFLICT",
           "NOT_FOUND",
@@ -1423,7 +1431,7 @@
   },
   "x-runtime-contract-status": {
     "authentication": "planned: BearerAuth is not implemented; current runtime accepts deprecated X-Student-Id/X-Guardian-Id headers",
-    "idempotency": "schema/contracts available for future formal stage-attempt routes; start/submit runtime is not registered in P1.1",
+    "idempotency": "schema/contracts available for future formal stage-attempt routes; start/submit runtime is not registered in P1.1, and deprecated compatibility-only IDEMPOTENCY_REPLAY is not emitted by P1.1",
     "revision": "planned: If-Match-Revision is not implemented and is not currently required"
   }
 }

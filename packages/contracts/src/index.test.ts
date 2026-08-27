@@ -7,6 +7,7 @@ import {
   remediationReasons,
   remediationTaskStatuses,
   sanitizeErrorDetails,
+  stableErrorCodeMetadata,
   stableErrorCodes,
   stageAttemptStatuses,
   stageExamVersionStatuses,
@@ -74,13 +75,23 @@ describe('shared security contracts', () => {
     expect(new Set(stableErrorCodes).size).toBe(stableErrorCodes.length)
     expect(stableErrorCodes).toEqual(expect.arrayContaining([
       'AUTH_REQUIRED', 'GUARDIAN_AUTH_REQUIRED', 'VOICE_CONSENT_REQUIRED',
-      'LEGACY_AUTH_NOT_ALLOWED', 'IDEMPOTENCY_KEY_REQUIRED', 'IDEMPOTENCY_KEY_INVALID',
-      'IDEMPOTENCY_KEY_REUSED', 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+      'LEGACY_AUTH_NOT_ALLOWED', 'IDEMPOTENCY_KEY_REQUIRED', 'IDEMPOTENCY_REPLAY',
+      'IDEMPOTENCY_KEY_INVALID', 'IDEMPOTENCY_KEY_REUSED', 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
       'STAGE_EXAM_NOT_AVAILABLE', 'STAGE_ATTEMPT_NOT_FOUND',
       'STAGE_ATTEMPT_ALREADY_OPEN', 'STAGE_ATTEMPT_ALREADY_FINALIZED',
       'STAGE_ATTEMPT_EXPIRED', 'INVALID_STAGE_SUBMISSION',
       'REVISION_CONFLICT', 'INTERNAL_ERROR',
     ]))
+  })
+
+  it('retains IDEMPOTENCY_REPLAY for compatibility without making it a P1.1 active error', () => {
+    expect(stableErrorCodes).toContain('IDEMPOTENCY_REPLAY')
+    expect({ code: 'IDEMPOTENCY_REPLAY' } satisfies ErrorResponse).toBeDefined()
+    expect(stableErrorCodeMetadata.IDEMPOTENCY_REPLAY).toEqual({
+      deprecated: true,
+      compatibilityOnly: true,
+      activeInP11: false,
+    })
   })
 })
 

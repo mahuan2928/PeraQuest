@@ -40,6 +40,12 @@ describe('OpenAPI document', () => {
     expect(document.components.schemas).toHaveProperty('GuardianLinkProjection')
     expect(document.components.schemas).toHaveProperty('ConsentProjection')
     expect(document.components.schemas).toHaveProperty('ErrorResponse')
+    expect(document.components.schemas.StableErrorCode).toMatchObject({
+      enum: expect.arrayContaining(['IDEMPOTENCY_REPLAY']),
+      description: expect.stringContaining('deprecated and retained only for compatibility'),
+      'x-deprecated-values': ['IDEMPOTENCY_REPLAY'],
+      'x-compatibility-only-values': ['IDEMPOTENCY_REPLAY'],
+    })
     expect(document.components.schemas).toHaveProperty('PublicStageExamOption')
     expect(document.components.schemas).toHaveProperty('PublicStageExamItem')
     expect(document.components.schemas).toHaveProperty('StartStageAttemptResponse')
@@ -60,6 +66,7 @@ describe('OpenAPI document', () => {
       idempotency: expect.stringContaining('start/submit runtime is not registered'),
       revision: expect.stringContaining('not currently required'),
     })
+    expect(document['x-runtime-contract-status']?.idempotency).toContain('IDEMPOTENCY_REPLAY is not emitted by P1.1')
     expect(document.components.parameters.StudentId).toMatchObject({ deprecated: true })
   })
 })

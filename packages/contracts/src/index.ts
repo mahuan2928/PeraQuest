@@ -285,6 +285,8 @@ export const stableErrorCodes = [
   'SIGNED_UPLOAD_NOT_CONFIGURED',
   'LEGACY_AUTH_NOT_ALLOWED',
   'IDEMPOTENCY_KEY_REQUIRED',
+  // Deprecated compatibility-only value retained for existing consumers; P1.1 must not emit it.
+  'IDEMPOTENCY_REPLAY',
   'IDEMPOTENCY_KEY_INVALID',
   'IDEMPOTENCY_KEY_REUSED',
   'IDEMPOTENCY_REQUEST_IN_PROGRESS',
@@ -301,6 +303,18 @@ export const stableErrorCodes = [
   'INTERNAL_ERROR',
 ] as const
 export type StableErrorCode = (typeof stableErrorCodes)[number]
+
+export const stableErrorCodeMetadata = {
+  IDEMPOTENCY_REPLAY: {
+    deprecated: true,
+    compatibilityOnly: true,
+    activeInP11: false,
+  },
+} as const satisfies Partial<Record<StableErrorCode, {
+  deprecated: boolean
+  compatibilityOnly: boolean
+  activeInP11: boolean
+}>>
 
 /** Deliberately fixed, non-sensitive fields; do not pass raw validation/provider errors. */
 export interface SafeErrorDetails {

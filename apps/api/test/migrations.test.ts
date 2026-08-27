@@ -31,7 +31,7 @@ describe('database migrations', () => {
     databases.push(database)
     const adapter = asMigrationDatabase(database)
 
-    await expect(runMigrations(adapter)).resolves.toEqual(['0001_identity_guardian_consent.sql', '0002_one_time_trial.sql'])
+    await expect(runMigrations(adapter)).resolves.toEqual(['0001_identity_guardian_consent.sql', '0002_one_time_trial.sql', '0004_learning_p1_1_idempotency.sql'])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
     const tables = await database.query<{ table_name: string }>(`
@@ -44,8 +44,16 @@ describe('database migrations', () => {
       'auth_identities',
       'consent_records',
       'guardian_links',
+      'idempotency_records',
       'line_links',
       'schema_migrations',
+      'stage_attempts',
+      'stage_exam_item_answer_keys',
+      'stage_exam_item_options',
+      'stage_exam_items',
+      'stage_exam_version_retirements',
+      'stage_exam_versions',
+      'stage_exams',
       'subscription_entitlements',
       'trial_attempts',
       'trial_redemptions',

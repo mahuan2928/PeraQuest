@@ -1,9 +1,16 @@
 export type LearningAuditEventType = 'attempt_started' | 'attempt_submitted' | 'attempt_expired'
+export type LearningAuditActorRole = 'student' | 'guardian' | 'admin'
+export type LearningAuditActorRelationship = 'self' | 'verified_guardian' | 'admin'
+export type LearningAuditAuthProvider = 'apple' | 'google' | 'email_magic_link'
 
 export interface LearningAuditEventInput {
   eventId: string
   eventType: LearningAuditEventType
   actorId: string
+  actorRole: LearningAuditActorRole
+  actorAuthProvider: LearningAuditAuthProvider
+  actorProviderSubject: string
+  actorRelationship: LearningAuditActorRelationship
   studentId: string
   attemptId: string
   requestId: string
@@ -27,6 +34,10 @@ interface LearningAuditRow extends Record<string, unknown> {
   event_id: string
   event_type: LearningAuditEventType
   actor_id: string
+  actor_role: LearningAuditActorRole
+  actor_auth_provider: LearningAuditAuthProvider
+  actor_provider_subject: string
+  actor_relationship: LearningAuditActorRelationship
   student_id: string
   attempt_id: string
   request_id: string
@@ -45,25 +56,39 @@ export class PostgresLearningAuditRepository implements LearningAuditRepository 
   async append(event: LearningAuditEventInput): Promise<LearningAuditEventRecord> {
     const result = await this.database.query<LearningAuditRow>(`
       INSERT INTO learning_audit_events
-        (event_id, event_type, actor_id, student_id, attempt_id, request_id, reason)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING event_id, event_type, actor_id, student_id, attempt_id,
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider,
+         actor_provider_subject, actor_relationship, student_id, attempt_id,
+         request_id, reason, occurred_at)
+      SELECT $1, $2, $3, $4, $5, $6, $7, $8, attempts.id, $10, $11,
+             attempts.started_at
+      FROM stage_attempts attempts
+      WHERE attempts.id = $9 AND attempts.student_id = $8
+      RETURNING event_id, event_type, actor_id, actor_role, actor_auth_provider,
+                actor_provider_subject, actor_relationship, student_id, attempt_id,
                 request_id, reason, occurred_at, recorded_at
     `, [
       event.eventId,
       event.eventType,
       event.actorId,
+      event.actorRole,
+      event.actorAuthProvider,
+      event.actorProviderSubject,
+      event.actorRelationship,
       event.studentId,
       event.attemptId,
       event.requestId,
       event.reason,
     ])
     const row = result.rows[0]
-    if (!row) throw new Error('Learning audit insert returned no row')
+    if (!row) throw new Error('Learning audit attempt was not found for the target student')
     return {
       eventId: row.event_id,
       eventType: row.event_type,
       actorId: row.actor_id,
+      actorRole: row.actor_role,
+      actorAuthProvider: row.actor_auth_provider,
+      actorProviderSubject: row.actor_provider_subject,
+      actorRelationship: row.actor_relationship,
       studentId: row.student_id,
       attemptId: row.attempt_id,
       requestId: row.request_id,

@@ -23,6 +23,8 @@ const asMigrationDatabase = (database: PGlite): MigrationDatabase => ({
 const ids = {
   studentA: '00000000-0000-0000-0000-000000001001',
   studentB: '00000000-0000-0000-0000-000000001002',
+  guardianA: '00000000-0000-0000-0000-000000001003',
+  admin: '00000000-0000-0000-0000-000000001004',
   exam: '00000000-0000-0000-0000-000000001101',
   version: '00000000-0000-0000-0000-000000001102',
   item: '00000000-0000-0000-0000-000000001103',
@@ -44,7 +46,16 @@ const seedAttempts = async (database: PGlite): Promise<void> => {
   await database.exec(`
     INSERT INTO users (id, role, is_minor) VALUES
       ('${ids.studentA}', 'student', false),
-      ('${ids.studentB}', 'student', false);
+      ('${ids.studentB}', 'student', false),
+      ('${ids.guardianA}', 'guardian', false),
+      ('${ids.admin}', 'admin', false);
+    INSERT INTO auth_identities (id, user_id, provider, provider_subject) VALUES
+      ('00000000-0000-0000-0000-000000001011', '${ids.studentA}', 'email_magic_link', 'student-a-sub'),
+      ('00000000-0000-0000-0000-000000001012', '${ids.studentB}', 'email_magic_link', 'student-b-sub'),
+      ('00000000-0000-0000-0000-000000001013', '${ids.guardianA}', 'google', 'guardian-a-sub'),
+      ('00000000-0000-0000-0000-000000001014', '${ids.admin}', 'apple', 'admin-sub');
+    INSERT INTO guardian_links (id, student_id, guardian_id, status, verified_at)
+      VALUES ('00000000-0000-0000-0000-000000001021', '${ids.studentA}', '${ids.guardianA}', 'verified', CURRENT_TIMESTAMP);
     INSERT INTO stage_exams (id, exam_level, stage, code)
       VALUES ('${ids.exam}', 'eiken_grade_3', 1, 'audit-stage');
     INSERT INTO stage_exam_versions
@@ -66,20 +77,35 @@ const seedAttempts = async (database: PGlite): Promise<void> => {
   `)
 }
 
-const insertStartedEvent = (database: PGlite, overrides: Partial<{
+interface StartedEventOverrides {
   eventId: string
   actorId: string
+  actorRole: 'student' | 'guardian' | 'admin'
+  actorAuthProvider: 'apple' | 'google' | 'email_magic_link'
+  actorProviderSubject: string
+  actorRelationship: 'self' | 'verified_guardian' | 'admin'
   studentId: string
   attemptId: string
   requestId: string
   reason: string
-}> = {}): Promise<unknown> => database.query(`
+}
+
+const insertStartedEvent = (database: PGlite, overrides: Partial<StartedEventOverrides> = {}): Promise<unknown> => database.query(`
   INSERT INTO learning_audit_events
-    (event_id, event_type, actor_id, student_id, attempt_id, request_id, reason)
-  VALUES ($1, 'attempt_started', $2, $3, $4, $5, $6)
+    (event_id, event_type, actor_id, actor_role, actor_auth_provider,
+     actor_provider_subject, actor_relationship, student_id, attempt_id,
+     request_id, reason, occurred_at)
+  SELECT $1, 'attempt_started', $2, $3, $4, $5, $6, $7, attempts.id,
+         $9, $10, attempts.started_at
+  FROM stage_attempts attempts
+  WHERE attempts.id = $8
 `, [
   overrides.eventId ?? ids.eventA,
   overrides.actorId ?? ids.studentA,
+  overrides.actorRole ?? 'student',
+  overrides.actorAuthProvider ?? 'email_magic_link',
+  overrides.actorProviderSubject ?? 'student-a-sub',
+  overrides.actorRelationship ?? 'self',
   overrides.studentId ?? ids.studentA,
   overrides.attemptId ?? ids.attemptA,
   overrides.requestId ?? 'request-audit-1',
@@ -143,7 +169,7 @@ describe('learning P1.2 audit migration', () => {
     expect(state.rows).toEqual([{ audit_table: null, audit_type: null, ledger_count: 0 }])
   })
 
-  it('provides a transaction-compatible repository foundation without runtime registration', async () => {
+  it('provides an unregistered repository foundation with immutable actor snapshots', async () => {
     const database = await createDatabase()
     await seedAttempts(database)
     const repository = new PostgresLearningAuditRepository(asMigrationDatabase(database))
@@ -152,6 +178,10 @@ describe('learning P1.2 audit migration', () => {
       eventId: ids.eventA,
       eventType: 'attempt_started',
       actorId: ids.studentA,
+      actorRole: 'student',
+      actorAuthProvider: 'email_magic_link',
+      actorProviderSubject: 'student-a-sub',
+      actorRelationship: 'self',
       studentId: ids.studentA,
       attemptId: ids.attemptA,
       requestId: 'request-audit-1',
@@ -160,87 +190,176 @@ describe('learning P1.2 audit migration', () => {
 
     expect(event).toMatchObject({
       eventId: ids.eventA,
-      eventType: 'attempt_started',
-      actorId: ids.studentA,
-      studentId: ids.studentA,
-      attemptId: ids.attemptA,
-      requestId: 'request-audit-1',
-      reason: 'formal_assessment_started',
+      actorRole: 'student',
+      actorAuthProvider: 'email_magic_link',
+      actorProviderSubject: 'student-a-sub',
+      actorRelationship: 'self',
     })
+    await database.query("UPDATE users SET role = 'guardian' WHERE id = $1", [ids.studentA])
+    await database.query("UPDATE auth_identities SET provider_subject = 'changed-sub' WHERE user_id = $1", [ids.studentA])
+    const snapshot = await database.query(`
+      SELECT actor_role, actor_auth_provider, actor_provider_subject, actor_relationship
+      FROM learning_audit_events WHERE event_id = $1
+    `, [ids.eventA])
+    expect(snapshot.rows).toEqual([{
+      actor_role: 'student',
+      actor_auth_provider: 'email_magic_link',
+      actor_provider_subject: 'student-a-sub',
+      actor_relationship: 'self',
+    }])
   })
 
-  it('rejects direct SQL cross-student attempt attribution and unknown actors', async () => {
+  it('rejects open-attempt terminal events and forged authoritative times through direct SQL', async () => {
+    const database = await createDatabase()
+    await seedAttempts(database)
+
+    await expect(database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      SELECT '00000000-0000-0000-0000-000000001311', 'attempt_submitted', student_id,
+             'student', 'email_magic_link', 'student-a-sub', 'self', student_id, id,
+             'request-audit-11', 'forged submission', CURRENT_TIMESTAMP
+      FROM stage_attempts WHERE id = $1
+    `, [ids.attemptA])).rejects.toThrow(/not enabled/)
+    await expect(database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      SELECT '00000000-0000-0000-0000-000000001312', 'attempt_expired', student_id,
+             'student', 'email_magic_link', 'student-a-sub', 'self', student_id, id,
+             'request-audit-12', 'forged expiry', expires_at
+      FROM stage_attempts WHERE id = $1
+    `, [ids.attemptA])).rejects.toThrow(/not enabled/)
+    await expect(database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      SELECT '00000000-0000-0000-0000-000000001313', 'attempt_started', student_id,
+             'student', 'email_magic_link', 'student-b-sub', 'self', student_id, id,
+             'request-audit-13', 'forged time', started_at + interval '1 second'
+      FROM stage_attempts WHERE id = $1
+    `, [ids.attemptB])).rejects.toThrow(/authoritative started_at/)
+  })
+
+  it('rejects unrelated students and forged actor snapshots through direct SQL', async () => {
     const database = await createDatabase()
     await seedAttempts(database)
 
     await expect(insertStartedEvent(database, {
-      studentId: ids.studentB,
-      attemptId: ids.attemptA,
-    })).rejects.toThrow()
+      actorId: ids.studentB,
+      actorProviderSubject: 'student-b-sub',
+    })).rejects.toThrow(/not attributed/)
     await expect(insertStartedEvent(database, {
-      actorId: '00000000-0000-0000-0000-000000009999',
-      attemptId: ids.attemptA,
-    })).rejects.toThrow()
-    const count = await database.query<{ count: number }>('SELECT count(*)::int AS count FROM learning_audit_events')
-    expect(count.rows).toEqual([{ count: 0 }])
+      eventId: '00000000-0000-0000-0000-000000001321',
+      actorRole: 'admin',
+      requestId: 'request-audit-21',
+    })).rejects.toThrow(/role snapshot/)
+    await expect(insertStartedEvent(database, {
+      eventId: '00000000-0000-0000-0000-000000001322',
+      actorProviderSubject: 'forged-sub',
+      requestId: 'request-audit-22',
+    })).rejects.toThrow(/identity snapshot/)
+    await expect(insertStartedEvent(database, {
+      eventId: '00000000-0000-0000-0000-000000001323',
+      actorRelationship: 'admin',
+      requestId: 'request-audit-23',
+    })).rejects.toThrow(/not attributed/)
   })
 
-  it('is append-only even through direct UPDATE and DELETE SQL', async () => {
+  it('accepts a verified guardian snapshot for the target and rejects it for another student', async () => {
+    const database = await createDatabase()
+    await seedAttempts(database)
+    await expect(insertStartedEvent(database, {
+      actorId: ids.guardianA,
+      actorRole: 'guardian',
+      actorAuthProvider: 'google',
+      actorProviderSubject: 'guardian-a-sub',
+      actorRelationship: 'verified_guardian',
+    })).resolves.toBeDefined()
+    await expect(insertStartedEvent(database, {
+      eventId: '00000000-0000-0000-0000-000000001331',
+      actorId: ids.guardianA,
+      actorRole: 'guardian',
+      actorAuthProvider: 'google',
+      actorProviderSubject: 'guardian-a-sub',
+      actorRelationship: 'verified_guardian',
+      studentId: ids.studentB,
+      attemptId: ids.attemptB,
+      requestId: 'request-audit-31',
+    })).rejects.toThrow(/not attributed/)
+  })
+
+  it('is append-only through UPDATE, DELETE, TRUNCATE, and actor snapshot tampering', async () => {
     const database = await createDatabase()
     await seedAttempts(database)
     await insertStartedEvent(database)
 
     await expect(database.query(
-      'UPDATE learning_audit_events SET reason = $1 WHERE event_id = $2',
-      ['rewritten', ids.eventA],
+      'UPDATE learning_audit_events SET actor_role = $1 WHERE event_id = $2',
+      ['admin', ids.eventA],
     )).rejects.toThrow(/append-only/)
     await expect(database.query(
       'DELETE FROM learning_audit_events WHERE event_id = $1',
       [ids.eventA],
     )).rejects.toThrow(/append-only/)
+    await expect(database.query('TRUNCATE learning_audit_events')).rejects.toThrow(/append-only/)
   })
 
-  it('enforces event, request, reason, uniqueness, and database-time constraints', async () => {
+  it('enforces globally unique request ids across students', async () => {
     const database = await createDatabase()
     await seedAttempts(database)
     await insertStartedEvent(database)
 
     await expect(insertStartedEvent(database, {
-      eventId: '00000000-0000-0000-0000-000000001302',
-      requestId: 'request-audit-2',
-    })).rejects.toThrow()
-    await expect(database.query(`
-      INSERT INTO learning_audit_events
-        (event_id, event_type, actor_id, student_id, attempt_id, request_id, reason)
-      VALUES ('00000000-0000-0000-0000-000000001303', 'not_an_event', $1, $1, $2, 'request-audit-3', 'reason')
-    `, [ids.studentA, ids.attemptA])).rejects.toThrow()
-    await expect(insertStartedEvent(database, {
-      eventId: '00000000-0000-0000-0000-000000001304',
-      attemptId: ids.attemptB,
+      eventId: '00000000-0000-0000-0000-000000001341',
       actorId: ids.studentB,
+      actorProviderSubject: 'student-b-sub',
       studentId: ids.studentB,
+      attemptId: ids.attemptB,
+      requestId: 'request-audit-1',
+    })).rejects.toThrow()
+  })
+
+  it('enforces request, reason, event uniqueness, attribution, and database time', async () => {
+    const database = await createDatabase()
+    await seedAttempts(database)
+    await insertStartedEvent(database)
+
+    await expect(insertStartedEvent(database, {
+      eventId: '00000000-0000-0000-0000-000000001351',
+      requestId: 'request-audit-51',
+    })).rejects.toThrow()
+    await expect(insertStartedEvent(database, {
+      eventId: '00000000-0000-0000-0000-000000001352',
+      actorId: ids.studentB,
+      actorProviderSubject: 'student-b-sub',
+      studentId: ids.studentB,
+      attemptId: ids.attemptB,
       requestId: 'short',
     })).rejects.toThrow()
     await expect(insertStartedEvent(database, {
-      eventId: '00000000-0000-0000-0000-000000001305',
-      attemptId: ids.attemptB,
+      eventId: '00000000-0000-0000-0000-000000001353',
       actorId: ids.studentB,
+      actorProviderSubject: 'student-b-sub',
       studentId: ids.studentB,
-      requestId: 'request-audit-1',
+      attemptId: ids.attemptB,
+      requestId: 'request-audit-53',
       reason: '   ',
+    })).rejects.toThrow()
+    await expect(insertStartedEvent(database, {
+      eventId: '00000000-0000-0000-0000-000000001354',
+      studentId: ids.studentB,
+      requestId: 'request-audit-54',
     })).rejects.toThrow()
     await expect(database.query(`
       INSERT INTO learning_audit_events
-        (event_id, event_type, actor_id, student_id, attempt_id, request_id, reason, occurred_at)
-      SELECT '00000000-0000-0000-0000-000000001306', 'attempt_started', student_id, student_id,
-             id, 'request-audit-6', 'backdated', started_at - interval '1 second'
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at, recorded_at)
+      SELECT '00000000-0000-0000-0000-000000001355', 'attempt_started', student_id,
+             'student', 'email_magic_link', 'student-b-sub', 'self', student_id, id,
+             'request-audit-55', 'forged recorded time', started_at, CURRENT_TIMESTAMP - interval '1 second'
       FROM stage_attempts WHERE id = $1
-    `, [ids.attemptB])).rejects.toThrow(/cannot precede/)
-    await expect(database.query(`
-      INSERT INTO learning_audit_events
-        (event_id, event_type, actor_id, student_id, attempt_id, request_id, reason, recorded_at)
-      VALUES ('00000000-0000-0000-0000-000000001307', 'attempt_started', $1, $1, $2,
-              'request-audit-7', 'forged time', CURRENT_TIMESTAMP - interval '1 second')
-    `, [ids.studentB, ids.attemptB])).rejects.toThrow(/database current time/)
+    `, [ids.attemptB])).rejects.toThrow(/database current time/)
   })
 })

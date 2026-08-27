@@ -16,7 +16,7 @@ import type {
   AuthActor,
 } from '@peraquest/contracts'
 import { loadConfig } from './config.js'
-import { AuthFailure, createAuthActor, defaultTokenVerifier, legacyActor, parseBearerToken, type AuthUserResolver, type TokenVerifier } from './auth.js'
+import { AuthFailure, createAuthActor, createJwksTokenVerifier, legacyActor, parseBearerToken, type AuthConfig, type AuthUserResolver, type TokenVerifier } from './auth.js'
 import { MemoryStudentRepository, type StudentRepository } from './repository.js'
 import { publicTrialQuestion, trialQuestions } from './trial.js'
 
@@ -64,7 +64,17 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   const app = Fastify({ logger: false })
   const config = loadConfig()
   const repository = options.repository ?? new MemoryStudentRepository()
-  const tokenVerifier = options.tokenVerifier ?? defaultTokenVerifier
+  const authConfig: AuthConfig = {
+    issuer: config.AUTH_ISSUER,
+    audience: config.AUTH_AUDIENCE,
+    jwksUrl: config.AUTH_JWKS_URL,
+    clockSkewSeconds: config.AUTH_CLOCK_SKEW_SECONDS,
+    maxTokenTtlSeconds: config.AUTH_MAX_TOKEN_TTL_SECONDS,
+    jwksCacheMaxAgeMs: config.AUTH_JWKS_CACHE_MAX_AGE_MS,
+    jwksCooldownMs: config.AUTH_JWKS_COOLDOWN_MS,
+    jwksTimeoutMs: config.AUTH_JWKS_TIMEOUT_MS,
+  }
+  const tokenVerifier = options.tokenVerifier ?? createJwksTokenVerifier(authConfig)
   const authUserResolver = options.authUserResolver ?? { resolve: async () => null }
   const now = options.now ?? (() => new Date())
   app.setErrorHandler((error, _request, reply) => {
@@ -108,7 +118,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       if (authorization !== undefined) {
         if (request.headers['x-student-id'] !== undefined || request.headers['x-guardian-id'] !== undefined) throw new AuthFailure('AUTH_INVALID')
         const token = parseBearerToken(authorization)
-        request.authActor = await createAuthActor(token, { issuer: config.AUTH_ISSUER, audience: config.AUTH_AUDIENCE, jwksUrl: config.AUTH_JWKS_URL, clockSkewSeconds: config.AUTH_CLOCK_SKEW_SECONDS }, tokenVerifier, authUserResolver, () => now().getTime())
+        request.authActor = await createAuthActor(token, authConfig, tokenVerifier, authUserResolver, () => now().getTime())
         return
       }
       if (config.ALLOW_LEGACY_TEST_HEADERS) {

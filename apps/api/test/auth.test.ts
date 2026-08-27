@@ -5,7 +5,7 @@ import { MemoryStudentRepository } from '../src/repository.js'
 
 describe('AuthActor adapter', () => {
   afterEach(() => vi.unstubAllEnvs())
-  const claims = { iss: 'https://issuer.test', aud: 'peraquest-api', sub: 'provider-sub', exp: 2_000_000_000 }
+  const claims = { iss: 'https://issuer.test', aud: 'peraquest-api', sub: 'provider-sub', iat: 1_700_000_000, exp: 1_700_003_600 }
   const resolver = { resolve: async () => ({ id: 'local-user', role: 'student' as const }) }
   const verifier: TokenVerifier = { verify: async () => claims }
 
@@ -30,6 +30,9 @@ describe('AuthActor adapter', () => {
   it('fails closed in production and allows explicit legacy adapter only in development', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('ALLOW_LEGACY_TEST_HEADERS', 'true')
+    vi.stubEnv('AUTH_ISSUER', 'https://issuer.test')
+    vi.stubEnv('AUTH_AUDIENCE', 'peraquest-api')
+    vi.stubEnv('AUTH_JWKS_URL', 'https://issuer.test/jwks')
     const production = buildApp({ repository: new MemoryStudentRepository() })
     const denied = await production.inject({ method: 'GET', url: '/v1/me/guardian-link', headers: { 'x-student-id': 'local-user' } })
     expect(denied.statusCode).toBe(401)
@@ -72,7 +75,7 @@ describe('AuthActor adapter', () => {
   it('does not infer a target student from a bearer guardian actor', async () => {
     vi.stubEnv('AUTH_ISSUER', claims.iss)
     const guardianResolver = { resolve: async () => ({ id: 'guardian-1', role: 'guardian' as const }) }
-    const app = buildApp({ tokenVerifier: verifier, authUserResolver: guardianResolver })
+    const app = buildApp({ tokenVerifier: verifier, authUserResolver: guardianResolver, now: () => new Date(1_700_000_000_000) })
     const response = await app.inject({
       method: 'PUT',
       url: '/v1/me/consents/voice-processing',

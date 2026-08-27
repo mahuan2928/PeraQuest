@@ -502,11 +502,12 @@
         "name": "Idempotency-Key",
         "in": "header",
         "required": false,
-        "description": "planned future contract: Idempotency-Key will be required once runtime idempotency support is implemented. Not implemented in this slice.",
+        "description": "Contract for future formal stage-attempt start/submit routes. ASCII 8-128 using A-Z, a-z, 0-9, dot, underscore, colon, or hyphen. The P1.1 slice provides persistence and DTO contracts but does not register runtime routes.",
         "schema": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 255
+          "minLength": 8,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._:-]+$"
         }
       },
       "IfMatchRevision": {
@@ -573,7 +574,7 @@
         }
       },
       "Conflict": {
-        "description": "Conflict or idempotency replay",
+        "description": "Conflict or idempotency-key reuse/in-progress request",
         "content": {
           "application/json": {
             "schema": {
@@ -1066,12 +1067,21 @@
           "VOICE_CONSENT_REQUIRED",
           "SIGNED_UPLOAD_NOT_CONFIGURED",
           "IDEMPOTENCY_KEY_REQUIRED",
-          "IDEMPOTENCY_REPLAY",
           "REVISION_REQUIRED",
           "REVISION_CONFLICT",
           "NOT_FOUND",
           "VALIDATION_FAILED",
-          "INTERNAL_ERROR"
+          "INTERNAL_ERROR",
+          "LEGACY_AUTH_NOT_ALLOWED",
+          "IDEMPOTENCY_KEY_INVALID",
+          "IDEMPOTENCY_KEY_REUSED",
+          "IDEMPOTENCY_REQUEST_IN_PROGRESS",
+          "STAGE_EXAM_NOT_AVAILABLE",
+          "STAGE_ATTEMPT_NOT_FOUND",
+          "STAGE_ATTEMPT_ALREADY_OPEN",
+          "STAGE_ATTEMPT_ALREADY_FINALIZED",
+          "STAGE_ATTEMPT_EXPIRED",
+          "INVALID_STAGE_SUBMISSION"
         ]
       },
       "SafeErrorDetails": {
@@ -1098,7 +1108,10 @@
               "guardian_link",
               "consent",
               "trial_attempt",
-              "request"
+              "request",
+              "stage_exam",
+              "stage_attempt",
+              "submission"
             ]
           },
           "revision": {
@@ -1218,6 +1231,165 @@
             "format": "date-time"
           }
         }
+      },
+      "StageExamVersionStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "published"
+        ]
+      },
+      "StageAttemptStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "passed",
+          "failed",
+          "expired"
+        ]
+      },
+      "PublicStageExamOption": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "optionId",
+          "text"
+        ],
+        "properties": {
+          "optionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicStageExamItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "itemRef",
+          "ordinal",
+          "prompt",
+          "support",
+          "options",
+          "points"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "itemRef": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "support": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "$ref": "#/components/schemas/PublicStageExamOption"
+            }
+          },
+          "points": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      },
+      "StartStageAttemptResponse": {
+        "description": "Contract only; no P1.1 runtime route is registered.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "attemptId",
+          "examVersionId",
+          "status",
+          "startedAt",
+          "expiresAt",
+          "passScore",
+          "items"
+        ],
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "examVersionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "open"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "passScore": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicStageExamItem"
+            }
+          }
+        }
+      },
+      "SubmitStageAttemptRequest": {
+        "description": "Contract only; no P1.1 runtime route is registered. Null selectedOptionId explicitly represents a skipped item.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "answers"
+        ],
+        "properties": {
+          "answers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "itemId",
+                "selectedOptionId"
+              ],
+              "properties": {
+                "itemId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "selectedOptionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -1251,7 +1423,7 @@
   },
   "x-runtime-contract-status": {
     "authentication": "planned: BearerAuth is not implemented; current runtime accepts deprecated X-Student-Id/X-Guardian-Id headers",
-    "idempotency": "planned: Idempotency-Key is not implemented and is not currently required",
+    "idempotency": "schema/contracts available for future formal stage-attempt routes; start/submit runtime is not registered in P1.1",
     "revision": "planned: If-Match-Revision is not implemented and is not currently required"
   }
 }

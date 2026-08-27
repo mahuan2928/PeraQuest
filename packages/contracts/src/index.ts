@@ -102,6 +102,46 @@ export interface CapabilityResponse {
   entitlements: string[]
 }
 
+export const stageExamVersionStatuses = ['draft', 'published'] as const
+export type StageExamVersionStatus = (typeof stageExamVersionStatuses)[number]
+
+export const stageAttemptStatuses = ['open', 'passed', 'failed', 'expired'] as const
+export type StageAttemptStatus = (typeof stageAttemptStatuses)[number]
+
+export interface PublicStageExamOptionDto {
+  optionId: string
+  text: string
+}
+
+export interface PublicStageExamItemDto {
+  itemId: string
+  itemRef: string
+  ordinal: number
+  prompt: string
+  support: string | null
+  options: PublicStageExamOptionDto[]
+  points: number
+}
+
+/** Contract only: the P1.1 slice does not register a start runtime route. */
+export interface StartStageAttemptResponse {
+  attemptId: string
+  examVersionId: string
+  status: 'open'
+  startedAt: string
+  expiresAt: string
+  passScore: number
+  items: PublicStageExamItemDto[]
+}
+
+/** Contract only: the P1.1 slice does not register a submit runtime route. */
+export interface SubmitStageAttemptRequest {
+  answers: Array<{
+    itemId: string
+    selectedOptionId: string | null
+  }>
+}
+
 /** Contract-only knowledge-domain vocabulary. These DTOs do not imply runtime APIs or persistence. */
 export const knowledgeStates = ['new', 'learning', 'review', 'mastered', 'suspended'] as const
 export type KnowledgeState = (typeof knowledgeStates)[number]
@@ -243,8 +283,17 @@ export const stableErrorCodes = [
   'TRIAL_ANSWER_ALREADY_SUBMITTED',
   'VOICE_CONSENT_REQUIRED',
   'SIGNED_UPLOAD_NOT_CONFIGURED',
+  'LEGACY_AUTH_NOT_ALLOWED',
   'IDEMPOTENCY_KEY_REQUIRED',
-  'IDEMPOTENCY_REPLAY',
+  'IDEMPOTENCY_KEY_INVALID',
+  'IDEMPOTENCY_KEY_REUSED',
+  'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+  'STAGE_EXAM_NOT_AVAILABLE',
+  'STAGE_ATTEMPT_NOT_FOUND',
+  'STAGE_ATTEMPT_ALREADY_OPEN',
+  'STAGE_ATTEMPT_ALREADY_FINALIZED',
+  'STAGE_ATTEMPT_EXPIRED',
+  'INVALID_STAGE_SUBMISSION',
   'REVISION_REQUIRED',
   'REVISION_CONFLICT',
   'NOT_FOUND',
@@ -257,7 +306,7 @@ export type StableErrorCode = (typeof stableErrorCodes)[number]
 export interface SafeErrorDetails {
   field?: string
   reason?: 'invalid' | 'missing' | 'expired' | 'conflict' | 'not_allowed'
-  resource?: 'student' | 'guardian_link' | 'consent' | 'trial_attempt' | 'request'
+  resource?: 'student' | 'guardian_link' | 'consent' | 'trial_attempt' | 'request' | 'stage_exam' | 'stage_attempt' | 'submission'
   revision?: number
   retryAfterSeconds?: number
 }
@@ -274,7 +323,7 @@ export const legacyHeaderDeprecation = {
 } as const
 
 const safeDetailReasons = ['invalid', 'missing', 'expired', 'conflict', 'not_allowed'] as const
-const safeDetailResources = ['student', 'guardian_link', 'consent', 'trial_attempt', 'request'] as const
+const safeDetailResources = ['student', 'guardian_link', 'consent', 'trial_attempt', 'request', 'stage_exam', 'stage_attempt', 'submission'] as const
 
 /** Keep error payloads deterministic and prevent raw validation/provider data from escaping. */
 export function sanitizeErrorDetails(input: unknown): SafeErrorDetails | undefined {

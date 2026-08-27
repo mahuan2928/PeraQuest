@@ -18,6 +18,7 @@ interface AppliedMigration extends Record<string, unknown> {
 }
 
 const defaultMigrationDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../migrations')
+const migrationFilePattern = /^\d{4}_[a-z0-9_]+\.sql$/
 
 export const runMigrations = async (database: MigrationDatabase, migrationDirectory = defaultMigrationDirectory): Promise<string[]> => {
   await database.query(`
@@ -27,31 +28,37 @@ export const runMigrations = async (database: MigrationDatabase, migrationDirect
       applied_at timestamptz NOT NULL DEFAULT now()
     )
   `)
-  const appliedResult = await database.query<AppliedMigration>('SELECT name, checksum FROM schema_migrations')
-  const applied = new Map(appliedResult.rows.map((migration) => [migration.name, migration.checksum]))
-  const migrationNames = (await readdir(migrationDirectory)).filter((name) => /^\d+.*\.sql$/.test(name)).sort()
-  const completed: string[] = []
 
-  for (const name of migrationNames) {
-    const sql = await readFile(resolve(migrationDirectory, name), 'utf8')
-    const checksum = createHash('sha256').update(sql).digest('hex')
-    const existingChecksum = applied.get(name)
-    if (existingChecksum && existingChecksum !== checksum) throw new Error(`Applied migration ${name} has changed`)
-    if (existingChecksum) continue
+  const migrationNames = (await readdir(migrationDirectory))
+    .filter((name) => migrationFilePattern.test(name))
+    .sort((left, right) => left.localeCompare(right))
 
-    await database.query('BEGIN')
-    try {
+  await database.query('BEGIN')
+  try {
+    // Serialize migration runners, then re-read applied rows under the lock.
+    await database.query('LOCK TABLE schema_migrations IN SHARE ROW EXCLUSIVE MODE')
+    const appliedResult = await database.query<AppliedMigration>('SELECT name, checksum FROM schema_migrations')
+    const applied = new Map(appliedResult.rows.map((migration) => [migration.name, migration.checksum]))
+    const completed: string[] = []
+
+    for (const name of migrationNames) {
+      const sql = await readFile(resolve(migrationDirectory, name), 'utf8')
+      const checksum = createHash('sha256').update(sql).digest('hex')
+      const existingChecksum = applied.get(name)
+      if (existingChecksum && existingChecksum !== checksum) throw new Error(`Applied migration ${name} has changed`)
+      if (existingChecksum) continue
+
       await database.query(sql)
       await database.query('INSERT INTO schema_migrations (name, checksum) VALUES ($1, $2)', [name, checksum])
-      await database.query('COMMIT')
       completed.push(name)
-    } catch (error) {
-      await database.query('ROLLBACK')
-      throw error
     }
-  }
 
-  return completed
+    await database.query('COMMIT')
+    return completed
+  } catch (error) {
+    await database.query('ROLLBACK')
+    throw error
+  }
 }
 
 const main = async (): Promise<void> => {

@@ -8,13 +8,18 @@ import {
   remediationTaskStatuses,
   sanitizeErrorDetails,
   stableErrorCodes,
+  stageAttemptStatuses,
+  stageExamVersionStatuses,
   unlockReasons,
   unlockStatuses,
   userRoles,
   type AuthActor,
   type ErrorResponse,
   type KnowledgeEvidenceDto,
+  type PublicStageExamItemDto,
   type RemediationTaskDto,
+  type StartStageAttemptResponse,
+  type SubmitStageAttemptRequest,
   type UnlockStateDto,
 } from './index'
 
@@ -69,8 +74,55 @@ describe('shared security contracts', () => {
     expect(new Set(stableErrorCodes).size).toBe(stableErrorCodes.length)
     expect(stableErrorCodes).toEqual(expect.arrayContaining([
       'AUTH_REQUIRED', 'GUARDIAN_AUTH_REQUIRED', 'VOICE_CONSENT_REQUIRED',
-      'IDEMPOTENCY_REPLAY', 'REVISION_CONFLICT', 'INTERNAL_ERROR',
+      'LEGACY_AUTH_NOT_ALLOWED', 'IDEMPOTENCY_KEY_REQUIRED', 'IDEMPOTENCY_KEY_INVALID',
+      'IDEMPOTENCY_KEY_REUSED', 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+      'STAGE_EXAM_NOT_AVAILABLE', 'STAGE_ATTEMPT_NOT_FOUND',
+      'STAGE_ATTEMPT_ALREADY_OPEN', 'STAGE_ATTEMPT_ALREADY_FINALIZED',
+      'STAGE_ATTEMPT_EXPIRED', 'INVALID_STAGE_SUBMISSION',
+      'REVISION_CONFLICT', 'INTERNAL_ERROR',
     ]))
+  })
+})
+
+describe('learning P1.1 schema contracts', () => {
+  const item = {
+    itemId: '00000000-0000-0000-0000-000000000101',
+    itemRef: 'vocabulary-1',
+    ordinal: 1,
+    prompt: 'Choose the best answer.',
+    support: null,
+    options: [
+      { optionId: '00000000-0000-0000-0000-000000000102', text: 'A' },
+      { optionId: '00000000-0000-0000-0000-000000000103', text: 'B' },
+    ],
+    points: 1,
+  } satisfies PublicStageExamItemDto
+
+  it('keeps version and attempt states aligned with the database schema', () => {
+    expect(stageExamVersionStatuses).toEqual(['draft', 'published'])
+    expect(stageAttemptStatuses).toEqual(['open', 'passed', 'failed', 'expired'])
+  })
+
+  it('exposes public question data without an answer key', () => {
+    const response = {
+      attemptId: '00000000-0000-0000-0000-000000000104',
+      examVersionId: '00000000-0000-0000-0000-000000000105',
+      status: 'open',
+      startedAt: '2026-08-27T00:00:00.000Z',
+      expiresAt: '2026-08-27T00:30:00.000Z',
+      passScore: 0.8,
+      items: [item],
+    } satisfies StartStageAttemptResponse
+
+    expect(response.items[0]).not.toHaveProperty('correctOptionId')
+  })
+
+  it('represents an explicit skipped answer with null', () => {
+    const request = {
+      answers: [{ itemId: item.itemId, selectedOptionId: null }],
+    } satisfies SubmitStageAttemptRequest
+
+    expect(request.answers[0]?.selectedOptionId).toBeNull()
   })
 })
 

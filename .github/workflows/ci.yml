@@ -85,7 +85,10 @@ jobs:
         run: npm run build -w "${{ matrix.workspace }}"
       - name: Build Desktop source only
         if: matrix.name == 'desktop'
-        run: npm run build:source -w @peraquest/desktop
+        shell: bash
+        run: |
+          npm run build:source -w @peraquest/desktop
+          test ! -e apps/desktop/dist/renderer
       - name: Validate Mobile native projects
         if: matrix.name == 'mobile'
         shell: bash

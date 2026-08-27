@@ -99,6 +99,11 @@ beforeEach(() => {
 })
 
 describe('minor onboarding vertical slice', () => {
+  it('marks the header home link as a dedicated touch target', () => {
+    const wrapper = mount(App)
+    expect(wrapper.get('header a[aria-label="LingoQuest JP ホーム"]').classes()).toContain('home-link')
+  })
+
   it('requires a valid birth month before continuing', async () => {
     const wrapper = mount(BirthMonthForm)
     await wrapper.get('form').trigger('submit')
@@ -111,9 +116,24 @@ describe('minor onboarding vertical slice', () => {
   })
 
   it('keeps restricted capabilities visible and disables a server-redeemed trial', () => {
-    const wrapper = mount(GuardianWait, { props: { trialRedeemed: true } })
+    const wrapper = mount(GuardianWait, { props: { trialRedeemed: true, trialStatus: 'expired', trialError: 'このアカウントのおためしクエストは利用済みか、有効期限が切れています。' } })
     expect(wrapper.text()).toContain('音声アップロード・購入・長期学習記録は利用できません')
+    expect(wrapper.text()).toContain('利用済みか、有効期限が切れています')
     expect(wrapper.get('[data-testid="start-trial"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('announces trial loading and prevents duplicate starts', () => {
+    const wrapper = mount(GuardianWait, { props: { trialRedeemed: false, trialPending: true, trialStatus: 'loading' } })
+    expect(wrapper.get('[data-testid="start-trial"]').text()).toContain('確認中')
+    expect(wrapper.get('[data-testid="start-trial"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[role="status"]').text()).toContain('安全な接続を確認しています')
+  })
+
+  it('keeps retry available after a transient trial error', () => {
+    const wrapper = mount(GuardianWait, { props: { trialRedeemed: false, trialStatus: 'error', trialError: '接続エラー' } })
+    expect(wrapper.get('[data-testid="start-trial"]').text()).toContain('もう一度試す')
+    expect(wrapper.get('[data-testid="start-trial"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[role="alert"]').text()).toContain('接続エラー')
   })
 
   it('uses server questions and submits answers in order', async () => {
@@ -230,7 +250,7 @@ describe('minor onboarding vertical slice', () => {
     await wrapper.get('form').trigger('submit')
     await vi.waitFor(() => expect(wrapper.find('[data-testid="start-trial"]').exists()).toBe(true))
     await wrapper.get('[data-testid="start-trial"]').trigger('click')
-    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('開始できませんでした'))
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('利用済みか、有効期限が切れています'))
     expect(wrapper.get('[data-testid="start-trial"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).not.toContain(firstQuestion.prompt)
   })

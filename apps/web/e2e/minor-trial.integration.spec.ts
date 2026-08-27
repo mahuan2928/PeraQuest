@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 import { buildApp } from '../../api/src/app'
 
@@ -21,6 +22,43 @@ test.afterAll(async () => {
 
 test.beforeEach(() => {
   expiryClock = new Date('2026-08-27T00:00:00.000Z')
+})
+
+test('static viewport and footer styles preserve the iOS safe-area contract', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+  const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
+
+  expect(html).toMatch(/name="viewport" content="[^"]*viewport-fit=cover[^"]*"/)
+  expect(styles).toContain('--safe-bottom: env(safe-area-inset-bottom, 0px)')
+  expect(styles).toMatch(/footer \{[^}]*padding:[^;}]*calc\(20px \+ var\(--safe-bottom\)\)/)
+  expect(styles).not.toMatch(/\.app-shell \{[^}]*safe-bottom/)
+})
+
+test('mobile WebKit keeps primary navigation and footer content inside safe bounds', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-webkit', 'mobile WebKit gate')
+  await page.goto('/')
+
+  const viewport = await page.locator('meta[name="viewport"]').getAttribute('content')
+  expect(viewport).toContain('viewport-fit=cover')
+
+  const homeBox = await page.getByRole('link', { name: 'LingoQuest JP ホーム' }).boundingBox()
+  expect(homeBox).not.toBeNull()
+  expect(homeBox!.width).toBeGreaterThanOrEqual(44)
+  expect(homeBox!.height).toBeGreaterThanOrEqual(44)
+
+  const footer = page.locator('footer')
+  await footer.scrollIntoViewIfNeeded()
+  const footerBounds = await footer.evaluate((element) => {
+    const rect = element.getBoundingClientRect()
+    const styles = getComputedStyle(element)
+    return {
+      bottom: rect.bottom,
+      viewportHeight: window.visualViewport?.height ?? window.innerHeight,
+      paddingBottom: Number.parseFloat(styles.paddingBottom),
+    }
+  })
+  expect(footerBounds.bottom).toBeLessThanOrEqual(footerBounds.viewportHeight + 1)
+  expect(footerBounds.paddingBottom).toBeGreaterThanOrEqual(20)
 })
 
 test('real API keeps a minor gated and enforces one non-persistent trial on the server', async ({ page }) => {

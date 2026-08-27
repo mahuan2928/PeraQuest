@@ -9,21 +9,47 @@ import { knowledgeGroups } from '../data/knowledge'
   >
     <header class="mastery-header">
       <div>
-        <p class="eyebrow">MY KNOWLEDGE</p>
-        <h1 id="mastery-title">知識マップ</h1>
-        <p class="mastery-lead">学んだことの今の手応えを見て、次の練習を選びましょう。</p>
-        <p class="demo-notice" data-testid="mastery-demo-notice"><strong>DEMO ONLY</strong> 表示中の掌握度はサンプルです。実際の学習データではありません。</p>
+        <p class="eyebrow">
+          MY KNOWLEDGE
+        </p>
+        <h1 id="mastery-title">
+          知識マップ
+        </h1>
+        <p class="mastery-lead">
+          学んだことの今の手応えを見て、次の練習を選びましょう。
+        </p>
+        <p
+          class="demo-notice"
+          data-testid="mastery-demo-notice"
+        >
+          <strong>DEMO ONLY</strong> 表示中の掌握度はサンプルです。実際の学習データではありません。
+        </p>
       </div>
-      <div class="mastery-summary" aria-label="全体の掌握度">
+      <div
+        class="mastery-summary"
+        aria-label="全体の掌握度"
+      >
         <strong>68%</strong>
         <span>全体の掌握度</span>
       </div>
     </header>
 
-    <div class="mastery-legend" aria-label="掌握度の見方">
-      <span><i class="legend-dot legend-dot--strong" aria-hidden="true" />安定している</span>
-      <span><i class="legend-dot legend-dot--growing" aria-hidden="true" />伸びている</span>
-      <span><i class="legend-dot legend-dot--review" aria-hidden="true" />もう一度</span>
+    <div
+      class="mastery-legend"
+      aria-label="掌握度の見方"
+    >
+      <span><i
+        class="legend-dot legend-dot--strong"
+        aria-hidden="true"
+      />安定している</span>
+      <span><i
+        class="legend-dot legend-dot--growing"
+        aria-hidden="true"
+      />伸びている</span>
+      <span><i
+        class="legend-dot legend-dot--review"
+        aria-hidden="true"
+      />もう一度</span>
     </div>
 
     <div class="knowledge-groups">
@@ -34,7 +60,9 @@ import { knowledgeGroups } from '../data/knowledge'
       >
         <div class="group-heading">
           <div>
-            <p class="group-kicker">KNOWLEDGE SET</p>
+            <p class="group-kicker">
+              KNOWLEDGE SET
+            </p>
             <h2>{{ group.title }}</h2>
             <p>{{ group.description }}</p>
           </div>
@@ -71,7 +99,9 @@ import { knowledgeGroups } from '../data/knowledge'
                 </div>
                 <strong>{{ point.mastery }}%</strong>
               </div>
-              <p class="last-practiced">最近の練習：{{ point.lastPracticed }}</p>
+              <p class="last-practiced">
+                最近の練習：{{ point.lastPracticed }}
+              </p>
             </div>
             <button
               class="practice-button"

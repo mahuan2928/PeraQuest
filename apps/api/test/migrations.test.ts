@@ -62,6 +62,14 @@ describe('database migrations', () => {
     expect(redemptionColumns.rows.map(({ column_name }) => column_name)).toEqual(['redeemed_at', 'student_id'])
     const attemptColumns = await database.query<{ column_name: string }>("SELECT column_name FROM information_schema.columns WHERE table_name = 'trial_attempts' ORDER BY column_name")
     expect(attemptColumns.rows.map(({ column_name }) => column_name)).not.toContain('answers')
+
+    const durableKnowledgeTables = await database.query<{ table_name: string }>(`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name IN ('knowledge_evidence', 'student_knowledge', 'remediation_tasks', 'unlock_states')
+    `)
+    expect(durableKnowledgeTables.rows).toEqual([])
   })
 
   it('enforces one-time redemption atomically through the PostgreSQL repository', async () => {

@@ -102,6 +102,86 @@ export interface CapabilityResponse {
   entitlements: string[]
 }
 
+/** Contract-only knowledge-domain vocabulary. These DTOs do not imply runtime APIs or persistence. */
+export const knowledgeStates = ['new', 'learning', 'review', 'mastered', 'suspended'] as const
+export type KnowledgeState = (typeof knowledgeStates)[number]
+
+export const evidenceSources = ['lesson', 'daily_review', 'stage_exam', 'cross_stage_challenge'] as const
+export type EvidenceSource = (typeof evidenceSources)[number]
+
+export const knowledgeEvidenceOutcomes = ['correct', 'incorrect', 'skipped'] as const
+export type KnowledgeEvidenceOutcome = (typeof knowledgeEvidenceOutcomes)[number]
+
+export const remediationTaskStatuses = ['open', 'completed', 'dismissed', 'expired'] as const
+export type RemediationTaskStatus = (typeof remediationTaskStatuses)[number]
+
+export const remediationReasons = ['lesson_gap', 'review_gap', 'stage_exam_gap', 'challenge_gap'] as const
+export type RemediationReason = (typeof remediationReasons)[number]
+
+export const unlockStatuses = ['locked', 'unlocked', 'completed'] as const
+export type UnlockStatus = (typeof unlockStatuses)[number]
+
+export const unlockReasons = ['prerequisite', 'stage_exam_passed', 'challenge_passed', 'manual_grant'] as const
+export type UnlockReason = (typeof unlockReasons)[number]
+
+export interface KnowledgeNodeDto {
+  knowledgeNodeId: string
+  examLevel: ExamLevel
+  skill: string
+  code: string
+  title: string
+  version: string
+  status: 'draft' | 'published' | 'retired'
+  prerequisiteIds: string[]
+}
+
+export interface StudentKnowledgeDto {
+  studentId: string
+  knowledgeNodeId: string
+  state: KnowledgeState
+  masteryScore: number
+  stabilityDays: number
+  dueAt: string | null
+  attemptCount: number
+  correctCount: number
+  lastAttemptAt: string | null
+  version: string
+}
+
+/** Camel-case DTO projection of the append-only `knowledge_evidence` record. */
+export interface KnowledgeEvidenceDto {
+  evidenceId: string
+  studentId: string
+  knowledgeNodeId: string
+  source: EvidenceSource
+  outcome: KnowledgeEvidenceOutcome
+  difficulty: number | null
+  occurredAt: string
+  idempotencyKey: string
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
+export interface RemediationTaskDto {
+  remediationTaskId: string
+  studentId: string
+  knowledgeNodeId: string
+  status: RemediationTaskStatus
+  reason: RemediationReason
+  dueAt: string | null
+  completedAt: string | null
+  sourceEvidenceId: KnowledgeEvidenceDto['evidenceId'] | null
+}
+
+export interface UnlockStateDto {
+  studentId: string
+  examLevel: ExamLevel
+  stage: number
+  status: UnlockStatus
+  reason: UnlockReason
+  updatedAt: string
+}
+
 export const userRoles = ['student', 'guardian', 'admin', 'service'] as const
 export type UserRole = (typeof userRoles)[number]
 

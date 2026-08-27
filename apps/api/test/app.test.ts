@@ -164,7 +164,7 @@ describe('identity, consent, and capabilities slice', () => {
     expect(response.json()).toEqual({ code: 'INVALID_BIRTH_MONTH' })
   })
 
-  it('allows one server-authoritative minor trial and never returns answers before submission', async () => {
+  it('allows one server-authoritative minor trial without durable knowledge-domain side effects', async () => {
     const repository = new MemoryStudentRepository()
     await repository.create({ id: 'minor-1', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'pending', guardianId: null })
     const app = buildApp({ repository, now: () => new Date('2026-08-19T00:00:00Z') })
@@ -184,6 +184,11 @@ describe('identity, consent, and capabilities slice', () => {
       expect(answer.statusCode).toBe(200)
       const body = answer.json()
       expect(body.progressPersisted).toBe(false)
+      expect(body).not.toHaveProperty('knowledgeEvidence')
+      expect(body).not.toHaveProperty('remediationTasks')
+      expect(body).not.toHaveProperty('unlockState')
+      expect(body).not.toHaveProperty('mastery')
+      expect(body).not.toHaveProperty('rewards')
       if (body.correct) score += 1
       if (index < 11) {
         expect(body.score).toBeNull()

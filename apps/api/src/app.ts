@@ -336,6 +336,10 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       attemptId: parsedAttemptId.data,
       idempotencyKey: parsedIdempotencyKey.data,
       requestHash,
+      actorAuthProvider: config.AUTH_PROVIDER,
+      actorProviderSubject: actor.providerSubject,
+      eventId: randomUUID(),
+      requestId: randomUUID(),
       answers: body.answers,
     })
     switch (result.status) {

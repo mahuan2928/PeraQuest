@@ -325,6 +325,10 @@ describe('formal stage attempt Bearer authorization', () => {
     expect(valid.json()).toEqual(resultResponse)
     expect(repository.submits).toHaveLength(1)
     expect(repository.submits[0]?.studentId).toBe(STUDENT_A)
+    expect(repository.submits[0]?.actorAuthProvider).toBe('email_magic_link')
+    expect(repository.submits[0]?.actorProviderSubject).toBe('student-a-sub')
+    expect(repository.submits[0]?.eventId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(repository.submits[0]?.requestId).toMatch(/^[0-9a-f-]{36}$/)
     await app.close()
   })
 

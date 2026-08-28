@@ -321,4 +321,96 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       WHERE id = $1
     `, [ids.attemptThree])).rejects.toThrow(/expired stage attempts cannot be submitted/)
   })
+
+  it('accepts terminal audit events only when they match authoritative attempt terminal times', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await database.query(`
+      INSERT INTO auth_identities (id, user_id, provider, provider_subject)
+      VALUES ('00000000-0000-0000-0000-000000003601', $1, 'email_magic_link', 'student-audit-sub')
+    `, [ids.student])
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+
+    await expect(database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      VALUES ('00000000-0000-0000-0000-000000003701', 'attempt_submitted', $1, 'student',
+              'email_magic_link', 'student-audit-sub', 'self', $1, $2,
+              'request-terminal-1', 'forged submit', CURRENT_TIMESTAMP)
+    `, [ids.student, ids.attemptOne])).rejects.toThrow(/attempt_submitted must match/)
+
+    const snapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string }>(`
+      SELECT item.id AS item_snapshot_id, keys.correct_option_snapshot_id
+      FROM stage_attempt_item_snapshots item
+      JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+      WHERE item.attempt_id = $1
+    `, [ids.attemptOne])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'submit-1')
+    `, [ids.attemptOne, snapshot.rows[0]!.item_snapshot_id, snapshot.rows[0]!.correct_option_snapshot_id])
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1, passed = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptOne])
+
+    await expect(database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      SELECT '00000000-0000-0000-0000-000000003702', 'attempt_submitted', student_id, 'student',
+             'email_magic_link', 'student-audit-sub', 'self', student_id, id,
+             'request-terminal-2', 'forged submit time', submitted_at + interval '1 second'
+      FROM stage_attempts WHERE id = $1
+    `, [ids.attemptOne])).rejects.toThrow(/authoritative submitted_at/)
+    await database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      SELECT '00000000-0000-0000-0000-000000003703', 'attempt_submitted', student_id, 'student',
+             'email_magic_link', 'student-audit-sub', 'self', student_id, id,
+             'request-terminal-3', 'stage_attempt_submitted', submitted_at
+      FROM stage_attempts WHERE id = $1
+    `, [ids.attemptOne])
+
+    await startAttempt(database, ids.attemptTwo, ids.versionOne)
+    await database.query('ALTER TABLE stage_attempts DISABLE TRIGGER stage_attempt_transition_trg')
+    await database.query(`
+      UPDATE stage_attempts
+      SET started_at = CURRENT_TIMESTAMP - interval '2 hours',
+          expires_at = CURRENT_TIMESTAMP - interval '1 hour'
+      WHERE id = $1
+    `, [ids.attemptTwo])
+    await database.query('ALTER TABLE stage_attempts ENABLE TRIGGER stage_attempt_transition_trg')
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'expired', expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptTwo])
+    await database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      SELECT '00000000-0000-0000-0000-000000003704', 'attempt_expired', student_id, 'student',
+             'email_magic_link', 'student-audit-sub', 'self', student_id, id,
+             'request-terminal-4', 'stage_attempt_expired', expired_at
+      FROM stage_attempts WHERE id = $1
+    `, [ids.attemptTwo])
+
+    const audits = await database.query<{ event_type: string; count: number }>(`
+      SELECT event_type, count(*)::int AS count
+      FROM learning_audit_events
+      WHERE attempt_id IN ($1, $2)
+      GROUP BY event_type
+      ORDER BY event_type
+    `, [ids.attemptOne, ids.attemptTwo])
+    expect(audits.rows).toEqual([
+      { event_type: 'attempt_submitted', count: 1 },
+      { event_type: 'attempt_expired', count: 1 },
+    ])
+  })
 })

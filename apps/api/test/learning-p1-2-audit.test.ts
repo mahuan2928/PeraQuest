@@ -139,6 +139,7 @@ describe('learning P1.2 audit migration', () => {
       '0005_learning_audit.sql',
       '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
       '0007_learning_p1_3_3_submit_grading.sql',
+      '0008_learning_p1_3_4_terminal_audit.sql',
     ])
     await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual([])
     const backfilled = await database.query<{ attempts: number; snapshots: number; missing_hashes: number }>(`
@@ -220,6 +221,73 @@ describe('learning P1.2 audit migration', () => {
     }])
   })
 
+  it('uses authoritative terminal attempt times when appending submitted and expired audit events', async () => {
+    const database = await createDatabase()
+    await seedAttempts(database)
+    const repository = new PostgresLearningAuditRepository(asMigrationDatabase(database))
+    const snapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string }>(`
+      SELECT item.id AS item_snapshot_id, keys.correct_option_snapshot_id
+      FROM stage_attempt_item_snapshots item
+      JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+      WHERE item.attempt_id = $1
+    `, [ids.attemptA])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'submit-1')
+    `, [ids.attemptA, snapshot.rows[0]!.item_snapshot_id, snapshot.rows[0]!.correct_option_snapshot_id])
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1, passed = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptA])
+    const submitted = await repository.append({
+      eventId: '00000000-0000-0000-0000-000000001361',
+      eventType: 'attempt_submitted',
+      actorId: ids.studentA,
+      actorRole: 'student',
+      actorAuthProvider: 'email_magic_link',
+      actorProviderSubject: 'student-a-sub',
+      actorRelationship: 'self',
+      studentId: ids.studentA,
+      attemptId: ids.attemptA,
+      requestId: 'request-audit-61',
+      reason: 'stage_attempt_submitted',
+    })
+    const submittedAttempt = await database.query<{ submitted_at: Date }>('SELECT submitted_at FROM stage_attempts WHERE id = $1', [ids.attemptA])
+    expect(submitted.occurredAt.toISOString()).toBe(submittedAttempt.rows[0]!.submitted_at.toISOString())
+
+    await database.query('ALTER TABLE stage_attempts DISABLE TRIGGER stage_attempt_transition_trg')
+    await database.query(`
+      UPDATE stage_attempts
+      SET started_at = CURRENT_TIMESTAMP - interval '2 hours',
+          expires_at = CURRENT_TIMESTAMP - interval '1 hour'
+      WHERE id = $1
+    `, [ids.attemptB])
+    await database.query('ALTER TABLE stage_attempts ENABLE TRIGGER stage_attempt_transition_trg')
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'expired', expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptB])
+    const expired = await repository.append({
+      eventId: '00000000-0000-0000-0000-000000001362',
+      eventType: 'attempt_expired',
+      actorId: ids.studentB,
+      actorRole: 'student',
+      actorAuthProvider: 'email_magic_link',
+      actorProviderSubject: 'student-b-sub',
+      actorRelationship: 'self',
+      studentId: ids.studentB,
+      attemptId: ids.attemptB,
+      requestId: 'request-audit-62',
+      reason: 'stage_attempt_expired',
+    })
+    const expiredAttempt = await database.query<{ expired_at: Date }>('SELECT expired_at FROM stage_attempts WHERE id = $1', [ids.attemptB])
+    expect(expired.occurredAt.toISOString()).toBe(expiredAttempt.rows[0]!.expired_at.toISOString())
+  })
+
   it('rejects open-attempt terminal events and forged authoritative times through direct SQL', async () => {
     const database = await createDatabase()
     await seedAttempts(database)
@@ -232,7 +300,7 @@ describe('learning P1.2 audit migration', () => {
              'student', 'email_magic_link', 'student-a-sub', 'self', student_id, id,
              'request-audit-11', 'forged submission', CURRENT_TIMESTAMP
       FROM stage_attempts WHERE id = $1
-    `, [ids.attemptA])).rejects.toThrow(/not enabled/)
+    `, [ids.attemptA])).rejects.toThrow(/attempt_submitted must match/)
     await expect(database.query(`
       INSERT INTO learning_audit_events
         (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
@@ -241,7 +309,7 @@ describe('learning P1.2 audit migration', () => {
              'student', 'email_magic_link', 'student-a-sub', 'self', student_id, id,
              'request-audit-12', 'forged expiry', expires_at
       FROM stage_attempts WHERE id = $1
-    `, [ids.attemptA])).rejects.toThrow(/not enabled/)
+    `, [ids.attemptA])).rejects.toThrow(/attempt_expired must match/)
     await expect(database.query(`
       INSERT INTO learning_audit_events
         (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,

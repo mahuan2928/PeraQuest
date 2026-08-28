@@ -296,7 +296,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         await expect(client.query(`
           UPDATE stage_attempts ${transition}
           WHERE id = '00000000-0000-0000-0000-000000000301'
-        `)).rejects.toThrow(/P1.3 grading runtime/)
+        `)).rejects.toThrow(/cannot expire before expires_at/)
       }
 
       const attempt = await client.query<{ status: string; score: string | null; passed: boolean | null }>(`

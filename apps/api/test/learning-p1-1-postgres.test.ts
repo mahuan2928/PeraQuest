@@ -131,7 +131,13 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         runMigrations(second),
       ])
       expect([firstResult, secondResult].sort((left, right) => right.length - left.length)).toEqual([
-        ['0001_identity_guardian_consent.sql', '0002_one_time_trial.sql', '0004_learning_p1_1_idempotency.sql', '0005_learning_audit.sql'],
+        [
+          '0001_identity_guardian_consent.sql',
+          '0002_one_time_trial.sql',
+          '0004_learning_p1_1_idempotency.sql',
+          '0005_learning_audit.sql',
+          '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
+        ],
         [],
       ])
       const ledger = await first.query<{ name: string; count: string }>(`
@@ -145,6 +151,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0002_one_time_trial.sql', count: '1' },
         { name: '0004_learning_p1_1_idempotency.sql', count: '1' },
         { name: '0005_learning_audit.sql', count: '1' },
+        { name: '0006_learning_p1_3_1_stage_attempt_snapshot.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])
@@ -286,6 +293,47 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
       `)
       expect(attempt.rows).toEqual([{ status: 'open', score: null, passed: null }])
     } finally {
+      await client.end()
+    }
+  }, 30_000)
+
+  it('creates attempt snapshots and rejects direct snapshot injection even with a forged GUC', async () => {
+    const schema = await createSchema()
+    const client = await connect(schema)
+    try {
+      await runMigrations(client)
+      await seedCompleteDraft(client)
+      await client.query(`
+        UPDATE stage_exam_versions
+        SET status = 'published', published_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [ids.version])
+      await client.query(`
+        INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
+        VALUES ('00000000-0000-0000-0000-000000000303', $1, $2,
+                CURRENT_TIMESTAMP + interval '20 minutes')
+      `, [ids.student, ids.version])
+
+      const snapshots = await client.query<{ snapshot_hash: string; count: number }>(`
+        SELECT a.snapshot_hash, count(s.id)::int AS count
+        FROM stage_attempts a
+        JOIN stage_attempt_item_snapshots s ON s.attempt_id = a.id
+        WHERE a.id = '00000000-0000-0000-0000-000000000303'
+        GROUP BY a.snapshot_hash
+      `)
+      expect(snapshots.rows).toEqual([{ snapshot_hash: expect.stringMatching(/^[0-9a-f]{64}$/), count: 1 }])
+
+      await client.query('BEGIN')
+      await client.query("SET LOCAL peraquest.stage_attempt_snapshot_write = 'on'")
+      await expect(client.query(`
+        INSERT INTO stage_attempt_item_snapshots
+          (attempt_id, source_item_id, item_ref, position, prompt, skill_ref, knowledge_point_ref, max_score)
+        VALUES ('00000000-0000-0000-0000-000000000303', $1, 'forged', 99,
+                'Forged prompt.', 'reading', 'forged', 1)
+      `, [ids.item])).rejects.toThrow(/snapshot trigger/)
+      await client.query('ROLLBACK')
+    } finally {
+      await client.query('ROLLBACK').catch(() => undefined)
       await client.end()
     }
   }, 30_000)

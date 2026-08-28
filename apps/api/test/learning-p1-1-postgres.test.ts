@@ -281,6 +281,14 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
              passed = true, updated_at = CURRENT_TIMESTAMP`,
         `SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0,
              passed = false, updated_at = CURRENT_TIMESTAMP`,
+      ]) {
+        await expect(client.query(`
+          UPDATE stage_attempts ${transition}
+          WHERE id = '00000000-0000-0000-0000-000000000301'
+        `)).rejects.toThrow(/exactly one scored answer per item/)
+      }
+
+      for (const transition of [
         `SET status = 'expired', expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP`,
       ]) {
         await expect(client.query(`

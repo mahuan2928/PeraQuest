@@ -99,7 +99,7 @@ export const createAuthActor = async (token: string, config: AuthConfig, verifie
   }
   const user = await resolver.resolve(config.issuer, claims.sub)
   if (!user || user.disabledAt || user.deletedAt) throw new AuthFailure('AUTH_INVALID')
-  return { id: user.id, role: user.role, method: 'bearer' }
+  return { id: user.id, role: user.role, method: 'bearer', providerSubject: claims.sub }
 }
 
 export const legacyActor = (headers: Record<string, unknown>): AuthActor | null => {

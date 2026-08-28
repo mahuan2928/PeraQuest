@@ -233,6 +233,7 @@ export interface AuthActor {
   id: string
   role: UserRole
   method: AuthMethod
+  providerSubject?: string
 }
 
 export interface AuthorizationProjection {

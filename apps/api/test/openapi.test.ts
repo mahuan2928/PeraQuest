@@ -14,6 +14,8 @@ describe('OpenAPI document', () => {
     const document = JSON.parse(await readFile(resolve(process.cwd(), '../../docs/api/openapi.json'), 'utf8')) as OpenApiDocument
     expect(document.openapi).toBe('3.1.0')
     expect(Object.keys(document.paths).sort()).toEqual([
+      '/api/v1/stage-attempts/{stageAttemptId}',
+      '/api/v1/stage-exams/{stageExamId}/attempts',
       '/health',
       '/v1/me/capabilities',
       '/v1/me/consents/voice-processing',
@@ -31,7 +33,11 @@ describe('OpenAPI document', () => {
       required: false,
       schema: { minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' },
     })
-    expect(document.components.parameters.IdempotencyKey!.description).toContain('does not register runtime routes')
+    expect(document.components.parameters.IdempotencyKey!.description).toContain('formal stage-attempt start runtime')
+    expect(document.components.parameters.FormalIdempotencyKey!).toMatchObject({
+      required: true,
+      schema: { minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' },
+    })
     expect(document.components.parameters.LegacyGuardianHeader).toBeDefined()
     expect(document.components.parameters.IfMatchRevision!).toMatchObject({ required: false })
     expect(document.components.parameters.IfMatchRevision!.description).toContain('planned')
@@ -58,15 +64,21 @@ describe('OpenAPI document', () => {
     expect(document.components.securitySchemes).toHaveProperty('BearerAuth')
     expect(document.components.securitySchemes).toHaveProperty('LegacyGuardianHeader')
     const writeOperations = Object.values(document.paths).flatMap((item) => Object.entries(item).filter(([method]) => ['post', 'put', 'patch', 'delete'].includes(method)).map(([, operation]) => operation as { parameters?: Array<{ $ref?: string }>; security?: unknown }))
-    expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey'))).toBe(true)
-    expect(writeOperations.every((operation) => operation.security === undefined)).toBe(true)
-    expect(document.components.securitySchemes.BearerAuth).toMatchObject({ description: expect.stringContaining('Not implemented') })
+    expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey' || parameter.$ref === '#/components/parameters/FormalIdempotencyKey'))).toBe(true)
+    const startStageAttemptOperation = document.paths['/api/v1/stage-exams/{stageExamId}/attempts']?.post
+    const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
+    expect(startStageAttemptOperation).toBeDefined()
+    expect(getStageAttemptOperation).toBeDefined()
+    expect(startStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(startStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
+    expect(getStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(document.components.securitySchemes.BearerAuth).toMatchObject({ description: expect.stringContaining('Required for formal stage-attempt runtime') })
     expect(document['x-runtime-contract-status']).toMatchObject({
-      authentication: expect.stringContaining('planned'),
-      idempotency: expect.stringContaining('start/submit runtime is not registered'),
+      authentication: expect.stringContaining('BearerAuth is implemented for formal stage-attempt runtime'),
+      idempotency: expect.stringContaining('formal stage-attempt start uses Idempotency-Key'),
       revision: expect.stringContaining('not currently required'),
     })
-    expect(document['x-runtime-contract-status']?.idempotency).toContain('IDEMPOTENCY_REPLAY is not emitted by P1.1')
+    expect(document['x-runtime-contract-status']?.idempotency).toContain('IDEMPOTENCY_REPLAY is not emitted')
     expect(document.components.parameters.StudentId).toMatchObject({ deprecated: true })
   })
 })

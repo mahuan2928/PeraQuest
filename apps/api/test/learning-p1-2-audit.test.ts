@@ -138,6 +138,7 @@ describe('learning P1.2 audit migration', () => {
     await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual([
       '0005_learning_audit.sql',
       '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
+      '0007_learning_p1_3_3_submit_grading.sql',
     ])
     await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual([])
     const backfilled = await database.query<{ attempts: number; snapshots: number; missing_hashes: number }>(`

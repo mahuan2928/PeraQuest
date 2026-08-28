@@ -37,6 +37,7 @@ describe('database migrations', () => {
       '0004_learning_p1_1_idempotency.sql',
       '0005_learning_audit.sql',
       '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
+      '0007_learning_p1_3_3_submit_grading.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 

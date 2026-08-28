@@ -5,9 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { AuthUserResolver, TokenVerifier } from '../src/auth.js'
 import { loadConfig } from '../src/config.js'
-import { MemoryStudentRepository, type StartStageAttemptInput } from '../src/repository.js'
+import { MemoryStudentRepository, type StartStageAttemptInput, type SubmitStageAttemptInput } from '../src/repository.js'
 import { buildServerApp } from '../src/server.js'
-import type { StartStageAttemptResponse } from '@peraquest/contracts'
+import type { StageAttemptResultResponse, StartStageAttemptResponse } from '@peraquest/contracts'
 
 const STUDENT_A = '00000000-0000-0000-0000-000000000101'
 const STUDENT_B = '00000000-0000-0000-0000-000000000102'
@@ -193,9 +193,21 @@ describe('formal stage attempt Bearer authorization', () => {
       ],
     }],
   }
+  const resultResponse: StageAttemptResultResponse = {
+    attemptId: attemptResponse.attemptId,
+    status: 'passed',
+    submittedAt: '2027-01-15T08:05:00.000Z',
+    rawScore: 1,
+    maxScore: 1,
+    score: 1,
+    passed: true,
+    passScore: 0.8,
+    items: [{ itemId: attemptResponse.items[0]!.itemId, outcome: 'correct', earnedScore: 1, maxScore: 1 }],
+  }
 
   class FormalAttemptRepository extends MemoryStudentRepository {
     readonly starts: StartStageAttemptInput[] = []
+    readonly submits: SubmitStageAttemptInput[] = []
 
     async startStageAttempt(input: StartStageAttemptInput) {
       this.starts.push(input)
@@ -204,6 +216,15 @@ describe('formal stage attempt Bearer authorization', () => {
 
     async findStageAttempt(studentId: string, attemptId: string) {
       return studentId === STUDENT_A && attemptId === attemptResponse.attemptId ? attemptResponse : null
+    }
+
+    async submitStageAttempt(input: SubmitStageAttemptInput) {
+      this.submits.push(input)
+      return { status: 'submitted' as const, httpStatus: 200, result: resultResponse }
+    }
+
+    async findStageAttemptResult(studentId: string, attemptId: string) {
+      return studentId === STUDENT_A && attemptId === attemptResponse.attemptId ? resultResponse : null
     }
   }
 
@@ -270,6 +291,72 @@ describe('formal stage attempt Bearer authorization', () => {
     const response = await app.inject({
       method: 'GET',
       url: `/api/v1/stage-attempts/00000000-0000-0000-0000-000000009999`,
+      headers: { authorization: 'Bearer student-a-sub' },
+    })
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toEqual({ code: 'STAGE_ATTEMPT_NOT_FOUND' })
+    await app.close()
+  })
+
+  it('submits formal answers from the Bearer student and rejects forged scoring fields', async () => {
+    const { app, repository } = await buildFormalApp()
+    const forged = await app.inject({
+      method: 'POST',
+      url: `/api/v1/stage-attempts/${attemptResponse.attemptId}/submit`,
+      headers: { authorization: 'Bearer student-a-sub', 'idempotency-key': 'submit-key-1' },
+      payload: {
+        answers: [{ itemId: attemptResponse.items[0]!.itemId, selectedOptionId: attemptResponse.items[0]!.options[0]!.optionId }],
+        score: 999,
+      },
+    })
+    expect(forged.statusCode).toBe(400)
+    expect(forged.json()).toEqual({ code: 'INVALID_STAGE_SUBMISSION' })
+    expect(repository.submits).toHaveLength(0)
+
+    const valid = await app.inject({
+      method: 'POST',
+      url: `/api/v1/stage-attempts/${attemptResponse.attemptId}/submit`,
+      headers: { authorization: 'Bearer student-a-sub', 'idempotency-key': 'submit-key-2' },
+      payload: {
+        answers: [{ itemId: attemptResponse.items[0]!.itemId, selectedOptionId: attemptResponse.items[0]!.options[0]!.optionId }],
+      },
+    })
+    expect(valid.statusCode).toBe(200)
+    expect(valid.json()).toEqual(resultResponse)
+    expect(repository.submits).toHaveLength(1)
+    expect(repository.submits[0]?.studentId).toBe(STUDENT_A)
+    await app.close()
+  })
+
+  it('rejects Guardian and legacy submit attempts before repository submit is called', async () => {
+    const { app, repository } = await buildFormalApp()
+    const payload = { answers: [{ itemId: attemptResponse.items[0]!.itemId, selectedOptionId: null }] }
+    const guardian = await app.inject({
+      method: 'POST',
+      url: `/api/v1/stage-attempts/${attemptResponse.attemptId}/submit`,
+      headers: { authorization: 'Bearer guardian-sub', 'idempotency-key': 'submit-key-1' },
+      payload,
+    })
+    expect(guardian.statusCode).toBe(403)
+    expect(guardian.json()).toEqual({ code: 'AUTH_FORBIDDEN' })
+
+    const legacy = await app.inject({
+      method: 'POST',
+      url: `/api/v1/stage-attempts/${attemptResponse.attemptId}/submit`,
+      headers: { 'x-student-id': STUDENT_A, 'idempotency-key': 'submit-key-1' },
+      payload,
+    })
+    expect(legacy.statusCode).toBe(401)
+    expect(legacy.json()).toEqual({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
+    expect(repository.submits).toHaveLength(0)
+    await app.close()
+  })
+
+  it('does not let Student A read Student B stage attempt results', async () => {
+    const { app } = await buildFormalApp()
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/stage-attempts/00000000-0000-0000-0000-000000009999/result`,
       headers: { authorization: 'Bearer student-a-sub' },
     })
     expect(response.statusCode).toBe(404)

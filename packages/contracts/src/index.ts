@@ -134,12 +134,31 @@ export interface StartStageAttemptResponse {
   items: PublicStageExamItemDto[]
 }
 
-/** Contract only: the P1.1 slice does not register a submit runtime route. */
+/** Formal P1.3 submit runtime request. The server ignores any client score/result fields. */
 export interface SubmitStageAttemptRequest {
   answers: Array<{
     itemId: string
     selectedOptionId: string | null
   }>
+}
+
+export interface StageAttemptResultItemDto {
+  itemId: string
+  outcome: KnowledgeEvidenceOutcome
+  earnedScore: number
+  maxScore: number
+}
+
+export interface StageAttemptResultResponse {
+  attemptId: string
+  status: 'passed' | 'failed'
+  submittedAt: string
+  rawScore: number
+  maxScore: number
+  score: number
+  passed: boolean
+  passScore: number
+  items: StageAttemptResultItemDto[]
 }
 
 /** Contract-only knowledge-domain vocabulary. These DTOs do not imply runtime APIs or persistence. */

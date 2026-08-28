@@ -132,6 +132,7 @@ describe('learning P1.1 migration', () => {
       '0004_learning_p1_1_idempotency.sql',
       '0005_learning_audit.sql',
       '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
+      '0007_learning_p1_3_3_submit_grading.sql',
     ])
     const rows = await database.query<{ id: string }>('SELECT id FROM trial_attempts ORDER BY id')
     expect(rows.rows).toEqual([{ id: '00000000-0000-0000-0000-000000000121' }])
@@ -242,7 +243,7 @@ describe('learning P1.1 migration', () => {
     `, [ids.student, ids.version])).rejects.toThrow()
   })
 
-  it('rejects every direct stage-attempt terminal transition until P1.3 can grade persisted answers', async () => {
+  it('rejects direct stage-attempt terminal transitions without complete scored answers', async () => {
     const database = await createDatabase()
     await seedDraftExam(database)
     await publishExam(database)
@@ -256,12 +257,14 @@ describe('learning P1.1 migration', () => {
            passed = true, updated_at = CURRENT_TIMESTAMP`,
       `SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0,
            passed = false, updated_at = CURRENT_TIMESTAMP`,
-      `SET status = 'expired', expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP`,
     ]) {
       await expect(database.query(`
         UPDATE stage_attempts ${transition} WHERE id = $1
-      `, [ids.attempt])).rejects.toThrow(/P1.3 grading runtime/)
+      `, [ids.attempt])).rejects.toThrow(/exactly one scored answer per item/)
     }
+    await expect(database.query(`
+      UPDATE stage_attempts SET status = 'expired', expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1
+    `, [ids.attempt])).rejects.toThrow(/P1.3 grading runtime/)
     await expect(database.query(`
       UPDATE stage_attempts SET updated_at = CURRENT_TIMESTAMP WHERE id = $1
     `, [ids.attempt])).rejects.toThrow(/P1.3 grading runtime/)

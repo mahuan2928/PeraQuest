@@ -444,6 +444,10 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
       await runMigrations(client)
       await seedCompleteDraft(client)
       await client.query(`
+        INSERT INTO auth_identities (id, user_id, provider, provider_subject)
+        VALUES ('00000000-0000-0000-0000-000000000702', $1, 'email_magic_link', 'student-submit-sub')
+      `, [ids.student])
+      await client.query(`
         UPDATE stage_exam_versions
         SET status = 'published', published_at = CURRENT_TIMESTAMP
         WHERE id = $1

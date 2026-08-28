@@ -128,7 +128,11 @@ describe('learning P1.1 migration', () => {
         CHECK (expires_at > created_at - interval '1 hour');
     `)
 
-    await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual(['0004_learning_p1_1_idempotency.sql', '0005_learning_audit.sql'])
+    await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual([
+      '0004_learning_p1_1_idempotency.sql',
+      '0005_learning_audit.sql',
+      '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
+    ])
     const rows = await database.query<{ id: string }>('SELECT id FROM trial_attempts ORDER BY id')
     expect(rows.rows).toEqual([{ id: '00000000-0000-0000-0000-000000000121' }])
 

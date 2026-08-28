@@ -12,10 +12,15 @@ test('quality job provisions an isolated PostgreSQL 16 test database', () => {
   assert.match(qualityJob, /--health-cmd "pg_isready -U postgres -d postgres"/);
   assert.match(qualityJob, /^ {6}TEST_DATABASE_URL: postgresql:\/\/postgres:postgres@127\.0\.0\.1:5432\/peraquest_ci$/m);
   assert.match(qualityJob, /docker exec "\$\{\{ job\.services\.postgres\.id \}\}" createdb -U postgres peraquest_ci/);
+  assert.match(qualityJob, /vitest run test\/learning-p1-1-postgres\.test\.ts --reporter=json --outputFile=\.\.\/\.\.\/\.vitest\/postgres\.json/);
+  assert.match(qualityJob, /node scripts\/ci\/assert-vitest-report\.mjs \.vitest\/postgres\.json/);
+  assert.doesNotMatch(qualityJob, /(?:9|10)\/(?:9|10)|numTotalTests\s*={0,2}\s*(?:9|10)/);
 
   const createDatabase = qualityJob.indexOf('Create isolated PostgreSQL test database');
+  const runPostgresGate = qualityJob.indexOf('Run PostgreSQL suite with zero-skip gate');
   const runTests = qualityJob.indexOf('run: npm test');
   assert.ok(createDatabase >= 0 && createDatabase < runTests, 'the isolated database must exist before tests run');
+  assert.ok(runPostgresGate >= 0 && runPostgresGate < runTests, 'the zero-skip PostgreSQL gate must run before the full test suite');
 });
 
 test('PostgreSQL tests fail fast in CI when TEST_DATABASE_URL is absent', () => {

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { Client } from 'pg'
+import { Client, Pool } from 'pg'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runMigrations } from '../src/migrate.js'
+import { PostgresStudentRepository } from '../src/repository.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -335,6 +336,93 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
     } finally {
       await client.query('ROLLBACK').catch(() => undefined)
       await client.end()
+    }
+  }, 30_000)
+
+  it('starts a formal attempt atomically with snapshot, idempotency, and audit records', async () => {
+    const schema = await createSchema()
+    const client = await connect(schema)
+    const pool = new Pool({ connectionString, options: `-c search_path=${schema}` })
+    try {
+      await runMigrations(client)
+      await seedCompleteDraft(client)
+      await client.query(`
+        INSERT INTO auth_identities (id, user_id, provider, provider_subject)
+        VALUES ('00000000-0000-0000-0000-000000000701', $1, 'email_magic_link', 'student-start-sub')
+      `, [ids.student])
+      await client.query(`
+        UPDATE stage_exam_versions
+        SET status = 'published', published_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [ids.version])
+
+      const repository = new PostgresStudentRepository(pool)
+      const result = await repository.startStageAttempt({
+        studentId: ids.student,
+        stageExamId: ids.exam,
+        attemptId: '00000000-0000-0000-0000-000000000304',
+        idempotencyKey: 'start-key-1',
+        requestHash: Buffer.from('a'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link',
+        actorProviderSubject: 'student-start-sub',
+        eventId: '00000000-0000-0000-0000-000000000801',
+        requestId: '00000000-0000-0000-0000-000000000901',
+      })
+
+      expect(result.status).toBe('created')
+      if (result.status !== 'created') throw new Error('expected created attempt')
+      expect(result.attempt).toMatchObject({
+        attemptId: '00000000-0000-0000-0000-000000000304',
+        examVersionId: ids.version,
+        status: 'open',
+        passScore: 0.8,
+      })
+      expect(result.attempt.items).toHaveLength(1)
+      expect(result.attempt.items[0]?.options).toHaveLength(2)
+      expect(JSON.stringify(result.attempt)).not.toContain(ids.optionA)
+
+      const counts = await client.query<{
+        attempts: number
+        snapshots: number
+        idempotency: number
+        audit: number
+      }>(`
+        SELECT
+          (SELECT count(*)::int FROM stage_attempts) AS attempts,
+          (SELECT count(*)::int FROM stage_attempt_item_snapshots) AS snapshots,
+          (SELECT count(*)::int FROM stage_attempt_start_idempotency) AS idempotency,
+          (SELECT count(*)::int FROM learning_audit_events WHERE event_type = 'attempt_started') AS audit
+      `)
+      expect(counts.rows).toEqual([{ attempts: 1, snapshots: 1, idempotency: 1, audit: 1 }])
+
+      const replay = await repository.startStageAttempt({
+        studentId: ids.student,
+        stageExamId: ids.exam,
+        attemptId: '00000000-0000-0000-0000-000000000305',
+        idempotencyKey: 'start-key-1',
+        requestHash: Buffer.from('a'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link',
+        actorProviderSubject: 'student-start-sub',
+        eventId: '00000000-0000-0000-0000-000000000802',
+        requestId: '00000000-0000-0000-0000-000000000902',
+      })
+      expect(replay).toMatchObject({ status: 'replayed', attempt: result.attempt })
+
+      const secondKey = await repository.startStageAttempt({
+        studentId: ids.student,
+        stageExamId: ids.exam,
+        attemptId: '00000000-0000-0000-0000-000000000306',
+        idempotencyKey: 'start-key-2',
+        requestHash: Buffer.from('b'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link',
+        actorProviderSubject: 'student-start-sub',
+        eventId: '00000000-0000-0000-0000-000000000803',
+        requestId: '00000000-0000-0000-0000-000000000903',
+      })
+      expect(secondKey).toEqual({ status: 'already_open' })
+    } finally {
+      await client.end()
+      await pool.end()
     }
   }, 30_000)
 

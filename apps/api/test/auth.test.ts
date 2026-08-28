@@ -23,7 +23,7 @@ describe('AuthActor adapter', () => {
 
   it('maps a valid token to a server-derived actor and rejects disabled users', async () => {
     const config = { issuer: claims.iss, audience: claims.aud, jwksUrl: 'https://issuer.test/jwks', clockSkewSeconds: 60 }
-    await expect(createAuthActor('valid', config, verifier, resolver, () => 1_700_000_000_000)).resolves.toEqual({ id: 'local-user', role: 'student', method: 'bearer' })
+    await expect(createAuthActor('valid', config, verifier, resolver, () => 1_700_000_000_000)).resolves.toEqual({ id: 'local-user', role: 'student', method: 'bearer', providerSubject: 'provider-sub' })
     await expect(createAuthActor('disabled', config, verifier, { resolve: async () => ({ id: 'local-user', role: 'student', disabledAt: new Date() }) }, () => 1_700_000_000_000)).rejects.toThrowError('AUTH_INVALID')
   })
 

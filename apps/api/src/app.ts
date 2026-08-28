@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { sanitizeErrorDetails } from '@peraquest/contracts'
@@ -10,6 +10,7 @@ import type {
   NotificationChannel,
   PaymentChannel,
   StudentOnboardingResponse,
+  StartStageAttemptResponse,
   TrialAnswerResponse,
   TrialAttemptResponse,
   StableErrorCode,
@@ -34,6 +35,8 @@ const onboardingSchema = z.object({
 })
 const consentSchema = z.object({ status: z.enum(['granted', 'denied', 'withdrawn']), version: z.string().min(1) })
 const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
+const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+const idempotencyKeySchema = z.string().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/)
 
 const sendError = (reply: FastifyReply, statusCode: number, code: StableErrorCode, details?: unknown) => {
   const safeDetails = sanitizeErrorDetails(details)
@@ -119,7 +122,24 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return request.authActor.id
   }
 
-  const protectedPath = (url: string): boolean => url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
+  const formalStudentActor = (request: FastifyRequest, reply: FastifyReply): { id: string; providerSubject: string } | null => {
+    if (request.authActor.method !== 'bearer') {
+      sendError(reply, 401, 'LEGACY_AUTH_NOT_ALLOWED')
+      return null
+    }
+    if (request.authActor.role !== 'student') {
+      sendError(reply, 403, 'AUTH_FORBIDDEN')
+      return null
+    }
+    if (!request.authActor.providerSubject) {
+      sendError(reply, 401, 'AUTH_INVALID')
+      return null
+    }
+    return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
+  }
+
+  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/')
+  const protectedPath = (url: string): boolean => formalProtectedPath(url) || url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return
     try {
@@ -130,6 +150,10 @@ export const buildApp = (options: BuildAppOptions = {}) => {
         request.authActor = await createAuthActor(token, authConfig, tokenVerifier, authUserResolver, () => now().getTime())
         return
       }
+      if (formalProtectedPath(request.url) && (request.headers['x-student-id'] !== undefined || request.headers['x-guardian-id'] !== undefined)) {
+        return reply.code(401).send({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
+      }
+      if (formalProtectedPath(request.url)) throw new AuthFailure('AUTH_REQUIRED')
       if (config.ALLOW_LEGACY_TEST_HEADERS) {
         const actor = legacyActor(request.headers)
         if (actor) { request.authActor = actor; return }
@@ -225,6 +249,59 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       expiresAt: expiresAt.toISOString(),
       progressPersisted: false,
     })
+  })
+
+  app.post<{ Params: { stageExamId: string } }>('/api/v1/stage-exams/:stageExamId/attempts', async (request, reply): Promise<StartStageAttemptResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const parsedExamId = uuidSchema.safeParse(request.params.stageExamId)
+    if (!parsedExamId.success) return sendError(reply, 404, 'STAGE_EXAM_NOT_AVAILABLE')
+    const rawIdempotencyKey = request.headers['idempotency-key']
+    const parsedIdempotencyKey = typeof rawIdempotencyKey === 'string' ? idempotencyKeySchema.safeParse(rawIdempotencyKey) : null
+    if (!parsedIdempotencyKey) return sendError(reply, 400, 'IDEMPOTENCY_KEY_REQUIRED')
+    if (!parsedIdempotencyKey.success) return sendError(reply, 400, 'IDEMPOTENCY_KEY_INVALID')
+
+    const student = await repository.findById(actor.id)
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    const requestHash = createHash('sha256')
+      .update('POST\n/api/v1/stage-exams/')
+      .update(parsedExamId.data)
+      .update('/attempts\nformal')
+      .digest()
+    const result = await repository.startStageAttempt({
+      studentId: actor.id,
+      stageExamId: parsedExamId.data,
+      attemptId: randomUUID(),
+      idempotencyKey: parsedIdempotencyKey.data,
+      requestHash,
+      actorAuthProvider: config.AUTH_PROVIDER,
+      actorProviderSubject: actor.providerSubject,
+      eventId: randomUUID(),
+      requestId: randomUUID(),
+    })
+    switch (result.status) {
+      case 'created':
+      case 'replayed':
+        return reply.code(result.httpStatus).send(result.attempt)
+      case 'exam_not_available':
+        return sendError(reply, 404, 'STAGE_EXAM_NOT_AVAILABLE')
+      case 'already_open':
+        return sendError(reply, 409, 'STAGE_ATTEMPT_ALREADY_OPEN')
+      case 'request_in_progress':
+        return sendError(reply, 409, 'IDEMPOTENCY_REQUEST_IN_PROGRESS')
+      case 'key_reused':
+        return sendError(reply, 409, 'IDEMPOTENCY_KEY_REUSED')
+    }
+  })
+
+  app.get<{ Params: { stageAttemptId: string } }>('/api/v1/stage-attempts/:stageAttemptId', async (request, reply): Promise<StartStageAttemptResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const parsedAttemptId = uuidSchema.safeParse(request.params.stageAttemptId)
+    if (!parsedAttemptId.success) return sendError(reply, 404, 'STAGE_ATTEMPT_NOT_FOUND')
+    const attempt = await repository.findStageAttempt(actor.id, parsedAttemptId.data)
+    if (!attempt) return sendError(reply, 404, 'STAGE_ATTEMPT_NOT_FOUND')
+    return attempt
   })
 
   app.post<{ Params: { attemptId: string } }>('/v1/trial-attempts/:attemptId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {

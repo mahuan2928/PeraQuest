@@ -5,8 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { AuthUserResolver, TokenVerifier } from '../src/auth.js'
 import { loadConfig } from '../src/config.js'
-import { MemoryStudentRepository } from '../src/repository.js'
+import { MemoryStudentRepository, type StartStageAttemptInput } from '../src/repository.js'
 import { buildServerApp } from '../src/server.js'
+import type { StartStageAttemptResponse } from '@peraquest/contracts'
 
 const STUDENT_A = '00000000-0000-0000-0000-000000000101'
 const STUDENT_B = '00000000-0000-0000-0000-000000000102'
@@ -165,6 +166,114 @@ describe('student ownership from AuthActor', () => {
     })
     expect(response.statusCode).toBe(404)
     expect(response.json()).toEqual({ code: 'TRIAL_ATTEMPT_NOT_FOUND' })
+    await app.close()
+  })
+})
+
+describe('formal stage attempt Bearer authorization', () => {
+  const nowSeconds = 1_800_000_000
+  const examId = '00000000-0000-0000-0000-000000009001'
+  const attemptResponse: StartStageAttemptResponse = {
+    attemptId: '00000000-0000-0000-0000-000000009101',
+    examVersionId: '00000000-0000-0000-0000-000000009201',
+    status: 'open',
+    startedAt: '2027-01-15T08:00:00.000Z',
+    expiresAt: '2027-01-15T08:20:00.000Z',
+    passScore: 0.8,
+    items: [{
+      itemId: '00000000-0000-0000-0000-000000009301',
+      itemRef: 'item-1',
+      ordinal: 1,
+      prompt: 'Choose one.',
+      support: null,
+      points: 1,
+      options: [
+        { optionId: '00000000-0000-0000-0000-000000009401', text: 'Alpha' },
+        { optionId: '00000000-0000-0000-0000-000000009402', text: 'Beta' },
+      ],
+    }],
+  }
+
+  class FormalAttemptRepository extends MemoryStudentRepository {
+    readonly starts: StartStageAttemptInput[] = []
+
+    async startStageAttempt(input: StartStageAttemptInput) {
+      this.starts.push(input)
+      return { status: 'created' as const, httpStatus: 201, attempt: attemptResponse }
+    }
+
+    async findStageAttempt(studentId: string, attemptId: string) {
+      return studentId === STUDENT_A && attemptId === attemptResponse.attemptId ? attemptResponse : null
+    }
+  }
+
+  const buildFormalApp = async () => {
+    const repository = new FormalAttemptRepository()
+    await repository.create({ id: STUDENT_A, birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId: GUARDIAN })
+    await repository.create({ id: STUDENT_B, birthMonth: '2012-05', isMinor: true, guardianLinkStatus: 'verified', guardianId: GUARDIAN })
+    const verifier: TokenVerifier = {
+      verify: async (token) => ({ iss: 'https://issuer.test', aud: 'peraquest-api', sub: token, iat: nowSeconds, exp: nowSeconds + 300 }),
+    }
+    const resolver: AuthUserResolver = {
+      resolve: async (_issuer, subject) => {
+        if (subject === 'student-a-sub') return { id: STUDENT_A, role: 'student' }
+        if (subject === 'student-b-sub') return { id: STUDENT_B, role: 'student' }
+        if (subject === 'guardian-sub') return { id: GUARDIAN, role: 'guardian' }
+        return null
+      },
+    }
+    const config = loadConfig({ NODE_ENV: 'test', AUTH_PROVIDER: 'email_magic_link', AUTH_ISSUER: 'https://issuer.test', AUTH_AUDIENCE: 'peraquest-api' })
+    const app = buildApp({ repository, tokenVerifier: verifier, authUserResolver: resolver, config, now: () => new Date(nowSeconds * 1000) })
+    return { app, repository }
+  }
+
+  it('starts a formal attempt from the Bearer student and ignores a forged body studentId', async () => {
+    const { app, repository } = await buildFormalApp()
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/stage-exams/${examId}/attempts`,
+      headers: { authorization: 'Bearer student-a-sub', 'idempotency-key': 'start-key-1' },
+      payload: { studentId: STUDENT_B },
+    })
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toEqual(attemptResponse)
+    expect(repository.starts).toHaveLength(1)
+    expect(repository.starts[0]?.studentId).toBe(STUDENT_A)
+    expect(repository.starts[0]?.stageExamId).toBe(examId)
+    expect(repository.starts[0]?.actorProviderSubject).toBe('student-a-sub')
+    await app.close()
+  })
+
+  it('rejects Guardian and legacy header attempts before repository start is called', async () => {
+    const { app, repository } = await buildFormalApp()
+    const guardian = await app.inject({
+      method: 'POST',
+      url: `/api/v1/stage-exams/${examId}/attempts`,
+      headers: { authorization: 'Bearer guardian-sub', 'idempotency-key': 'start-key-1' },
+    })
+    expect(guardian.statusCode).toBe(403)
+    expect(guardian.json()).toEqual({ code: 'AUTH_FORBIDDEN' })
+
+    const legacy = await app.inject({
+      method: 'POST',
+      url: `/api/v1/stage-exams/${examId}/attempts`,
+      headers: { 'x-student-id': STUDENT_A, 'idempotency-key': 'start-key-1' },
+    })
+    expect(legacy.statusCode).toBe(401)
+    expect(legacy.json()).toEqual({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
+    expect(repository.starts).toHaveLength(0)
+    await app.close()
+  })
+
+  it('does not let Student A read Student B stage attempts', async () => {
+    const { app } = await buildFormalApp()
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/stage-attempts/00000000-0000-0000-0000-000000009999`,
+      headers: { authorization: 'Bearer student-a-sub' },
+    })
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toEqual({ code: 'STAGE_ATTEMPT_NOT_FOUND' })
     await app.close()
   })
 })

@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { ConsentStatus, GuardianLinkStatus, UserRole } from '@peraquest/contracts'
+import type { AuthProvider, ConsentStatus, GuardianLinkStatus, StartStageAttemptResponse, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -44,6 +44,21 @@ export interface TrialAttemptRecord {
 }
 
 export type TrialStartResult = { status: 'created'; attempt: TrialAttemptRecord } | { status: 'redeemed' }
+export type StageAttemptStartResult =
+  | { status: 'created' | 'replayed'; httpStatus: number; attempt: StartStageAttemptResponse }
+  | { status: 'exam_not_available' | 'already_open' | 'request_in_progress' | 'key_reused' }
+
+export interface StartStageAttemptInput {
+  studentId: string
+  stageExamId: string
+  attemptId: string
+  idempotencyKey: string
+  requestHash: Buffer
+  actorAuthProvider: AuthProvider
+  actorProviderSubject: string
+  eventId: string
+  requestId: string
+}
 
 export interface StudentRepository {
   create(student: StudentRecord): Promise<void>
@@ -54,6 +69,92 @@ export interface StudentRepository {
   findTrialAttempt(attemptId: string): Promise<TrialAttemptRecord | null>
   advanceTrialAttempt(attemptId: string, expectedIndex: number, correct: boolean): Promise<TrialAttemptRecord | null>
   completeTrialAttempt(attemptId: string): Promise<void>
+  startStageAttempt(input: StartStageAttemptInput): Promise<StageAttemptStartResult>
+  findStageAttempt(studentId: string, attemptId: string): Promise<StartStageAttemptResponse | null>
+}
+
+interface StageAttemptHeaderRow extends Record<string, unknown> {
+  attempt_id: string
+  exam_version_id: string
+  status: 'open'
+  started_at: Date
+  expires_at: Date
+  pass_score: string
+}
+
+interface StageAttemptItemRow extends Record<string, unknown> {
+  item_id: string
+  item_ref: string
+  ordinal: number
+  prompt: string
+  support: string | null
+  points: string
+}
+
+interface StageAttemptOptionRow extends Record<string, unknown> {
+  item_id: string
+  option_id: string
+  text: string
+  ordinal: number
+}
+
+interface Queryable {
+  query<Row extends Record<string, unknown>>(sql: string, parameters?: unknown[]): Promise<{ rows: Row[]; rowCount?: number | null }>
+}
+
+const parseNumeric = (value: string | number): number => typeof value === 'number' ? value : Number.parseFloat(value)
+
+const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString()
+
+const readStageAttemptView = async (database: Queryable, studentId: string, attemptId: string): Promise<StartStageAttemptResponse | null> => {
+  const headerResult = await database.query<StageAttemptHeaderRow>(`
+    SELECT a.id AS attempt_id, a.exam_version_id, a.status, a.started_at, a.expires_at,
+           ev.pass_score::text AS pass_score
+    FROM stage_attempts a
+    JOIN stage_exam_versions ev ON ev.id = a.exam_version_id
+    WHERE a.id = $1 AND a.student_id = $2 AND a.status = 'open'
+    LIMIT 1
+  `, [attemptId, studentId])
+  const header = headerResult.rows[0]
+  if (!header) return null
+
+  const itemResult = await database.query<StageAttemptItemRow>(`
+    SELECT id AS item_id, item_ref, position AS ordinal, prompt, support, max_score::text AS points
+    FROM stage_attempt_item_snapshots
+    WHERE attempt_id = $1
+    ORDER BY position
+  `, [attemptId])
+  const optionResult = await database.query<StageAttemptOptionRow>(`
+    SELECT s.id AS item_id, os.id AS option_id, os.option_text AS text, os.position AS ordinal
+    FROM stage_attempt_item_snapshots s
+    JOIN stage_attempt_item_option_snapshots os ON os.item_snapshot_id = s.id
+    WHERE s.attempt_id = $1
+    ORDER BY s.position, os.position
+  `, [attemptId])
+  const optionsByItem = new Map<string, StageAttemptOptionRow[]>()
+  for (const option of optionResult.rows) {
+    const options = optionsByItem.get(option.item_id) ?? []
+    options.push(option)
+    optionsByItem.set(option.item_id, options)
+  }
+
+  return {
+    attemptId: header.attempt_id,
+    examVersionId: header.exam_version_id,
+    status: 'open',
+    startedAt: toIso(header.started_at),
+    expiresAt: toIso(header.expires_at),
+    passScore: parseNumeric(header.pass_score),
+    items: itemResult.rows.map((item) => ({
+      itemId: item.item_id,
+      itemRef: item.item_ref,
+      ordinal: item.ordinal,
+      prompt: item.prompt,
+      support: item.support,
+      points: parseNumeric(item.points),
+      options: (optionsByItem.get(item.item_id) ?? []).map((option) => ({ optionId: option.option_id, text: option.text })),
+    })),
+  }
 }
 
 export class PostgresStudentRepository implements StudentRepository {
@@ -138,6 +239,127 @@ export class PostgresStudentRepository implements StudentRepository {
   async completeTrialAttempt(attemptId: string): Promise<void> {
     await this.pool.query('DELETE FROM trial_attempts WHERE id = $1', [attemptId])
   }
+
+  async startStageAttempt(input: StartStageAttemptInput): Promise<StageAttemptStartResult> {
+    const client = await this.pool.connect()
+    const operationScope = `stage_attempt.start:v1:${input.stageExamId}`
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [input.studentId, input.stageExamId])
+
+      const idempotency = await client.query<{
+        status: 'in_progress' | 'completed'
+        request_hash: Buffer
+        http_status: number | null
+        response_body: StartStageAttemptResponse | null
+      } & Record<string, unknown>>(`
+        INSERT INTO idempotency_records
+          (student_id, operation_scope, idempotency_key, request_hash, expires_at)
+        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + interval '24 hours')
+        ON CONFLICT (student_id, operation_scope, idempotency_key) DO NOTHING
+        RETURNING status, request_hash, http_status, response_body
+      `, [input.studentId, operationScope, input.idempotencyKey, input.requestHash])
+
+      if (idempotency.rowCount === 0) {
+        const existing = await client.query<{
+          status: 'in_progress' | 'completed'
+          request_hash: Buffer
+          http_status: number | null
+          response_body: StartStageAttemptResponse | null
+        } & Record<string, unknown>>(`
+          SELECT status, request_hash, http_status, response_body
+          FROM idempotency_records
+          WHERE student_id = $1 AND operation_scope = $2 AND idempotency_key = $3
+          FOR UPDATE
+        `, [input.studentId, operationScope, input.idempotencyKey])
+        const row = existing.rows[0]
+        if (!row || !Buffer.from(row.request_hash).equals(input.requestHash)) {
+          await client.query('ROLLBACK')
+          return { status: 'key_reused' }
+        }
+        if (row.status === 'in_progress') {
+          await client.query('ROLLBACK')
+          return { status: 'request_in_progress' }
+        }
+        if (!row.response_body || row.http_status === null) throw new Error('Completed idempotency record is missing its response snapshot')
+        await client.query('COMMIT')
+        return { status: 'replayed', httpStatus: row.http_status, attempt: row.response_body }
+      }
+
+      const existingOpen = await client.query<{ id: string } & Record<string, unknown>>(`
+        SELECT a.id
+        FROM stage_attempts a
+        JOIN stage_exam_versions ev ON ev.id = a.exam_version_id
+        WHERE a.student_id = $1 AND ev.exam_id = $2 AND a.status = 'open'
+        LIMIT 1
+        FOR UPDATE OF a
+      `, [input.studentId, input.stageExamId])
+      if (existingOpen.rows[0]) {
+        await client.query('ROLLBACK')
+        return { status: 'already_open' }
+      }
+
+      const version = await client.query<{ id: string; duration_seconds: number } & Record<string, unknown>>(`
+        SELECT ev.id, ev.duration_seconds
+        FROM stage_exam_versions ev
+        LEFT JOIN stage_exam_version_retirements r ON r.exam_version_id = ev.id
+        WHERE ev.exam_id = $1
+          AND ev.status = 'published'
+          AND (r.retired_at IS NULL OR r.retired_at > CURRENT_TIMESTAMP)
+        ORDER BY ev.version DESC
+        LIMIT 1
+        FOR UPDATE OF ev
+      `, [input.stageExamId])
+      const examVersion = version.rows[0]
+      if (!examVersion) {
+        await client.query('ROLLBACK')
+        return { status: 'exam_not_available' }
+      }
+
+      await client.query(`
+        INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP + make_interval(secs => $4))
+      `, [input.attemptId, input.studentId, examVersion.id, examVersion.duration_seconds])
+      await client.query(`
+        INSERT INTO stage_attempt_start_idempotency
+          (student_id, exam_id, operation_scope, idempotency_key, attempt_id)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [input.studentId, input.stageExamId, operationScope, input.idempotencyKey, input.attemptId])
+      await client.query(`
+        INSERT INTO learning_audit_events
+          (event_id, event_type, actor_id, actor_role, actor_auth_provider,
+           actor_provider_subject, actor_relationship, student_id, attempt_id,
+           request_id, reason, occurred_at)
+        SELECT $1, 'attempt_started', $2, 'student', $3, $4, 'self',
+               $2, a.id, $5, 'stage_attempt_started', a.started_at
+        FROM stage_attempts a
+        WHERE a.id = $6 AND a.student_id = $2
+      `, [input.eventId, input.studentId, input.actorAuthProvider, input.actorProviderSubject, input.requestId, input.attemptId])
+
+      const attempt = await readStageAttemptView(client, input.studentId, input.attemptId)
+      if (!attempt) throw new Error('Created stage attempt could not be read')
+      await client.query(`
+        UPDATE idempotency_records
+        SET status = 'completed',
+            http_status = 201,
+            response_headers = '{}'::jsonb,
+            response_body = $4::jsonb,
+            completed_at = CURRENT_TIMESTAMP
+        WHERE student_id = $1 AND operation_scope = $2 AND idempotency_key = $3
+      `, [input.studentId, operationScope, input.idempotencyKey, JSON.stringify(attempt)])
+      await client.query('COMMIT')
+      return { status: 'created', httpStatus: 201, attempt }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async findStageAttempt(studentId: string, attemptId: string): Promise<StartStageAttemptResponse | null> {
+    return readStageAttemptView(this.pool, studentId, attemptId)
+  }
 }
 
 export class MemoryStudentRepository implements StudentRepository {
@@ -145,6 +367,7 @@ export class MemoryStudentRepository implements StudentRepository {
   private readonly consents = new Map<string, ConsentRecord>()
   private readonly trialRedemptions = new Set<string>()
   private readonly trialAttempts = new Map<string, TrialAttemptRecord>()
+  private readonly stageAttempts = new Map<string, StartStageAttemptResponse>()
 
   async create(student: StudentRecord): Promise<void> {
     this.students.set(student.id, student)
@@ -189,5 +412,15 @@ export class MemoryStudentRepository implements StudentRepository {
 
   async completeTrialAttempt(attemptId: string): Promise<void> {
     this.trialAttempts.delete(attemptId)
+  }
+
+  async startStageAttempt(input: StartStageAttemptInput): Promise<StageAttemptStartResult> {
+    void input
+    return { status: 'exam_not_available' }
+  }
+
+  async findStageAttempt(studentId: string, attemptId: string): Promise<StartStageAttemptResponse | null> {
+    const attempt = this.stageAttempts.get(attemptId)
+    return attempt && attempt.attemptId === attemptId && studentId.length > 0 ? attempt : null
   }
 }

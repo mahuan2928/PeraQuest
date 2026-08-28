@@ -302,12 +302,6 @@ BEGIN
     RAISE EXCEPTION 'stage attempt snapshot is incomplete' USING ERRCODE = '23514';
   END IF;
 
-  IF v_attempt.snapshot_hash IS NULL OR v_attempt.snapshot_created_at IS NULL THEN
-    UPDATE stage_attempts
-    SET snapshot_hash = compute_stage_attempt_snapshot_hash(v_attempt.exam_version_id),
-        snapshot_created_at = CURRENT_TIMESTAMP
-    WHERE id = v_attempt.id;
-  END IF;
 END;
 $$;
 
@@ -402,9 +396,17 @@ CREATE TRIGGER stage_attempt_start_idempotency_truncate_trg
 BEFORE TRUNCATE ON stage_attempt_start_idempotency
 FOR EACH STATEMENT EXECUTE FUNCTION reject_stage_attempt_start_idempotency_mutation();
 
+UPDATE stage_attempts
+SET snapshot_hash = compute_stage_attempt_snapshot_hash(exam_version_id),
+    snapshot_created_at = CURRENT_TIMESTAMP
+WHERE snapshot_hash IS NULL OR snapshot_created_at IS NULL;
+
 SELECT create_stage_attempt_snapshot_for(id)
 FROM stage_attempts
-WHERE snapshot_hash IS NULL OR snapshot_created_at IS NULL;
+WHERE NOT EXISTS (
+  SELECT 1 FROM stage_attempt_item_snapshots
+  WHERE stage_attempt_item_snapshots.attempt_id = stage_attempts.id
+);
 
 ALTER TABLE stage_attempts
   ALTER COLUMN snapshot_hash SET NOT NULL,

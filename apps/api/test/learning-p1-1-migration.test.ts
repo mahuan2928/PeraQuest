@@ -1,4 +1,4 @@
-import { appendFile, copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
@@ -75,7 +75,7 @@ describe('learning P1.1 migration', () => {
     databases.push(database)
     const directory = await mkdtemp(join(tmpdir(), 'peraquest-failing-migrations-'))
     temporaryDirectories.push(directory)
-    await copyFile(resolve(process.cwd(), 'migrations/0001_identity_guardian_consent.sql'), join(directory, '0001_identity_guardian_consent.sql'))
+    await writeFile(join(directory, '0001_identity_guardian_consent.sql'), await readFile(resolve(process.cwd(), 'migrations/0001_identity_guardian_consent.sql')))
     await writeFile(join(directory, '0002_forced_failure.sql'), `
       CREATE TABLE migration_partial_write (id integer PRIMARY KEY);
       SELECT * FROM deliberately_missing_table;
@@ -96,7 +96,7 @@ describe('learning P1.1 migration', () => {
     const directory = await mkdtemp(join(tmpdir(), 'peraquest-checksum-migrations-'))
     temporaryDirectories.push(directory)
     const migration = join(directory, '0001_identity_guardian_consent.sql')
-    await copyFile(resolve(process.cwd(), 'migrations/0001_identity_guardian_consent.sql'), migration)
+    await writeFile(migration, await readFile(resolve(process.cwd(), 'migrations/0001_identity_guardian_consent.sql')))
     await runMigrations(asMigrationDatabase(database), directory)
     await appendFile(migration, '\n-- changed after application\n')
 
@@ -111,7 +111,7 @@ describe('learning P1.1 migration', () => {
     const legacyDirectory = await mkdtemp(join(tmpdir(), 'peraquest-legacy-migrations-'))
     temporaryDirectories.push(legacyDirectory)
     for (const name of ['0001_identity_guardian_consent.sql', '0002_one_time_trial.sql']) {
-      await copyFile(resolve(process.cwd(), 'migrations', name), join(legacyDirectory, name))
+      await writeFile(join(legacyDirectory, name), await readFile(resolve(process.cwd(), 'migrations', name)))
     }
 
     await runMigrations(asMigrationDatabase(database), legacyDirectory)
@@ -128,7 +128,7 @@ describe('learning P1.1 migration', () => {
         CHECK (expires_at > created_at - interval '1 hour');
     `)
 
-    await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual(['0004_learning_p1_1_idempotency.sql'])
+    await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual(['0004_learning_p1_1_idempotency.sql', '0005_learning_audit.sql'])
     const rows = await database.query<{ id: string }>('SELECT id FROM trial_attempts ORDER BY id')
     expect(rows.rows).toEqual([{ id: '00000000-0000-0000-0000-000000000121' }])
 

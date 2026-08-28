@@ -131,7 +131,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         runMigrations(second),
       ])
       expect([firstResult, secondResult].sort((left, right) => right.length - left.length)).toEqual([
-        ['0001_identity_guardian_consent.sql', '0002_one_time_trial.sql', '0004_learning_p1_1_idempotency.sql'],
+        ['0001_identity_guardian_consent.sql', '0002_one_time_trial.sql', '0004_learning_p1_1_idempotency.sql', '0005_learning_audit.sql'],
         [],
       ])
       const ledger = await first.query<{ name: string; count: string }>(`
@@ -144,6 +144,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0001_identity_guardian_consent.sql', count: '1' },
         { name: '0002_one_time_trial.sql', count: '1' },
         { name: '0004_learning_p1_1_idempotency.sql', count: '1' },
+        { name: '0005_learning_audit.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])
@@ -351,6 +352,51 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         response_headers: { 'content-type': 'application/json' },
         response_body: { attempt_id: 'one' },
       }])
+    } finally {
+      await client.end()
+    }
+  }, 30_000)
+
+
+  it('enforces the P1.2 audit invariants through direct PostgreSQL SQL', async () => {
+    const schema = await createSchema()
+    const client = await connect(schema)
+    try {
+      await runMigrations(client)
+      await seedCompleteDraft(client)
+      await client.query(`
+        INSERT INTO users (id, role, is_minor) VALUES
+          ('00000000-0000-0000-0000-000000000102', 'student', false);
+        INSERT INTO auth_identities (id, user_id, provider, provider_subject) VALUES
+          ('00000000-0000-0000-0000-000000000111', '${ids.student}', 'email_magic_link', 'student-sub'),
+          ('00000000-0000-0000-0000-000000000112', '00000000-0000-0000-0000-000000000102', 'email_magic_link', 'other-sub');
+        UPDATE stage_exam_versions SET status = 'published', published_at = CURRENT_TIMESTAMP WHERE id = '${ids.version}';
+        INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at) VALUES
+          ('00000000-0000-0000-0000-000000000301', '${ids.student}', '${ids.version}', CURRENT_TIMESTAMP + interval '20 minutes'),
+          ('00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000102', '${ids.version}', CURRENT_TIMESTAMP + interval '20 minutes');
+      `)
+      const insert = (eventId: string, eventType: string, actorId: string, actorSubject: string,
+        studentId: string, attemptId: string, requestId: string, occurredAt: string): Promise<unknown> => client.query(`
+        INSERT INTO learning_audit_events
+          (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+           actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+        VALUES ($1, $2, $3, 'student', 'email_magic_link', $4, 'self', $5, $6, $7, 'postgres_gate', ${occurredAt})
+      `, [eventId, eventType, actorId, actorSubject, studentId, attemptId, requestId])
+
+      await expect(insert('00000000-0000-0000-0000-000000000401', 'attempt_submitted', ids.student,
+        'student-sub', ids.student, '00000000-0000-0000-0000-000000000301', 'request-pg-1', 'CURRENT_TIMESTAMP')).rejects.toThrow(/not enabled/)
+      await expect(insert('00000000-0000-0000-0000-000000000402', 'attempt_started',
+        '00000000-0000-0000-0000-000000000102', 'other-sub', ids.student,
+        '00000000-0000-0000-0000-000000000301', 'request-pg-2', '(SELECT started_at FROM stage_attempts WHERE id = $6)')).rejects.toThrow(/not attributed/)
+      await insert('00000000-0000-0000-0000-000000000403', 'attempt_started', ids.student,
+        'student-sub', ids.student, '00000000-0000-0000-0000-000000000301', 'request-pg-shared',
+        '(SELECT started_at FROM stage_attempts WHERE id = $6)')
+      await expect(insert('00000000-0000-0000-0000-000000000404', 'attempt_started',
+        '00000000-0000-0000-0000-000000000102', 'other-sub', '00000000-0000-0000-0000-000000000102',
+        '00000000-0000-0000-0000-000000000302', 'request-pg-shared',
+        '(SELECT started_at FROM stage_attempts WHERE id = $6)')).rejects.toThrow()
+      await expect(client.query(`UPDATE learning_audit_events SET actor_role = 'admin'`)).rejects.toThrow(/append-only/)
+      await expect(client.query('TRUNCATE learning_audit_events')).rejects.toThrow(/append-only/)
     } finally {
       await client.end()
     }

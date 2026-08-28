@@ -135,8 +135,18 @@ describe('learning P1.2 audit migration', () => {
 
     await runMigrations(asMigrationDatabase(database), baselineDirectory)
     await seedAttempts(database)
-    await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual(['0005_learning_audit.sql'])
+    await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual([
+      '0005_learning_audit.sql',
+      '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
+    ])
     await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual([])
+    const backfilled = await database.query<{ attempts: number; snapshots: number; missing_hashes: number }>(`
+      SELECT
+        (SELECT count(*)::int FROM stage_attempts) AS attempts,
+        (SELECT count(*)::int FROM stage_attempt_item_snapshots) AS snapshots,
+        (SELECT count(*)::int FROM stage_attempts WHERE snapshot_hash IS NULL OR snapshot_created_at IS NULL) AS missing_hashes
+    `)
+    expect(backfilled.rows).toEqual([{ attempts: 2, snapshots: 2, missing_hashes: 0 }])
     await expect(insertStartedEvent(database)).resolves.toBeDefined()
   })
 

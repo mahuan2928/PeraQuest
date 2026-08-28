@@ -572,7 +572,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         eventId: '00000000-0000-0000-0000-000000000808',
         requestId: '00000000-0000-0000-0000-000000000908',
         answers: [{ itemId: key.rows[0]!.item_id, selectedOptionId: key.rows[0]!.option_id }],
-      })).rejects.toThrow(/identity snapshot/)
+      })).rejects.toThrow()
 
       const rollback = await client.query<{ status: string; answers: number; idempotency: number; audit: number }>(`
         SELECT

@@ -139,6 +139,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0005_learning_audit.sql',
           '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
           '0007_learning_p1_3_3_submit_grading.sql',
+          '0008_learning_p1_3_4_terminal_audit.sql',
         ],
         [],
       ])
@@ -155,6 +156,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0005_learning_audit.sql', count: '1' },
         { name: '0006_learning_p1_3_1_stage_attempt_snapshot.sql', count: '1' },
         { name: '0007_learning_p1_3_3_submit_grading.sql', count: '1' },
+        { name: '0008_learning_p1_3_4_terminal_audit.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])
@@ -478,6 +480,10 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         attemptId: started.attempt.attemptId,
         idempotencyKey: 'submit-key-1',
         requestHash: Buffer.from('d'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link',
+        actorProviderSubject: 'student-submit-sub',
+        eventId: '00000000-0000-0000-0000-000000000805',
+        requestId: '00000000-0000-0000-0000-000000000905',
         answers: [{ itemId: key.rows[0]!.item_id, selectedOptionId: key.rows[0]!.option_id }],
       })
 
@@ -499,16 +505,155 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         attemptId: started.attempt.attemptId,
         idempotencyKey: 'submit-key-1',
         requestHash: Buffer.from('d'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link',
+        actorProviderSubject: 'student-submit-sub',
+        eventId: '00000000-0000-0000-0000-000000000806',
+        requestId: '00000000-0000-0000-0000-000000000906',
         answers: [{ itemId: key.rows[0]!.item_id, selectedOptionId: key.rows[0]!.option_id }],
       })
       expect(replay).toMatchObject({ status: 'replayed', result: submit.result })
 
-      const forged = await client.query<{ count: number }>(`
-        SELECT count(*)::int
-        FROM stage_attempt_answers
-        WHERE attempt_id = $1 AND outcome = 'correct' AND earned_score = 1
+      const persisted = await client.query<{ scored_answers: number; submitted_audits: number }>(`
+        SELECT
+          (SELECT count(*)::int FROM stage_attempt_answers WHERE attempt_id = $1 AND outcome = 'correct' AND earned_score = 1) AS scored_answers,
+          (SELECT count(*)::int FROM learning_audit_events WHERE attempt_id = $1 AND event_type = 'attempt_submitted') AS submitted_audits
       `, [started.attempt.attemptId])
-      expect(forged.rows).toEqual([{ count: 1 }])
+      expect(persisted.rows).toEqual([{ scored_answers: 1, submitted_audits: 1 }])
+    } finally {
+      await client.end()
+      await pool.end()
+    }
+  }, 30_000)
+
+  it('rolls back answers, terminal status, and idempotency when submit audit fails', async () => {
+    const schema = await createSchema()
+    const client = await connect(schema)
+    const pool = new Pool({ connectionString, options: `-c search_path=${schema}` })
+    try {
+      await runMigrations(client)
+      await seedCompleteDraft(client)
+      await client.query(`
+        INSERT INTO auth_identities (id, user_id, provider, provider_subject)
+        VALUES ('00000000-0000-0000-0000-000000000703', $1, 'email_magic_link', 'student-rollback-sub')
+      `, [ids.student])
+      await client.query(`
+        UPDATE stage_exam_versions
+        SET status = 'published', published_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [ids.version])
+
+      const repository = new PostgresStudentRepository(pool)
+      const started = await repository.startStageAttempt({
+        studentId: ids.student,
+        stageExamId: ids.exam,
+        attemptId: '00000000-0000-0000-0000-000000000308',
+        idempotencyKey: 'start-rollback-key-1',
+        requestHash: Buffer.from('e'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link',
+        actorProviderSubject: 'student-rollback-sub',
+        eventId: '00000000-0000-0000-0000-000000000807',
+        requestId: '00000000-0000-0000-0000-000000000907',
+      })
+      if (started.status !== 'created') throw new Error(`expected created attempt, got ${started.status}`)
+
+      const key = await client.query<{ item_id: string; option_id: string }>(`
+        SELECT item.id AS item_id, keys.correct_option_snapshot_id AS option_id
+        FROM stage_attempt_item_snapshots item
+        JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+        WHERE item.attempt_id = $1
+      `, [started.attempt.attemptId])
+      await expect(repository.submitStageAttempt({
+        studentId: ids.student,
+        attemptId: started.attempt.attemptId,
+        idempotencyKey: 'submit-rollback-key-1',
+        requestHash: Buffer.from('f'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link',
+        actorProviderSubject: 'missing-submit-sub',
+        eventId: '00000000-0000-0000-0000-000000000808',
+        requestId: '00000000-0000-0000-0000-000000000908',
+        answers: [{ itemId: key.rows[0]!.item_id, selectedOptionId: key.rows[0]!.option_id }],
+      })).rejects.toThrow(/identity snapshot/)
+
+      const rollback = await client.query<{ status: string; answers: number; idempotency: number; audit: number }>(`
+        SELECT
+          (SELECT status::text FROM stage_attempts WHERE id = $1) AS status,
+          (SELECT count(*)::int FROM stage_attempt_answers WHERE attempt_id = $1) AS answers,
+          (SELECT count(*)::int FROM idempotency_records WHERE operation_scope = $2) AS idempotency,
+          (SELECT count(*)::int FROM learning_audit_events WHERE attempt_id = $1 AND event_type = 'attempt_submitted') AS audit
+      `, [started.attempt.attemptId, `stage_attempt.submit:v1:${started.attempt.attemptId}`])
+      expect(rollback.rows).toEqual([{ status: 'open', answers: 0, idempotency: 0, audit: 0 }])
+    } finally {
+      await client.end()
+      await pool.end()
+    }
+  }, 30_000)
+
+  it('expires an overdue formal attempt with terminal audit and idempotent replay', async () => {
+    const schema = await createSchema()
+    const client = await connect(schema)
+    const pool = new Pool({ connectionString, options: `-c search_path=${schema}` })
+    try {
+      await runMigrations(client)
+      await seedCompleteDraft(client)
+      await client.query(`
+        INSERT INTO auth_identities (id, user_id, provider, provider_subject)
+        VALUES ('00000000-0000-0000-0000-000000000704', $1, 'email_magic_link', 'student-expire-sub')
+      `, [ids.student])
+      await client.query(`
+        UPDATE stage_exam_versions
+        SET status = 'published', published_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [ids.version])
+
+      const repository = new PostgresStudentRepository(pool)
+      const started = await repository.startStageAttempt({
+        studentId: ids.student,
+        stageExamId: ids.exam,
+        attemptId: '00000000-0000-0000-0000-000000000309',
+        idempotencyKey: 'start-expire-key-1',
+        requestHash: Buffer.from('1'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link',
+        actorProviderSubject: 'student-expire-sub',
+        eventId: '00000000-0000-0000-0000-000000000809',
+        requestId: '00000000-0000-0000-0000-000000000909',
+      })
+      if (started.status !== 'created') throw new Error(`expected created attempt, got ${started.status}`)
+      await client.query('ALTER TABLE stage_attempts DISABLE TRIGGER stage_attempt_transition_trg')
+      await client.query(`
+        UPDATE stage_attempts
+        SET started_at = CURRENT_TIMESTAMP - interval '2 hours',
+            expires_at = CURRENT_TIMESTAMP - interval '1 hour'
+        WHERE id = $1
+      `, [started.attempt.attemptId])
+      await client.query('ALTER TABLE stage_attempts ENABLE TRIGGER stage_attempt_transition_trg')
+
+      const payload = {
+        studentId: ids.student,
+        attemptId: started.attempt.attemptId,
+        idempotencyKey: 'submit-expire-key-1',
+        requestHash: Buffer.from('2'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link' as const,
+        actorProviderSubject: 'student-expire-sub',
+        eventId: '00000000-0000-0000-0000-000000000810',
+        requestId: '00000000-0000-0000-0000-000000000910',
+        answers: [{ itemId: started.attempt.items[0]!.itemId, selectedOptionId: null }],
+      }
+      await expect(repository.submitStageAttempt(payload)).resolves.toEqual({ status: 'expired' })
+      await expect(repository.submitStageAttempt({
+        ...payload,
+        eventId: '00000000-0000-0000-0000-000000000811',
+        requestId: '00000000-0000-0000-0000-000000000911',
+      })).resolves.toEqual({ status: 'expired' })
+
+      const expired = await client.query<{ status: string; answers: number; audits: number; idempotency_status: string; http_status: number }>(`
+        SELECT
+          (SELECT status::text FROM stage_attempts WHERE id = $1) AS status,
+          (SELECT count(*)::int FROM stage_attempt_answers WHERE attempt_id = $1) AS answers,
+          (SELECT count(*)::int FROM learning_audit_events WHERE attempt_id = $1 AND event_type = 'attempt_expired') AS audits,
+          (SELECT status::text FROM idempotency_records WHERE operation_scope = $2 AND idempotency_key = $3) AS idempotency_status,
+          (SELECT http_status::int FROM idempotency_records WHERE operation_scope = $2 AND idempotency_key = $3) AS http_status
+      `, [started.attempt.attemptId, `stage_attempt.submit:v1:${started.attempt.attemptId}`, payload.idempotencyKey])
+      expect(expired.rows).toEqual([{ status: 'expired', answers: 0, audits: 1, idempotency_status: 'completed', http_status: 410 }])
     } finally {
       await client.end()
       await pool.end()
@@ -609,7 +754,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
       `, [eventId, eventType, actorId, actorSubject, studentId, attemptId, requestId])
 
       await expect(insert('00000000-0000-0000-0000-000000000401', 'attempt_submitted', ids.student,
-        'student-sub', ids.student, '00000000-0000-0000-0000-000000000301', 'request-pg-1', 'CURRENT_TIMESTAMP')).rejects.toThrow(/not enabled/)
+        'student-sub', ids.student, '00000000-0000-0000-0000-000000000301', 'request-pg-1', 'CURRENT_TIMESTAMP')).rejects.toThrow(/attempt_submitted must match/)
       await expect(insert('00000000-0000-0000-0000-000000000402', 'attempt_started',
         '00000000-0000-0000-0000-000000000102', 'other-sub', ids.student,
         '00000000-0000-0000-0000-000000000301', 'request-pg-2', '(SELECT started_at FROM stage_attempts WHERE id = $6)')).rejects.toThrow(/not attributed/)

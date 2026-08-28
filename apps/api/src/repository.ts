@@ -73,6 +73,10 @@ export interface SubmitStageAttemptInput {
   attemptId: string
   idempotencyKey: string
   requestHash: Buffer
+  actorAuthProvider: AuthProvider
+  actorProviderSubject: string
+  eventId: string
+  requestId: string
   answers: SubmitStageAttemptAnswerInput[]
 }
 
@@ -452,7 +456,7 @@ export class PostgresStudentRepository implements StudentRepository {
         status: 'in_progress' | 'completed'
         request_hash: Buffer
         http_status: number | null
-        response_body: StageAttemptResultResponse | null
+        response_body: StageAttemptResultResponse | Record<string, unknown> | null
       } & Record<string, unknown>>(`
         INSERT INTO idempotency_records
           (student_id, operation_scope, idempotency_key, request_hash, expires_at)
@@ -466,7 +470,7 @@ export class PostgresStudentRepository implements StudentRepository {
           status: 'in_progress' | 'completed'
           request_hash: Buffer
           http_status: number | null
-          response_body: StageAttemptResultResponse | null
+          response_body: StageAttemptResultResponse | Record<string, unknown> | null
         } & Record<string, unknown>>(`
           SELECT status, request_hash, http_status, response_body
           FROM idempotency_records
@@ -483,16 +487,21 @@ export class PostgresStudentRepository implements StudentRepository {
           return { status: 'request_in_progress' }
         }
         if (!row.response_body || row.http_status === null) throw new Error('Completed submit idempotency record is missing its response snapshot')
+        if (row.http_status === 410) {
+          await client.query('COMMIT')
+          return { status: 'expired' }
+        }
         await client.query('COMMIT')
-        return { status: 'replayed', httpStatus: row.http_status, result: row.response_body }
+        return { status: 'replayed', httpStatus: row.http_status, result: row.response_body as StageAttemptResultResponse }
       }
 
       const attempt = await client.query<{
         id: string
         status: 'open' | 'passed' | 'failed' | 'expired'
         expires_at: Date
+        is_expired: boolean
       } & Record<string, unknown>>(`
-        SELECT id, status, expires_at
+        SELECT id, status, expires_at, expires_at <= CURRENT_TIMESTAMP AS is_expired
         FROM stage_attempts
         WHERE id = $1 AND student_id = $2
         FOR UPDATE
@@ -502,12 +511,42 @@ export class PostgresStudentRepository implements StudentRepository {
         await client.query('ROLLBACK')
         return { status: 'attempt_not_found' }
       }
+      if (attemptRow.status === 'expired') {
+        await client.query('ROLLBACK')
+        return { status: 'expired' }
+      }
       if (attemptRow.status !== 'open') {
         await client.query('ROLLBACK')
         return { status: 'already_finalized' }
       }
-      if (attemptRow.expires_at <= new Date()) {
-        await client.query('ROLLBACK')
+      if (attemptRow.is_expired) {
+        await client.query(`
+          UPDATE stage_attempts
+          SET status = 'expired',
+              expired_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [input.attemptId])
+        await client.query(`
+          INSERT INTO learning_audit_events
+            (event_id, event_type, actor_id, actor_role, actor_auth_provider,
+             actor_provider_subject, actor_relationship, student_id, attempt_id,
+             request_id, reason, occurred_at)
+          SELECT $1, 'attempt_expired', $2, 'student', $3, $4, 'self',
+                 $2, a.id, $5, 'stage_attempt_expired', a.expired_at
+          FROM stage_attempts a
+          WHERE a.id = $6 AND a.student_id = $2
+        `, [input.eventId, input.studentId, input.actorAuthProvider, input.actorProviderSubject, input.requestId, input.attemptId])
+        await client.query(`
+          UPDATE idempotency_records
+          SET status = 'completed',
+              http_status = 410,
+              response_headers = '{}'::jsonb,
+              response_body = '{"code":"STAGE_ATTEMPT_EXPIRED"}'::jsonb,
+              completed_at = CURRENT_TIMESTAMP
+          WHERE student_id = $1 AND operation_scope = $2 AND idempotency_key = $3
+        `, [input.studentId, operationScope, input.idempotencyKey])
+        await client.query('COMMIT')
         return { status: 'expired' }
       }
 
@@ -580,6 +619,17 @@ export class PostgresStudentRepository implements StudentRepository {
         FROM graded
         WHERE stage_attempts.id = $1
       `, [input.attemptId])
+
+      await client.query(`
+        INSERT INTO learning_audit_events
+          (event_id, event_type, actor_id, actor_role, actor_auth_provider,
+           actor_provider_subject, actor_relationship, student_id, attempt_id,
+           request_id, reason, occurred_at)
+        SELECT $1, 'attempt_submitted', $2, 'student', $3, $4, 'self',
+               $2, a.id, $5, 'stage_attempt_submitted', a.submitted_at
+        FROM stage_attempts a
+        WHERE a.id = $6 AND a.student_id = $2
+      `, [input.eventId, input.studentId, input.actorAuthProvider, input.actorProviderSubject, input.requestId, input.attemptId])
 
       const result = await readStageAttemptResult(client, input.studentId, input.attemptId)
       if (!result) throw new Error('Submitted stage attempt result could not be read')

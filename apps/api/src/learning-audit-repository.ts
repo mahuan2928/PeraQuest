@@ -60,7 +60,11 @@ export class PostgresLearningAuditRepository implements LearningAuditRepository 
          actor_provider_subject, actor_relationship, student_id, attempt_id,
          request_id, reason, occurred_at)
       SELECT $1, $2, $3, $4, $5, $6, $7, $8, attempts.id, $10, $11,
-             attempts.started_at
+             CASE $2::learning_audit_event_type
+               WHEN 'attempt_started' THEN attempts.started_at
+               WHEN 'attempt_submitted' THEN attempts.submitted_at
+               WHEN 'attempt_expired' THEN attempts.expired_at
+             END
       FROM stage_attempts attempts
       WHERE attempts.id = $9 AND attempts.student_id = $8
       RETURNING event_id, event_type, actor_id, actor_role, actor_auth_provider,

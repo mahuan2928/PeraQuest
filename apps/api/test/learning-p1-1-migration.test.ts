@@ -133,6 +133,7 @@ describe('learning P1.1 migration', () => {
       '0005_learning_audit.sql',
       '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
       '0007_learning_p1_3_3_submit_grading.sql',
+      '0008_learning_p1_3_4_terminal_audit.sql',
     ])
     const rows = await database.query<{ id: string }>('SELECT id FROM trial_attempts ORDER BY id')
     expect(rows.rows).toEqual([{ id: '00000000-0000-0000-0000-000000000121' }])
@@ -243,7 +244,7 @@ describe('learning P1.1 migration', () => {
     `, [ids.student, ids.version])).rejects.toThrow()
   })
 
-  it('rejects direct stage-attempt terminal transitions without complete scored answers', async () => {
+  it('rejects unsafe direct stage-attempt transitions without complete scored answers or expiry eligibility', async () => {
     const database = await createDatabase()
     await seedDraftExam(database)
     await publishExam(database)
@@ -264,7 +265,7 @@ describe('learning P1.1 migration', () => {
     }
     await expect(database.query(`
       UPDATE stage_attempts SET status = 'expired', expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1
-    `, [ids.attempt])).rejects.toThrow(/P1.3 grading runtime/)
+    `, [ids.attempt])).rejects.toThrow(/cannot expire before expires_at/)
     await expect(database.query(`
       UPDATE stage_attempts SET updated_at = CURRENT_TIMESTAMP WHERE id = $1
     `, [ids.attempt])).rejects.toThrow(/P1.3 grading runtime/)

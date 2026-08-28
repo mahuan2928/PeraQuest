@@ -59,6 +59,11 @@ jobs:
         run: npm run typecheck
       - name: Create isolated PostgreSQL test database
         run: docker exec "${{ job.services.postgres.id }}" createdb -U postgres peraquest_ci
+      - name: Run PostgreSQL suite with zero-skip gate
+        run: |
+          mkdir -p .vitest
+          npm exec -w @peraquest/api -- vitest run test/learning-p1-1-postgres.test.ts --reporter=json --outputFile=../../.vitest/postgres.json
+          node scripts/ci/assert-vitest-report.mjs .vitest/postgres.json
       - name: Test
         run: npm test
       - name: Test CI path selection

@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { AuthProvider, ConsentStatus, GuardianLinkStatus, StartStageAttemptResponse, UserRole } from '@peraquest/contracts'
+import type { AuthProvider, ConsentStatus, GuardianLinkStatus, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -47,6 +47,9 @@ export type TrialStartResult = { status: 'created'; attempt: TrialAttemptRecord 
 export type StageAttemptStartResult =
   | { status: 'created' | 'replayed'; httpStatus: number; attempt: StartStageAttemptResponse }
   | { status: 'exam_not_available' | 'already_open' | 'request_in_progress' | 'key_reused' }
+export type StageAttemptSubmitResult =
+  | { status: 'submitted' | 'replayed'; httpStatus: number; result: StageAttemptResultResponse }
+  | { status: 'attempt_not_found' | 'already_finalized' | 'expired' | 'invalid_submission' | 'request_in_progress' | 'key_reused' }
 
 export interface StartStageAttemptInput {
   studentId: string
@@ -60,6 +63,19 @@ export interface StartStageAttemptInput {
   requestId: string
 }
 
+export interface SubmitStageAttemptAnswerInput {
+  itemId: string
+  selectedOptionId: string | null
+}
+
+export interface SubmitStageAttemptInput {
+  studentId: string
+  attemptId: string
+  idempotencyKey: string
+  requestHash: Buffer
+  answers: SubmitStageAttemptAnswerInput[]
+}
+
 export interface StudentRepository {
   create(student: StudentRecord): Promise<void>
   findById(id: string): Promise<StudentRecord | null>
@@ -71,6 +87,8 @@ export interface StudentRepository {
   completeTrialAttempt(attemptId: string): Promise<void>
   startStageAttempt(input: StartStageAttemptInput): Promise<StageAttemptStartResult>
   findStageAttempt(studentId: string, attemptId: string): Promise<StartStageAttemptResponse | null>
+  submitStageAttempt(input: SubmitStageAttemptInput): Promise<StageAttemptSubmitResult>
+  findStageAttemptResult(studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null>
 }
 
 interface StageAttemptHeaderRow extends Record<string, unknown> {
@@ -96,6 +114,24 @@ interface StageAttemptOptionRow extends Record<string, unknown> {
   option_id: string
   text: string
   ordinal: number
+}
+
+interface StageAttemptResultHeaderRow extends Record<string, unknown> {
+  attempt_id: string
+  status: 'passed' | 'failed'
+  submitted_at: Date
+  raw_score: string
+  max_score: string
+  score: string
+  passed: boolean
+  pass_score: string
+}
+
+interface StageAttemptResultItemRow extends Record<string, unknown> {
+  item_id: string
+  outcome: KnowledgeEvidenceOutcome
+  earned_score: string
+  max_score: string
 }
 
 interface Queryable {
@@ -153,6 +189,50 @@ const readStageAttemptView = async (database: Queryable, studentId: string, atte
       support: item.support,
       points: parseNumeric(item.points),
       options: (optionsByItem.get(item.item_id) ?? []).map((option) => ({ optionId: option.option_id, text: option.text })),
+    })),
+  }
+}
+
+const readStageAttemptResult = async (database: Queryable, studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null> => {
+  const headerResult = await database.query<StageAttemptResultHeaderRow>(`
+    SELECT a.id AS attempt_id, a.status, a.submitted_at,
+           coalesce(sum(ans.earned_score), 0)::text AS raw_score,
+           coalesce(sum(ans.max_score), 0)::text AS max_score,
+           a.score::text AS score,
+           a.passed,
+           ev.pass_score::text AS pass_score
+    FROM stage_attempts a
+    JOIN stage_exam_versions ev ON ev.id = a.exam_version_id
+    LEFT JOIN stage_attempt_answers ans ON ans.attempt_id = a.id
+    WHERE a.id = $1 AND a.student_id = $2 AND a.status IN ('passed', 'failed')
+    GROUP BY a.id, a.status, a.submitted_at, a.score, a.passed, ev.pass_score
+    LIMIT 1
+  `, [attemptId, studentId])
+  const header = headerResult.rows[0]
+  if (!header) return null
+
+  const itemResult = await database.query<StageAttemptResultItemRow>(`
+    SELECT ans.item_snapshot_id AS item_id, ans.outcome, ans.earned_score::text, ans.max_score::text
+    FROM stage_attempt_answers ans
+    JOIN stage_attempt_item_snapshots item ON item.id = ans.item_snapshot_id
+    WHERE ans.attempt_id = $1
+    ORDER BY item.position
+  `, [attemptId])
+
+  return {
+    attemptId: header.attempt_id,
+    status: header.status,
+    submittedAt: toIso(header.submitted_at),
+    rawScore: parseNumeric(header.raw_score),
+    maxScore: parseNumeric(header.max_score),
+    score: parseNumeric(header.score),
+    passed: header.passed,
+    passScore: parseNumeric(header.pass_score),
+    items: itemResult.rows.map((item) => ({
+      itemId: item.item_id,
+      outcome: item.outcome,
+      earnedScore: parseNumeric(item.earned_score),
+      maxScore: parseNumeric(item.max_score),
     })),
   }
 }
@@ -360,6 +440,171 @@ export class PostgresStudentRepository implements StudentRepository {
   async findStageAttempt(studentId: string, attemptId: string): Promise<StartStageAttemptResponse | null> {
     return readStageAttemptView(this.pool, studentId, attemptId)
   }
+
+  async submitStageAttempt(input: SubmitStageAttemptInput): Promise<StageAttemptSubmitResult> {
+    const client = await this.pool.connect()
+    const operationScope = `stage_attempt.submit:v1:${input.attemptId}`
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [input.studentId, input.attemptId])
+
+      const idempotency = await client.query<{
+        status: 'in_progress' | 'completed'
+        request_hash: Buffer
+        http_status: number | null
+        response_body: StageAttemptResultResponse | null
+      } & Record<string, unknown>>(`
+        INSERT INTO idempotency_records
+          (student_id, operation_scope, idempotency_key, request_hash, expires_at)
+        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + interval '24 hours')
+        ON CONFLICT (student_id, operation_scope, idempotency_key) DO NOTHING
+        RETURNING status, request_hash, http_status, response_body
+      `, [input.studentId, operationScope, input.idempotencyKey, input.requestHash])
+
+      if (idempotency.rowCount === 0) {
+        const existing = await client.query<{
+          status: 'in_progress' | 'completed'
+          request_hash: Buffer
+          http_status: number | null
+          response_body: StageAttemptResultResponse | null
+        } & Record<string, unknown>>(`
+          SELECT status, request_hash, http_status, response_body
+          FROM idempotency_records
+          WHERE student_id = $1 AND operation_scope = $2 AND idempotency_key = $3
+          FOR UPDATE
+        `, [input.studentId, operationScope, input.idempotencyKey])
+        const row = existing.rows[0]
+        if (!row || !Buffer.from(row.request_hash).equals(input.requestHash)) {
+          await client.query('ROLLBACK')
+          return { status: 'key_reused' }
+        }
+        if (row.status === 'in_progress') {
+          await client.query('ROLLBACK')
+          return { status: 'request_in_progress' }
+        }
+        if (!row.response_body || row.http_status === null) throw new Error('Completed submit idempotency record is missing its response snapshot')
+        await client.query('COMMIT')
+        return { status: 'replayed', httpStatus: row.http_status, result: row.response_body }
+      }
+
+      const attempt = await client.query<{
+        id: string
+        status: 'open' | 'passed' | 'failed' | 'expired'
+        expires_at: Date
+      } & Record<string, unknown>>(`
+        SELECT id, status, expires_at
+        FROM stage_attempts
+        WHERE id = $1 AND student_id = $2
+        FOR UPDATE
+      `, [input.attemptId, input.studentId])
+      const attemptRow = attempt.rows[0]
+      if (!attemptRow) {
+        await client.query('ROLLBACK')
+        return { status: 'attempt_not_found' }
+      }
+      if (attemptRow.status !== 'open') {
+        await client.query('ROLLBACK')
+        return { status: 'already_finalized' }
+      }
+      if (attemptRow.expires_at <= new Date()) {
+        await client.query('ROLLBACK')
+        return { status: 'expired' }
+      }
+
+      const itemResult = await client.query<{ item_id: string } & Record<string, unknown>>(`
+        SELECT id AS item_id
+        FROM stage_attempt_item_snapshots
+        WHERE attempt_id = $1
+        ORDER BY position
+      `, [input.attemptId])
+      const expectedItemIds = new Set(itemResult.rows.map(({ item_id }) => item_id))
+      const seenItemIds = new Set<string>()
+      if (input.answers.length !== expectedItemIds.size) {
+        await client.query('ROLLBACK')
+        return { status: 'invalid_submission' }
+      }
+      for (const answer of input.answers) {
+        if (!expectedItemIds.has(answer.itemId) || seenItemIds.has(answer.itemId)) {
+          await client.query('ROLLBACK')
+          return { status: 'invalid_submission' }
+        }
+        seenItemIds.add(answer.itemId)
+        if (answer.selectedOptionId !== null) {
+          const option = await client.query<{ id: string } & Record<string, unknown>>(`
+            SELECT id
+            FROM stage_attempt_item_option_snapshots
+            WHERE item_snapshot_id = $1 AND id = $2
+          `, [answer.itemId, answer.selectedOptionId])
+          if (!option.rows[0]) {
+            await client.query('ROLLBACK')
+            return { status: 'invalid_submission' }
+          }
+        }
+      }
+
+      for (const [index, answer] of input.answers.entries()) {
+        await client.query(`
+          INSERT INTO stage_attempt_answers
+            (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [
+          input.attemptId,
+          answer.itemId,
+          answer.selectedOptionId === null ? 'skipped' : 'answered',
+          answer.selectedOptionId,
+          `submit-${index + 1}`,
+        ])
+      }
+
+      await client.query(`
+        WITH totals AS (
+          SELECT sum(earned_score)::numeric(12,6) AS earned_score,
+                 sum(max_score)::numeric(12,6) AS max_score
+          FROM stage_attempt_answers
+          WHERE attempt_id = $1
+        ),
+        graded AS (
+          SELECT round(totals.earned_score / totals.max_score, 6)::numeric(12,6) AS score,
+                 ev.pass_score
+          FROM stage_attempts a
+          JOIN stage_exam_versions ev ON ev.id = a.exam_version_id
+          CROSS JOIN totals
+          WHERE a.id = $1
+        )
+        UPDATE stage_attempts
+        SET status = CASE WHEN graded.score >= graded.pass_score THEN 'passed'::stage_attempt_status ELSE 'failed'::stage_attempt_status END,
+            submitted_at = CURRENT_TIMESTAMP,
+            score = graded.score,
+            passed = graded.score >= graded.pass_score,
+            updated_at = CURRENT_TIMESTAMP
+        FROM graded
+        WHERE stage_attempts.id = $1
+      `, [input.attemptId])
+
+      const result = await readStageAttemptResult(client, input.studentId, input.attemptId)
+      if (!result) throw new Error('Submitted stage attempt result could not be read')
+      await client.query(`
+        UPDATE idempotency_records
+        SET status = 'completed',
+            http_status = 200,
+            response_headers = '{}'::jsonb,
+            response_body = $4::jsonb,
+            completed_at = CURRENT_TIMESTAMP
+        WHERE student_id = $1 AND operation_scope = $2 AND idempotency_key = $3
+      `, [input.studentId, operationScope, input.idempotencyKey, JSON.stringify(result)])
+      await client.query('COMMIT')
+      return { status: 'submitted', httpStatus: 200, result }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async findStageAttemptResult(studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null> {
+    return readStageAttemptResult(this.pool, studentId, attemptId)
+  }
 }
 
 export class MemoryStudentRepository implements StudentRepository {
@@ -422,5 +667,16 @@ export class MemoryStudentRepository implements StudentRepository {
   async findStageAttempt(studentId: string, attemptId: string): Promise<StartStageAttemptResponse | null> {
     const attempt = this.stageAttempts.get(attemptId)
     return attempt && attempt.attemptId === attemptId && studentId.length > 0 ? attempt : null
+  }
+
+  async submitStageAttempt(input: SubmitStageAttemptInput): Promise<StageAttemptSubmitResult> {
+    void input
+    return { status: 'attempt_not_found' }
+  }
+
+  async findStageAttemptResult(studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null> {
+    void studentId
+    void attemptId
+    return null
   }
 }

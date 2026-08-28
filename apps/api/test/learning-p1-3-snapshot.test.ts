@@ -29,6 +29,7 @@ const ids = {
   optionTwoB: '00000000-0000-0000-0000-000000003304',
   attemptOne: '00000000-0000-0000-0000-000000003401',
   attemptTwo: '00000000-0000-0000-0000-000000003402',
+  attemptThree: '00000000-0000-0000-0000-000000003403',
   idempotency: '00000000-0000-0000-0000-000000003501',
 }
 
@@ -228,5 +229,96 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
         (SELECT count(*)::int FROM learning_audit_events) AS count
     `)
     expect(after.rows).toEqual(before.rows)
+  })
+
+  it('scores answers from snapshots and rejects forged terminal scores', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+
+    const snapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string; wrong_option_snapshot_id: string }>(`
+      SELECT s.id AS item_snapshot_id,
+             max(os.id::text) FILTER (WHERE os.option_ref = 'a') AS correct_option_snapshot_id,
+             max(os.id::text) FILTER (WHERE os.option_ref = 'b') AS wrong_option_snapshot_id
+      FROM stage_attempt_item_snapshots s
+      JOIN stage_attempt_item_option_snapshots os ON os.item_snapshot_id = s.id
+      WHERE s.attempt_id = $1
+      GROUP BY s.id
+    `, [ids.attemptOne])
+    const row = snapshot.rows[0]!
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'submit-1')
+    `, [ids.attemptOne, row.item_snapshot_id, row.correct_option_snapshot_id])
+    await expect(database.query(`
+      UPDATE stage_attempts
+      SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0, passed = false,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptOne])).rejects.toThrow(/score must match/)
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1, passed = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptOne])
+
+    const result = await database.query<{ status: string; score: string; passed: boolean; outcome: string; earned_score: string }>(`
+      SELECT a.status, a.score::text, a.passed, ans.outcome, ans.earned_score::text
+      FROM stage_attempts a
+      JOIN stage_attempt_answers ans ON ans.attempt_id = a.id
+      WHERE a.id = $1
+    `, [ids.attemptOne])
+    expect(result.rows).toHaveLength(1)
+    expect(result.rows[0]).toMatchObject({ status: 'passed', passed: true, outcome: 'correct', earned_score: '1.000000' })
+    expect(Number(result.rows[0]!.score)).toBe(1)
+
+    await startAttempt(database, ids.attemptTwo, ids.versionOne)
+    const secondSnapshot = await database.query<{ item_snapshot_id: string }>(`
+      SELECT id AS item_snapshot_id FROM stage_attempt_item_snapshots WHERE attempt_id = $1
+    `, [ids.attemptTwo])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'skipped', NULL, 'submit-1')
+    `, [ids.attemptTwo, secondSnapshot.rows[0]!.item_snapshot_id])
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0, passed = false,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptTwo])
+    const skipped = await database.query<{ outcome: string; earned_score: string }>(`
+      SELECT outcome, earned_score::text FROM stage_attempt_answers WHERE attempt_id = $1
+    `, [ids.attemptTwo])
+    expect(skipped.rows).toEqual([{ outcome: 'skipped', earned_score: '0.000000' }])
+
+    await startAttempt(database, ids.attemptThree, ids.versionOne)
+    const thirdSnapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string }>(`
+      SELECT item.id AS item_snapshot_id, keys.correct_option_snapshot_id
+      FROM stage_attempt_item_snapshots item
+      JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+      WHERE item.attempt_id = $1
+    `, [ids.attemptThree])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'submit-1')
+    `, [ids.attemptThree, thirdSnapshot.rows[0]!.item_snapshot_id, thirdSnapshot.rows[0]!.correct_option_snapshot_id])
+    await database.query('ALTER TABLE stage_attempts DISABLE TRIGGER stage_attempt_transition_trg')
+    await database.query(`
+      UPDATE stage_attempts
+      SET started_at = CURRENT_TIMESTAMP - interval '2 hours',
+          expires_at = CURRENT_TIMESTAMP - interval '1 hour'
+      WHERE id = $1
+    `, [ids.attemptThree])
+    await database.query('ALTER TABLE stage_attempts ENABLE TRIGGER stage_attempt_transition_trg')
+    await expect(database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1, passed = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptThree])).rejects.toThrow(/expired stage attempts cannot be submitted/)
   })
 })

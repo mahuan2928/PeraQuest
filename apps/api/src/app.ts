@@ -11,6 +11,8 @@ import type {
   PaymentChannel,
   StudentOnboardingResponse,
   StartStageAttemptResponse,
+  StageAttemptResultResponse,
+  SubmitStageAttemptRequest,
   TrialAnswerResponse,
   TrialAttemptResponse,
   StableErrorCode,
@@ -37,6 +39,12 @@ const consentSchema = z.object({ status: z.enum(['granted', 'denied', 'withdrawn
 const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
 const idempotencyKeySchema = z.string().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/)
+const submitStageAttemptSchema = z.object({
+  answers: z.array(z.object({
+    itemId: uuidSchema,
+    selectedOptionId: uuidSchema.nullable(),
+  }).strict()).min(1).max(200),
+}).strict()
 
 const sendError = (reply: FastifyReply, statusCode: number, code: StableErrorCode, details?: unknown) => {
   const safeDetails = sanitizeErrorDetails(details)
@@ -302,6 +310,61 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const attempt = await repository.findStageAttempt(actor.id, parsedAttemptId.data)
     if (!attempt) return sendError(reply, 404, 'STAGE_ATTEMPT_NOT_FOUND')
     return attempt
+  })
+
+  app.post<{ Params: { stageAttemptId: string } }>('/api/v1/stage-attempts/:stageAttemptId/submit', async (request, reply): Promise<StageAttemptResultResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const parsedAttemptId = uuidSchema.safeParse(request.params.stageAttemptId)
+    if (!parsedAttemptId.success) return sendError(reply, 404, 'STAGE_ATTEMPT_NOT_FOUND')
+    const rawIdempotencyKey = request.headers['idempotency-key']
+    const parsedIdempotencyKey = typeof rawIdempotencyKey === 'string' ? idempotencyKeySchema.safeParse(rawIdempotencyKey) : null
+    if (!parsedIdempotencyKey) return sendError(reply, 400, 'IDEMPOTENCY_KEY_REQUIRED')
+    if (!parsedIdempotencyKey.success) return sendError(reply, 400, 'IDEMPOTENCY_KEY_INVALID')
+    const parsed = submitStageAttemptSchema.safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'INVALID_STAGE_SUBMISSION')
+
+    const body: SubmitStageAttemptRequest = parsed.data
+    const requestHash = createHash('sha256')
+      .update('POST\n/api/v1/stage-attempts/')
+      .update(parsedAttemptId.data)
+      .update('/submit\n')
+      .update(JSON.stringify(body.answers))
+      .digest()
+    const result = await repository.submitStageAttempt({
+      studentId: actor.id,
+      attemptId: parsedAttemptId.data,
+      idempotencyKey: parsedIdempotencyKey.data,
+      requestHash,
+      answers: body.answers,
+    })
+    switch (result.status) {
+      case 'submitted':
+      case 'replayed':
+        return reply.code(result.httpStatus).send(result.result)
+      case 'attempt_not_found':
+        return sendError(reply, 404, 'STAGE_ATTEMPT_NOT_FOUND')
+      case 'already_finalized':
+        return sendError(reply, 409, 'STAGE_ATTEMPT_ALREADY_FINALIZED')
+      case 'expired':
+        return sendError(reply, 410, 'STAGE_ATTEMPT_EXPIRED')
+      case 'invalid_submission':
+        return sendError(reply, 400, 'INVALID_STAGE_SUBMISSION')
+      case 'request_in_progress':
+        return sendError(reply, 409, 'IDEMPOTENCY_REQUEST_IN_PROGRESS')
+      case 'key_reused':
+        return sendError(reply, 409, 'IDEMPOTENCY_KEY_REUSED')
+    }
+  })
+
+  app.get<{ Params: { stageAttemptId: string } }>('/api/v1/stage-attempts/:stageAttemptId/result', async (request, reply): Promise<StageAttemptResultResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const parsedAttemptId = uuidSchema.safeParse(request.params.stageAttemptId)
+    if (!parsedAttemptId.success) return sendError(reply, 404, 'STAGE_ATTEMPT_NOT_FOUND')
+    const result = await repository.findStageAttemptResult(actor.id, parsedAttemptId.data)
+    if (!result) return sendError(reply, 404, 'STAGE_ATTEMPT_NOT_FOUND')
+    return result
   })
 
   app.post<{ Params: { attemptId: string } }>('/v1/trial-attempts/:attemptId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {

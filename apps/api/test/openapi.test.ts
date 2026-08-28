@@ -15,6 +15,8 @@ describe('OpenAPI document', () => {
     expect(document.openapi).toBe('3.1.0')
     expect(Object.keys(document.paths).sort()).toEqual([
       '/api/v1/stage-attempts/{stageAttemptId}',
+      '/api/v1/stage-attempts/{stageAttemptId}/result',
+      '/api/v1/stage-attempts/{stageAttemptId}/submit',
       '/api/v1/stage-exams/{stageExamId}/attempts',
       '/health',
       '/v1/me/capabilities',
@@ -56,6 +58,8 @@ describe('OpenAPI document', () => {
     expect(document.components.schemas).toHaveProperty('PublicStageExamItem')
     expect(document.components.schemas).toHaveProperty('StartStageAttemptResponse')
     expect(document.components.schemas).toHaveProperty('SubmitStageAttemptRequest')
+    expect(document.components.schemas).toHaveProperty('StageAttemptResultResponse')
+    expect((document.components.schemas.SubmitStageAttemptRequest?.properties as { answers?: { minItems?: number; maxItems?: number } }).answers).toMatchObject({ minItems: 1, maxItems: 200 })
     expect(document.components.schemas.PublicStageExamItem?.properties).not.toHaveProperty('correctOptionId')
     expect(document.components.schemas).not.toHaveProperty('MasteryUpdate')
     expect(document.components.schemas).not.toHaveProperty('KnowledgeEvidence')
@@ -67,15 +71,22 @@ describe('OpenAPI document', () => {
     expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey' || parameter.$ref === '#/components/parameters/FormalIdempotencyKey'))).toBe(true)
     const startStageAttemptOperation = document.paths['/api/v1/stage-exams/{stageExamId}/attempts']?.post
     const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
+    const submitStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/submit']?.post
+    const getStageAttemptResultOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/result']?.get
     expect(startStageAttemptOperation).toBeDefined()
     expect(getStageAttemptOperation).toBeDefined()
+    expect(submitStageAttemptOperation).toBeDefined()
+    expect(getStageAttemptResultOperation).toBeDefined()
     expect(startStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
     expect(getStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(submitStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(submitStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
+    expect(getStageAttemptResultOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(document.components.securitySchemes.BearerAuth).toMatchObject({ description: expect.stringContaining('Required for formal stage-attempt runtime') })
     expect(document['x-runtime-contract-status']).toMatchObject({
       authentication: expect.stringContaining('BearerAuth is implemented for formal stage-attempt runtime'),
-      idempotency: expect.stringContaining('formal stage-attempt start uses Idempotency-Key'),
+      idempotency: expect.stringContaining('formal stage-attempt start and submit use Idempotency-Key'),
       revision: expect.stringContaining('not currently required'),
     })
     expect(document['x-runtime-contract-status']?.idempotency).toContain('IDEMPOTENCY_REPLAY is not emitted')

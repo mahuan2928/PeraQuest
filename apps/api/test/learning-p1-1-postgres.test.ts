@@ -138,6 +138,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0004_learning_p1_1_idempotency.sql',
           '0005_learning_audit.sql',
           '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
+          '0007_learning_p1_3_3_submit_grading.sql',
         ],
         [],
       ])
@@ -153,6 +154,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0004_learning_p1_1_idempotency.sql', count: '1' },
         { name: '0005_learning_audit.sql', count: '1' },
         { name: '0006_learning_p1_3_1_stage_attempt_snapshot.sql', count: '1' },
+        { name: '0007_learning_p1_3_3_submit_grading.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])
@@ -420,6 +422,81 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         requestId: '00000000-0000-0000-0000-000000000903',
       })
       expect(secondKey).toEqual({ status: 'already_open' })
+    } finally {
+      await client.end()
+      await pool.end()
+    }
+  }, 30_000)
+
+  it('submits and scores a formal attempt using PostgreSQL-derived answer keys', async () => {
+    const schema = await createSchema()
+    const client = await connect(schema)
+    const pool = new Pool({ connectionString, options: `-c search_path=${schema}` })
+    try {
+      await runMigrations(client)
+      await seedCompleteDraft(client)
+      await client.query(`
+        UPDATE stage_exam_versions
+        SET status = 'published', published_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [ids.version])
+
+      const repository = new PostgresStudentRepository(pool)
+      const started = await repository.startStageAttempt({
+        studentId: ids.student,
+        stageExamId: ids.exam,
+        attemptId: '00000000-0000-0000-0000-000000000307',
+        idempotencyKey: 'start-submit-key-1',
+        requestHash: Buffer.from('c'.repeat(64), 'hex'),
+        actorAuthProvider: 'email_magic_link',
+        actorProviderSubject: 'student-submit-sub',
+        eventId: '00000000-0000-0000-0000-000000000804',
+        requestId: '00000000-0000-0000-0000-000000000904',
+      })
+      if (started.status !== 'created') throw new Error(`expected created attempt, got ${started.status}`)
+
+      const key = await client.query<{ item_id: string; option_id: string }>(`
+        SELECT item.id AS item_id, keys.correct_option_snapshot_id AS option_id
+        FROM stage_attempt_item_snapshots item
+        JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+        WHERE item.attempt_id = $1
+      `, [started.attempt.attemptId])
+      const submit = await repository.submitStageAttempt({
+        studentId: ids.student,
+        attemptId: started.attempt.attemptId,
+        idempotencyKey: 'submit-key-1',
+        requestHash: Buffer.from('d'.repeat(64), 'hex'),
+        answers: [{ itemId: key.rows[0]!.item_id, selectedOptionId: key.rows[0]!.option_id }],
+      })
+
+      expect(submit.status).toBe('submitted')
+      if (submit.status !== 'submitted') throw new Error(`expected submitted attempt, got ${submit.status}`)
+      expect(submit.result).toMatchObject({
+        attemptId: started.attempt.attemptId,
+        status: 'passed',
+        rawScore: 1,
+        maxScore: 1,
+        score: 1,
+        passed: true,
+        passScore: 0.8,
+      })
+      expect(submit.result.items).toEqual([{ itemId: key.rows[0]!.item_id, outcome: 'correct', earnedScore: 1, maxScore: 1 }])
+
+      const replay = await repository.submitStageAttempt({
+        studentId: ids.student,
+        attemptId: started.attempt.attemptId,
+        idempotencyKey: 'submit-key-1',
+        requestHash: Buffer.from('d'.repeat(64), 'hex'),
+        answers: [{ itemId: key.rows[0]!.item_id, selectedOptionId: key.rows[0]!.option_id }],
+      })
+      expect(replay).toMatchObject({ status: 'replayed', result: submit.result })
+
+      const forged = await client.query<{ count: number }>(`
+        SELECT count(*)::int
+        FROM stage_attempt_answers
+        WHERE attempt_id = $1 AND outcome = 'correct' AND earned_score = 1
+      `, [started.attempt.attemptId])
+      expect(forged.rows).toEqual([{ count: 1 }])
     } finally {
       await client.end()
       await pool.end()

@@ -1,10 +1,10 @@
 # P1.3-6 Mastery / Due 规则确认
 
-状态：待确认规格。本 PR 只用于确认规则，不引入运行时代码、数据库迁移或前端行为。
+状态：服务端投影写入已落地。当前范围覆盖正式诊断提交后的 `student_knowledge` / `student_knowledge_applied_evidence` 更新、幂等 replay 保护和 Trial 隔离；只读 API、前端入口和后续复习任务仍不在本范围内。
 
 ## 1. 目标
 
-P1.3-6 需要在正式诊断提交后，基于已落地的 `knowledge_evidence` 事实表更新学生知识点掌握度和下次复习时间。实现前必须先确认下列规则，避免在运行时代码中临时发明算法。
+P1.3-6 在正式诊断提交后，基于已落地的 `knowledge_evidence` 事实表更新学生知识点掌握度和下次复习时间。下列规则是当前服务端投影写入实现的验收依据，避免在运行时代码中临时发明算法。
 
 ## 2. 输入事实
 
@@ -31,7 +31,7 @@ P1.3-6 需要在正式诊断提交后，基于已落地的 `knowledge_evidence` 
 
 ## 3. 投影表字段
 
-建议 P1.3-6 新增 `student_knowledge` 投影表：
+P1.3-6 新增 `student_knowledge` 投影表：
 
 - `student_id uuid NOT NULL`
 - `knowledge_point_ref text NOT NULL`
@@ -73,7 +73,7 @@ P1.3-6 需要在正式诊断提交后，基于已落地的 `knowledge_evidence` 
 
 ## 5. 状态阈值
 
-建议使用下列确定性阈值：
+使用下列确定性阈值：
 
 - `learning`: `mastery_score < 0.600000`
 - `review`: `0.600000 <= mastery_score < 0.800000`
@@ -85,7 +85,7 @@ P1.3-6 需要在正式诊断提交后，基于已落地的 `knowledge_evidence` 
 
 `due_at` 基于首次成功处理该 submit 事务内的数据库权威 `occurred_at` 计算。
 
-建议间隔：
+间隔：
 
 - `learning`: `occurred_at + interval '1 day'`
 - `review`: `occurred_at + interval '3 days'`
@@ -131,7 +131,15 @@ P1.3-6 只允许 Student 读取自己的 mastery/due。
 - rollback：mastery/due 写入失败时 answers、evidence、audit、attempt status、idempotency 全部回滚。
 - Trial 隔离：Trial 对 `knowledge_evidence`、`student_knowledge` 和 applied ledger 零副作用。
 
-## 10. 未解决问题
+## 10. 已落地范围
+
+- 数据库迁移已新增 `student_knowledge` 和 `student_knowledge_applied_evidence`。
+- 正式 submit 事务会先生成 `knowledge_evidence`，再应用 mastery/due 投影。
+- 同一 submit/idempotency replay 不重复累计 evidence。
+- Trial 流程不写入 `knowledge_evidence`、`student_knowledge` 或 applied ledger。
+- 共享契约新增当前投影 DTO，但不表示只读 API 已开放。
+
+## 11. 未解决问题
 
 - 是否需要在 P1.3-6 同时落地只读 API，还是仅完成服务端投影写入。
 - 是否需要为 `knowledge_point_ref` 独立建 `knowledge_points` 目录表，或继续沿用 P1.3 snapshot 中的 text ref。

@@ -20,6 +20,7 @@ import {
   type PublicStageExamItemDto,
   type RemediationTaskDto,
   type StartStageAttemptResponse,
+  type StudentKnowledgeProjectionDto,
   type SubmitStageAttemptRequest,
   type UnlockStateDto,
 } from './index'
@@ -47,6 +48,18 @@ const remediation = {
   completedAt: null,
   sourceEvidenceId: evidence.evidenceId,
 } satisfies RemediationTaskDto
+
+const masteryProjection = {
+  studentId: evidence.studentId,
+  knowledgePointRef: 'vocab-alpha',
+  rawCorrectTotal: 3,
+  rawAttemptTotal: 5,
+  masteryScore: 0.6,
+  state: 'review',
+  lastOccurredAt: '2026-08-27T00:00:00.000Z',
+  dueAt: '2026-08-30T00:00:00.000Z',
+  updatedAt: '2026-08-27T00:00:00.000Z',
+} satisfies StudentKnowledgeProjectionDto
 
 const unlock = {
   studentId: evidence.studentId,
@@ -146,6 +159,16 @@ describe('knowledge-domain contracts', () => {
 
   it('uses one evidence identity across evidence and remediation DTOs', () => {
     expect(remediation.sourceEvidenceId).toBe(evidence.evidenceId)
+  })
+
+  it('exposes the current P1.3-6 mastery projection shape without future fields', () => {
+    expect(masteryProjection).toMatchObject({
+      knowledgePointRef: 'vocab-alpha',
+      masteryScore: 0.6,
+      state: 'review',
+    })
+    expect(masteryProjection).not.toHaveProperty('stabilityDays')
+    expect(masteryProjection).not.toHaveProperty('attemptCount')
   })
 
   it('keeps remediation and unlock vocabulary stable', () => {

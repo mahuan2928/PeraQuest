@@ -135,6 +135,7 @@ describe('learning P1.1 migration', () => {
       '0007_learning_p1_3_3_submit_grading.sql',
       '0008_learning_p1_3_4_terminal_audit.sql',
       '0009_learning_p1_3_5_knowledge_evidence.sql',
+      '0010_learning_p1_3_6_mastery_due.sql',
     ])
     const rows = await database.query<{ id: string }>('SELECT id FROM trial_attempts ORDER BY id')
     expect(rows.rows).toEqual([{ id: '00000000-0000-0000-0000-000000000121' }])
@@ -368,12 +369,12 @@ describe('learning P1.1 migration', () => {
     }])
   })
 
-  it('creates the required foreign keys, checks, non-null columns, and indexes without future mastery tables', async () => {
+  it('creates the required foreign keys, checks, non-null columns, and indexes without future learning task tables', async () => {
     const database = await createDatabase()
     const forbiddenTables = await database.query<{ table_name: string }>(`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public'
-        AND table_name IN ('knowledge_evidence_weights', 'student_knowledge', 'remediation_tasks')
+        AND table_name IN ('knowledge_evidence_weights', 'remediation_tasks')
     `)
     expect(forbiddenTables.rows).toEqual([])
 
@@ -408,5 +409,39 @@ describe('learning P1.1 migration', () => {
         )
     `)
     expect(indexes.rows).toHaveLength(9)
+  })
+
+  it('applies approved mastery rounding, state thresholds, and due intervals', async () => {
+    const database = await createDatabase()
+    const rules = await database.query<{
+      rounded: string
+      learning_state: string
+      review_state: string
+      mastered_state: string
+      learning_due: boolean
+      review_due: boolean
+      mastered_due: boolean
+    }>(`
+      SELECT
+        calculate_student_knowledge_mastery(2, 3)::text AS rounded,
+        calculate_student_knowledge_state(0.599999) AS learning_state,
+        calculate_student_knowledge_state(0.600000) AS review_state,
+        calculate_student_knowledge_state(0.800000) AS mastered_state,
+        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-01-01T00:00:00Z', 0.599999) =
+          TIMESTAMPTZ '2026-01-02T00:00:00Z' AS learning_due,
+        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-01-01T00:00:00Z', 0.600000) =
+          TIMESTAMPTZ '2026-01-04T00:00:00Z' AS review_due,
+        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-01-01T00:00:00Z', 0.800000) =
+          TIMESTAMPTZ '2026-01-15T00:00:00Z' AS mastered_due
+    `)
+    expect(rules.rows).toEqual([{
+      rounded: '0.666667',
+      learning_state: 'learning',
+      review_state: 'review',
+      mastered_state: 'mastered',
+      learning_due: true,
+      review_due: true,
+      mastered_due: true,
+    }])
   })
 })

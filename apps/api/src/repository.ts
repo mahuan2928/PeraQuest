@@ -105,6 +105,7 @@ export interface StudentRepository {
   listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
   listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
   upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse>
+  disableCurrentDevicePush(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse | null>
 }
 
 interface StageAttemptHeaderRow extends Record<string, unknown> {
@@ -360,6 +361,23 @@ export class PostgresStudentRepository implements StudentRepository {
     const row = result.rows[0]
     if (!row) throw new Error('device upsert did not return a row')
     return { platform: row.platform, pushEnabled: row.push_enabled, lastSeenAt: toIso(row.last_seen_at) }
+  }
+
+  async disableCurrentDevicePush(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse | null> {
+    const result = await this.pool.query<{ platform: ClientPlatform; push_enabled: boolean; last_seen_at: Date }>(`
+      UPDATE user_devices
+      SET platform = $2,
+          app_version = $4,
+          os_version = $5,
+          push_token_encrypted = NULL,
+          push_enabled = false,
+          last_seen_at = $6
+      WHERE user_id = $1
+        AND device_id_hash = $3
+      RETURNING platform, push_enabled, last_seen_at
+    `, [input.studentId, input.platform, input.deviceIdHash, input.appVersion ?? null, input.osVersion ?? null, input.lastSeenAt])
+    const row = result.rows[0]
+    return row ? { platform: row.platform, pushEnabled: row.push_enabled, lastSeenAt: toIso(row.last_seen_at) } : null
   }
 
   async startTrial(studentId: string, attemptId: string, expiresAt: Date): Promise<TrialStartResult> {
@@ -745,6 +763,7 @@ export class MemoryStudentRepository implements StudentRepository {
   private readonly trialRedemptions = new Set<string>()
   private readonly trialAttempts = new Map<string, TrialAttemptRecord>()
   private readonly stageAttempts = new Map<string, StartStageAttemptResponse>()
+  private readonly currentDevices = new Map<string, CurrentDeviceRegistrationResponse>()
 
   async create(student: StudentRecord): Promise<void> {
     this.students.set(student.id, student)
@@ -774,7 +793,17 @@ export class MemoryStudentRepository implements StudentRepository {
   }
 
   async upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse> {
-    return { platform: input.platform, pushEnabled: false, lastSeenAt: input.lastSeenAt.toISOString() }
+    const device = { platform: input.platform, pushEnabled: false, lastSeenAt: input.lastSeenAt.toISOString() }
+    this.currentDevices.set(`${input.studentId}:${input.deviceIdHash}`, device)
+    return device
+  }
+
+  async disableCurrentDevicePush(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse | null> {
+    const key = `${input.studentId}:${input.deviceIdHash}`
+    if (!this.currentDevices.has(key)) return null
+    const device = { platform: input.platform, pushEnabled: false, lastSeenAt: input.lastSeenAt.toISOString() }
+    this.currentDevices.set(key, device)
+    return device
   }
 
   async startTrial(studentId: string, attemptId: string, expiresAt: Date): Promise<TrialStartResult> {

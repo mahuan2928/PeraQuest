@@ -15,6 +15,8 @@ import {
   unlockStatuses,
   userRoles,
   type AuthActor,
+  type CurrentDevicePushDisableRequest,
+  type CurrentDevicePushDisableResponse,
   type CurrentDeviceRegistrationRequest,
   type CurrentDeviceRegistrationResponse,
   type ErrorResponse,
@@ -75,6 +77,8 @@ const deviceRegistrationResponse = {
   pushEnabled: false,
   lastSeenAt: '2026-08-30T00:00:00.000Z',
 } satisfies CurrentDeviceRegistrationResponse
+const devicePushDisable = deviceRegistration satisfies CurrentDevicePushDisableRequest
+const devicePushDisableResponse = deviceRegistrationResponse satisfies CurrentDevicePushDisableResponse
 
 const unlock = {
   studentId: evidence.studentId,
@@ -126,6 +130,8 @@ describe('shared security contracts', () => {
     expect(deviceRegistration).toMatchObject({ platform: 'ios', deviceId: 'device-1' })
     expect(deviceRegistrationResponse).toMatchObject({ platform: 'ios', pushEnabled: false })
     expect(deviceRegistration).not.toHaveProperty('pushToken')
+    expect(devicePushDisableResponse.pushEnabled).toBe(false)
+    expect(devicePushDisable).not.toHaveProperty('pushToken')
   })
 })
 

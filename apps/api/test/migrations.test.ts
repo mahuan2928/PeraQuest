@@ -210,6 +210,51 @@ describe('database migrations', () => {
     expect(JSON.stringify(devices.rows)).not.toContain('device-1')
   })
 
+  it('disables current device push and clears any stored token envelope', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const student = '00000000-0000-0000-0000-000000000082'
+    const deviceHash = '49a15b1ed7c9'
+    await database.query("INSERT INTO users (id, role, birth_month, is_minor) VALUES ($1, 'student', '2000-01-01', false)", [student])
+    await database.query(`
+      INSERT INTO user_devices
+        (id, user_id, platform, device_id_hash, app_version, os_version, push_token_encrypted, push_enabled, last_seen_at)
+      VALUES
+        ('00000000-0000-0000-0000-000000000083', $1, 'ios', $2, '1.0.0', '18', 'sealed-token', true, TIMESTAMPTZ '2026-08-29 00:00:00+00')
+    `, [student, deviceHash])
+    const repository = new PostgresStudentRepository({ query: database.query.bind(database) } as unknown as Pool)
+
+    await expect(repository.disableCurrentDevicePush({
+      studentId: student,
+      platform: 'android',
+      deviceIdHash: deviceHash,
+      appVersion: '1.0.1',
+      osVersion: '15',
+      lastSeenAt: new Date('2026-08-30T00:00:00.000Z'),
+    })).resolves.toEqual({ platform: 'android', pushEnabled: false, lastSeenAt: '2026-08-30T00:00:00.000Z' })
+
+    const devices = await database.query<{ platform: string; app_version: string; os_version: string; push_token_encrypted: string | null; push_enabled: boolean; last_seen_at: Date }>(`
+      SELECT platform, app_version, os_version, push_token_encrypted, push_enabled, last_seen_at
+      FROM user_devices
+      WHERE user_id = $1 AND device_id_hash = $2
+    `, [student, deviceHash])
+    expect(devices.rows).toEqual([{
+      platform: 'android',
+      app_version: '1.0.1',
+      os_version: '15',
+      push_token_encrypted: null,
+      push_enabled: false,
+      last_seen_at: new Date('2026-08-30T00:00:00.000Z'),
+    }])
+    await expect(repository.disableCurrentDevicePush({
+      studentId: student,
+      platform: 'ios',
+      deviceIdHash: 'missing-device-hash',
+      lastSeenAt: new Date('2026-08-30T00:00:00.000Z'),
+    })).resolves.toBeNull()
+  })
+
   it('persists the consenting guardian on consent records and rejects cross-user impersonation', async () => {
     vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
     const database = new PGlite()

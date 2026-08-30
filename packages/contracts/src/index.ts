@@ -39,6 +39,9 @@ export interface CurrentDeviceRegistrationResponse {
   lastSeenAt: string
 }
 
+export type CurrentDevicePushDisableRequest = CurrentDeviceRegistrationRequest
+export type CurrentDevicePushDisableResponse = CurrentDeviceRegistrationResponse
+
 export interface StudentOnboardingRequest {
   birthMonth: string
   targetExam: ExamLevel

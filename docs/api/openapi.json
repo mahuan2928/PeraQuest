@@ -336,6 +336,57 @@
         }
       }
     },
+    "/v1/me/devices/current/push-disabled": {
+      "put": {
+        "operationId": "disableCurrentDevicePush",
+        "summary": "Disable push notifications for the authenticated student's current registered device.",
+        "description": "Bearer student only. Identifies the existing current device by platform and deviceId metadata, sets push_enabled=false, and defensively clears any stored push token envelope. This endpoint does not accept push tokens.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurrentDevicePushDisableRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Push disabled for the current registered device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentDevicePushDisableResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/v1/me/voice-upload-ticket": {
       "post": {
         "operationId": "createVoiceUploadTicket",
@@ -943,6 +994,58 @@
           "pushEnabled": {
             "type": "boolean",
             "description": "Always false until push-token registration and provider integrations land."
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CurrentDevicePushDisableRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Current device metadata used to disable push. Raw deviceId is hashed server-side and push tokens are intentionally not accepted.",
+        "required": [
+          "platform",
+          "deviceId"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/ClientPlatform"
+          },
+          "deviceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "appVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "osVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "CurrentDevicePushDisableResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Current device state after push is disabled. pushEnabled is false.",
+        "required": [
+          "platform",
+          "pushEnabled",
+          "lastSeenAt"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/ClientPlatform"
+          },
+          "pushEnabled": {
+            "type": "boolean",
+            "description": "False after disabling push for the current registered device."
           },
           "lastSeenAt": {
             "type": "string",

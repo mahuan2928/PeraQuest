@@ -215,6 +215,8 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
         (SELECT count(*)::int FROM stage_attempt_item_snapshots) +
         (SELECT count(*)::int FROM stage_attempt_answers) +
         (SELECT count(*)::int FROM knowledge_evidence) +
+        (SELECT count(*)::int FROM student_knowledge) +
+        (SELECT count(*)::int FROM student_knowledge_applied_evidence) +
         (SELECT count(*)::int FROM learning_audit_events) AS count
     `)
     await database.query('INSERT INTO trial_redemptions (student_id) VALUES ($1)', [ids.student])
@@ -228,6 +230,8 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
         (SELECT count(*)::int FROM stage_attempt_item_snapshots) +
         (SELECT count(*)::int FROM stage_attempt_answers) +
         (SELECT count(*)::int FROM knowledge_evidence) +
+        (SELECT count(*)::int FROM student_knowledge) +
+        (SELECT count(*)::int FROM student_knowledge_applied_evidence) +
         (SELECT count(*)::int FROM learning_audit_events) AS count
     `)
     expect(after.rows).toEqual(before.rows)
@@ -350,6 +354,10 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
     await database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptOne, ids.student])
     await expect(database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptOne, ids.guardian]))
       .rejects.toThrow(/exactly one evidence/)
+    await database.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [ids.attemptOne, ids.student])
+    await database.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [ids.attemptOne, ids.student])
+    await expect(database.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [ids.attemptOne, ids.guardian]))
+      .rejects.toThrow(/requires knowledge evidence/)
 
     const evidence = await database.query<{
       skill_ref: string
@@ -377,9 +385,34 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       time_matches: true,
       count: 1,
     }])
+    const mastered = await database.query<{
+      raw_correct_total: string
+      raw_attempt_total: string
+      mastery_score: string
+      state: string
+      due_matches: boolean
+      applied_count: number
+    }>(`
+      SELECT sk.raw_correct_total::text, sk.raw_attempt_total::text, sk.mastery_score::text,
+             sk.state, sk.due_at = sk.last_occurred_at + interval '14 days' AS due_matches,
+             (SELECT count(*)::int FROM student_knowledge_applied_evidence WHERE student_id = sk.student_id) AS applied_count
+      FROM student_knowledge sk
+      WHERE sk.student_id = $1 AND sk.knowledge_point_ref = 'vocab-alpha'
+    `, [ids.student])
+    expect(mastered.rows).toEqual([{
+      raw_correct_total: '1.000000',
+      raw_attempt_total: '1.000000',
+      mastery_score: '1.000000',
+      state: 'mastered',
+      due_matches: true,
+      applied_count: 1,
+    }])
     await expect(database.query(`
       UPDATE knowledge_evidence SET earned_score = 0 WHERE attempt_id = $1
     `, [ids.attemptOne])).rejects.toThrow(/append-only/)
+    await expect(database.query(`
+      UPDATE student_knowledge SET mastery_score = 0 WHERE student_id = $1
+    `, [ids.student])).rejects.toThrow(/approved mastery/)
 
     await startAttempt(database, ids.attemptTwo, ids.versionOne)
     const secondSnapshot = await database.query<{ item_snapshot_id: string }>(`
@@ -429,6 +462,14 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       thirdAnswer.rows[0]!.answer_id,
       thirdSnapshot.rows[0]!.source_item_id,
     ])).rejects.toThrow(/must match/)
+    await database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptThree, ids.student])
+    await database.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [ids.attemptThree, ids.student])
+    const learning = await database.query<{ mastery_score: string; state: string; due_matches: boolean }>(`
+      SELECT mastery_score::text, state, due_at = last_occurred_at + interval '1 day' AS due_matches
+      FROM student_knowledge
+      WHERE student_id = $1 AND knowledge_point_ref = 'vocab-gamma'
+    `, [ids.student])
+    expect(learning.rows).toEqual([{ mastery_score: '0.000000', state: 'learning', due_matches: true }])
   })
 
   it('accepts terminal audit events only when they match authoritative attempt terminal times', async () => {

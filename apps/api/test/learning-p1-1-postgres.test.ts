@@ -141,6 +141,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0007_learning_p1_3_3_submit_grading.sql',
           '0008_learning_p1_3_4_terminal_audit.sql',
           '0009_learning_p1_3_5_knowledge_evidence.sql',
+          '0010_learning_p1_3_6_mastery_due.sql',
         ],
         [],
       ])
@@ -159,6 +160,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0007_learning_p1_3_3_submit_grading.sql', count: '1' },
         { name: '0008_learning_p1_3_4_terminal_audit.sql', count: '1' },
         { name: '0009_learning_p1_3_5_knowledge_evidence.sql', count: '1' },
+        { name: '0010_learning_p1_3_6_mastery_due.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])
@@ -515,13 +517,33 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
       })
       expect(replay).toMatchObject({ status: 'replayed', result: submit.result })
 
-      const persisted = await client.query<{ scored_answers: number; evidence: number; submitted_audits: number }>(`
+      const persisted = await client.query<{
+        scored_answers: number
+        evidence: number
+        applied_evidence: number
+        mastery_score: string
+        state: string
+        due_matches: boolean
+        submitted_audits: number
+      }>(`
         SELECT
           (SELECT count(*)::int FROM stage_attempt_answers WHERE attempt_id = $1 AND outcome = 'correct' AND earned_score = 1) AS scored_answers,
           (SELECT count(*)::int FROM knowledge_evidence WHERE attempt_id = $1 AND outcome = 'correct' AND earned_score = 1) AS evidence,
+          (SELECT count(*)::int FROM student_knowledge_applied_evidence WHERE student_id = $2) AS applied_evidence,
+          (SELECT mastery_score::text FROM student_knowledge WHERE student_id = $2 AND knowledge_point_ref = 'unassigned') AS mastery_score,
+          (SELECT state FROM student_knowledge WHERE student_id = $2 AND knowledge_point_ref = 'unassigned') AS state,
+          (SELECT due_at = last_occurred_at + interval '14 days' FROM student_knowledge WHERE student_id = $2 AND knowledge_point_ref = 'unassigned') AS due_matches,
           (SELECT count(*)::int FROM learning_audit_events WHERE attempt_id = $1 AND event_type = 'attempt_submitted') AS submitted_audits
-      `, [started.attempt.attemptId])
-      expect(persisted.rows).toEqual([{ scored_answers: 1, evidence: 1, submitted_audits: 1 }])
+      `, [started.attempt.attemptId, ids.student])
+      expect(persisted.rows).toEqual([{
+        scored_answers: 1,
+        evidence: 1,
+        applied_evidence: 1,
+        mastery_score: '1.000000',
+        state: 'mastered',
+        due_matches: true,
+        submitted_audits: 1,
+      }])
     } finally {
       await client.end()
       await pool.end()
@@ -577,15 +599,17 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         answers: [{ itemId: key.rows[0]!.item_id, selectedOptionId: key.rows[0]!.option_id }],
       })).rejects.toThrow()
 
-      const rollback = await client.query<{ status: string; answers: number; evidence: number; idempotency: number; audit: number }>(`
+      const rollback = await client.query<{ status: string; answers: number; evidence: number; mastery: number; applied: number; idempotency: number; audit: number }>(`
         SELECT
           (SELECT status::text FROM stage_attempts WHERE id = $1) AS status,
           (SELECT count(*)::int FROM stage_attempt_answers WHERE attempt_id = $1) AS answers,
           (SELECT count(*)::int FROM knowledge_evidence WHERE attempt_id = $1) AS evidence,
+          (SELECT count(*)::int FROM student_knowledge WHERE student_id = $3) AS mastery,
+          (SELECT count(*)::int FROM student_knowledge_applied_evidence WHERE student_id = $3) AS applied,
           (SELECT count(*)::int FROM idempotency_records WHERE operation_scope = $2) AS idempotency,
           (SELECT count(*)::int FROM learning_audit_events WHERE attempt_id = $1 AND event_type = 'attempt_submitted') AS audit
-      `, [started.attempt.attemptId, `stage_attempt.submit:v1:${started.attempt.attemptId}`])
-      expect(rollback.rows).toEqual([{ status: 'open', answers: 0, evidence: 0, idempotency: 0, audit: 0 }])
+      `, [started.attempt.attemptId, `stage_attempt.submit:v1:${started.attempt.attemptId}`, ids.student])
+      expect(rollback.rows).toEqual([{ status: 'open', answers: 0, evidence: 0, mastery: 0, applied: 0, idempotency: 0, audit: 0 }])
     } finally {
       await client.end()
       await pool.end()
@@ -652,15 +676,17 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         answers: [{ itemId: key.rows[0]!.item_id, selectedOptionId: key.rows[0]!.option_id }],
       })).rejects.toThrow(/forced knowledge evidence failure/)
 
-      const rollback = await client.query<{ status: string; answers: number; evidence: number; idempotency: number; audit: number }>(`
+      const rollback = await client.query<{ status: string; answers: number; evidence: number; mastery: number; applied: number; idempotency: number; audit: number }>(`
         SELECT
           (SELECT status::text FROM stage_attempts WHERE id = $1) AS status,
           (SELECT count(*)::int FROM stage_attempt_answers WHERE attempt_id = $1) AS answers,
           (SELECT count(*)::int FROM knowledge_evidence WHERE attempt_id = $1) AS evidence,
+          (SELECT count(*)::int FROM student_knowledge WHERE student_id = $3) AS mastery,
+          (SELECT count(*)::int FROM student_knowledge_applied_evidence WHERE student_id = $3) AS applied,
           (SELECT count(*)::int FROM idempotency_records WHERE operation_scope = $2) AS idempotency,
           (SELECT count(*)::int FROM learning_audit_events WHERE attempt_id = $1 AND event_type = 'attempt_submitted') AS audit
-      `, [started.attempt.attemptId, `stage_attempt.submit:v1:${started.attempt.attemptId}`])
-      expect(rollback.rows).toEqual([{ status: 'open', answers: 0, evidence: 0, idempotency: 0, audit: 0 }])
+      `, [started.attempt.attemptId, `stage_attempt.submit:v1:${started.attempt.attemptId}`, ids.student])
+      expect(rollback.rows).toEqual([{ status: 'open', answers: 0, evidence: 0, mastery: 0, applied: 0, idempotency: 0, audit: 0 }])
     } finally {
       await client.end()
       await pool.end()
@@ -724,16 +750,18 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         requestId: '00000000-0000-0000-0000-000000000911',
       })).resolves.toEqual({ status: 'expired' })
 
-      const expired = await client.query<{ status: string; answers: number; evidence: number; audits: number; idempotency_status: string; http_status: number }>(`
+      const expired = await client.query<{ status: string; answers: number; evidence: number; mastery: number; applied: number; audits: number; idempotency_status: string; http_status: number }>(`
         SELECT
           (SELECT status::text FROM stage_attempts WHERE id = $1) AS status,
           (SELECT count(*)::int FROM stage_attempt_answers WHERE attempt_id = $1) AS answers,
           (SELECT count(*)::int FROM knowledge_evidence WHERE attempt_id = $1) AS evidence,
+          (SELECT count(*)::int FROM student_knowledge WHERE student_id = $4) AS mastery,
+          (SELECT count(*)::int FROM student_knowledge_applied_evidence WHERE student_id = $4) AS applied,
           (SELECT count(*)::int FROM learning_audit_events WHERE attempt_id = $1 AND event_type = 'attempt_expired') AS audits,
           (SELECT status::text FROM idempotency_records WHERE operation_scope = $2 AND idempotency_key = $3) AS idempotency_status,
           (SELECT http_status::int FROM idempotency_records WHERE operation_scope = $2 AND idempotency_key = $3) AS http_status
-      `, [started.attempt.attemptId, `stage_attempt.submit:v1:${started.attempt.attemptId}`, payload.idempotencyKey])
-      expect(expired.rows).toEqual([{ status: 'expired', answers: 0, evidence: 0, audits: 1, idempotency_status: 'completed', http_status: 410 }])
+      `, [started.attempt.attemptId, `stage_attempt.submit:v1:${started.attempt.attemptId}`, payload.idempotencyKey, ids.student])
+      expect(expired.rows).toEqual([{ status: 'expired', answers: 0, evidence: 0, mastery: 0, applied: 0, audits: 1, idempotency_status: 'completed', http_status: 410 }])
     } finally {
       await client.end()
       await pool.end()

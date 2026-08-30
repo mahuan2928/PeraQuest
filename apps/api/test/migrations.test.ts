@@ -40,6 +40,7 @@ describe('database migrations', () => {
       '0007_learning_p1_3_3_submit_grading.sql',
       '0008_learning_p1_3_4_terminal_audit.sql',
       '0009_learning_p1_3_5_knowledge_evidence.sql',
+      '0010_learning_p1_3_6_mastery_due.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -70,6 +71,8 @@ describe('database migrations', () => {
       'stage_exam_version_retirements',
       'stage_exam_versions',
       'stage_exams',
+      'student_knowledge',
+      'student_knowledge_applied_evidence',
       'subscription_entitlements',
       'trial_attempts',
       'trial_redemptions',
@@ -112,7 +115,7 @@ describe('database migrations', () => {
       SELECT table_name
       FROM information_schema.tables
       WHERE table_schema = 'public'
-        AND table_name IN ('student_knowledge', 'remediation_tasks', 'unlock_states')
+        AND table_name IN ('remediation_tasks', 'unlock_states')
     `)
     expect(futureKnowledgeTables.rows).toEqual([])
   })

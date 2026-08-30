@@ -621,6 +621,7 @@ export class PostgresStudentRepository implements StudentRepository {
       `, [input.attemptId])
 
       await client.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [input.attemptId, input.studentId])
+      await client.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [input.attemptId, input.studentId])
 
       await client.query(`
         INSERT INTO learning_audit_events

@@ -15,6 +15,8 @@ import {
   unlockStatuses,
   userRoles,
   type AuthActor,
+  type CurrentDeviceRegistrationRequest,
+  type CurrentDeviceRegistrationResponse,
   type ErrorResponse,
   type KnowledgeEvidenceDto,
   type PublicStageExamItemDto,
@@ -62,6 +64,17 @@ const masteryProjection = {
   updatedAt: '2026-08-27T00:00:00.000Z',
 } satisfies StudentKnowledgeProjectionDto
 const masteryProjectionList = { items: [masteryProjection] } satisfies StudentKnowledgeProjectionListResponse
+const deviceRegistration = {
+  platform: 'ios',
+  deviceId: 'device-1',
+  appVersion: '1.0.0',
+  osVersion: '18',
+} satisfies CurrentDeviceRegistrationRequest
+const deviceRegistrationResponse = {
+  platform: 'ios',
+  pushEnabled: false,
+  lastSeenAt: '2026-08-30T00:00:00.000Z',
+} satisfies CurrentDeviceRegistrationResponse
 
 const unlock = {
   studentId: evidence.studentId,
@@ -107,6 +120,12 @@ describe('shared security contracts', () => {
       compatibilityOnly: true,
       activeInP11: false,
     })
+  })
+
+  it('keeps current device registration scoped to metadata without push token', () => {
+    expect(deviceRegistration).toMatchObject({ platform: 'ios', deviceId: 'device-1' })
+    expect(deviceRegistrationResponse).toMatchObject({ platform: 'ios', pushEnabled: false })
+    expect(deviceRegistration).not.toHaveProperty('pushToken')
   })
 })
 

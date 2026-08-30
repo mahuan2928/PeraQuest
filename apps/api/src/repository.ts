@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { AuthProvider, ConsentStatus, GuardianLinkStatus, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
+import type { AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GuardianLinkStatus, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -80,6 +80,15 @@ export interface SubmitStageAttemptInput {
   answers: SubmitStageAttemptAnswerInput[]
 }
 
+export interface UpsertCurrentDeviceInput {
+  studentId: string
+  platform: ClientPlatform
+  deviceIdHash: string
+  appVersion?: string
+  osVersion?: string
+  lastSeenAt: Date
+}
+
 export interface StudentRepository {
   create(student: StudentRecord): Promise<void>
   findById(id: string): Promise<StudentRecord | null>
@@ -95,6 +104,7 @@ export interface StudentRepository {
   findStageAttemptResult(studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null>
   listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
   listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
+  upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse>
 }
 
 interface StageAttemptHeaderRow extends Record<string, unknown> {
@@ -332,6 +342,24 @@ export class PostgresStudentRepository implements StudentRepository {
       ORDER BY entitlement_code ASC
     `, [studentId, asOf])
     return result.rows.map((row) => row.entitlement_code)
+  }
+
+  async upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse> {
+    const result = await this.pool.query<{ platform: ClientPlatform; push_enabled: boolean; last_seen_at: Date }>(`
+      INSERT INTO user_devices
+        (id, user_id, platform, device_id_hash, app_version, os_version, push_enabled, last_seen_at)
+      VALUES
+        (gen_random_uuid(), $1, $2, $3, $4, $5, false, $6)
+      ON CONFLICT (user_id, device_id_hash) DO UPDATE
+      SET platform = EXCLUDED.platform,
+          app_version = EXCLUDED.app_version,
+          os_version = EXCLUDED.os_version,
+          last_seen_at = EXCLUDED.last_seen_at
+      RETURNING platform, push_enabled, last_seen_at
+    `, [input.studentId, input.platform, input.deviceIdHash, input.appVersion ?? null, input.osVersion ?? null, input.lastSeenAt])
+    const row = result.rows[0]
+    if (!row) throw new Error('device upsert did not return a row')
+    return { platform: row.platform, pushEnabled: row.push_enabled, lastSeenAt: toIso(row.last_seen_at) }
   }
 
   async startTrial(studentId: string, attemptId: string, expiresAt: Date): Promise<TrialStartResult> {
@@ -743,6 +771,10 @@ export class MemoryStudentRepository implements StudentRepository {
     void studentId
     void asOf
     return []
+  }
+
+  async upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse> {
+    return { platform: input.platform, pushEnabled: false, lastSeenAt: input.lastSeenAt.toISOString() }
   }
 
   async startTrial(studentId: string, attemptId: string, expiresAt: Date): Promise<TrialStartResult> {

@@ -29,6 +29,16 @@ export interface ClientContext {
   osVersion?: string
 }
 
+export interface CurrentDeviceRegistrationRequest extends ClientContext {
+  deviceId: string
+}
+
+export interface CurrentDeviceRegistrationResponse {
+  platform: ClientPlatform
+  pushEnabled: boolean
+  lastSeenAt: string
+}
+
 export interface StudentOnboardingRequest {
   birthMonth: string
   targetExam: ExamLevel

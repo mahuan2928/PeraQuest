@@ -8,7 +8,7 @@ Scope: iOS, Android, and PC clients for Eiken Grade 3 onboarding, guardian linka
 - Authentication identities are provider-based and can be linked across devices. Apple, Google, and email magic-link are contract options; access-token verification remains an Architect integration point.
 - Voice upload is never sent through the general answer API. The capability response exposes `signed_upload` only after deployment flags, guardian status, and current consent all pass. The ticket endpoint repeats the server-side gate.
 - Payment channels are platform-specific: App Store on iOS, Play Billing on Android, and web checkout on PC. Entitlements are normalized server-side so access follows the learner across platforms; capabilities now read active/grace-period entitlement projections from `subscription_entitlements`.
-- Notifications are device registrations, not account fields: APNs, FCM, web push, and guardian LINE can coexist.
+- Notifications are device registrations, not account fields: current device metadata upsert is available for Bearer students, while APNs, FCM, web push, and guardian LINE provider integrations remain separate work.
 - LINE OAuth state must store an allowlisted return target. Mobile may return by app deep link with HTTPS fallback; PC uses HTTPS only.
 
 ## Next implementation order
@@ -18,7 +18,7 @@ Scope: iOS, Android, and PC clients for Eiken Grade 3 onboarding, guardian linka
 3. Implement guardian invitation/verification and guardian-authenticated consent writes.
 4. Add S3-compatible signed upload tickets with MIME, size, duration, checksum, expiry, and region enforcement.
 5. Add idempotent App Store, Play, and web-payment webhooks; project all receipts into `subscription_entitlements`. Read-side capability projection is already wired.
-6. Add APNs/FCM/web-push device registration and LINE OAuth callback/state validation.
+6. Add APNs/FCM/web-push token registration and LINE OAuth callback/state validation. Current-device metadata registration is already wired without push tokens.
 7. Add audit events and deletion jobs for consent withdrawal and voice retention.
 
 ## Architect decisions still required

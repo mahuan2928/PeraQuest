@@ -58,6 +58,9 @@ const fakePool = {
     }
     if (sql.includes('FROM subscription_entitlements')) return { rows: [], rowCount: 0 }
     if (sql.includes('INSERT INTO consent_records')) return { rows: [], rowCount: 1 }
+    if (sql.includes('INSERT INTO user_devices')) {
+      return { rows: [{ platform: parameters[1], push_enabled: false, last_seen_at: parameters[5] }], rowCount: 1 }
+    }
     throw new Error(`unexpected test query: ${sql}`)
   },
   end: async () => undefined,
@@ -142,6 +145,38 @@ describe('real Bearer business path', () => {
     })
     expect(response.statusCode).toBe(403)
     expect(response.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
+  })
+
+  it('allows a Bearer student to register current device metadata', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/devices/current',
+      headers: { authorization: `Bearer ${await tokenFor('adult-sub')}` },
+      payload: { platform: 'ios', deviceId: 'device-1', appVersion: '1.0.0', osVersion: '18' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ platform: 'ios', pushEnabled: false })
+    expect(response.json().lastSeenAt).toEqual(expect.any(String))
+  })
+
+  it('rejects guardian and legacy current device registration', async () => {
+    const guardian = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/devices/current',
+      headers: { authorization: `Bearer ${await tokenFor('guardian-sub')}` },
+      payload: { platform: 'ios', deviceId: 'device-1' },
+    })
+    expect(guardian.statusCode).toBe(403)
+    expect(guardian.json()).toEqual({ code: 'AUTH_FORBIDDEN' })
+
+    const legacy = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/devices/current',
+      headers: { 'x-student-id': ADULT_STUDENT },
+      payload: { platform: 'ios', deviceId: 'device-1' },
+    })
+    expect(legacy.statusCode).toBe(401)
+    expect(legacy.json()).toEqual({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
   })
 
   it.each([

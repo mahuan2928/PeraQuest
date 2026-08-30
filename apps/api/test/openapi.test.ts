@@ -22,6 +22,7 @@ describe('OpenAPI document', () => {
       '/health',
       '/v1/me/capabilities',
       '/v1/me/consents/voice-processing',
+      '/v1/me/devices/current',
       '/v1/me/guardian-link',
       '/v1/me/voice-upload-ticket',
       '/v1/students/onboarding',
@@ -46,6 +47,9 @@ describe('OpenAPI document', () => {
     expect(document.components.parameters.IfMatchRevision!.description).toContain('planned')
     expect(document.components.parameters.IfMatchRevision!.description).toContain('Not implemented')
     expect(document.components.schemas).toHaveProperty('AuthActor')
+    expect(document.components.schemas).toHaveProperty('CurrentDeviceRegistrationRequest')
+    expect(document.components.schemas).toHaveProperty('CurrentDeviceRegistrationResponse')
+    expect(document.components.schemas.CurrentDeviceRegistrationRequest?.properties).not.toHaveProperty('pushToken')
     expect(document.components.schemas).toHaveProperty('GuardianLinkProjection')
     expect(document.components.schemas).toHaveProperty('ConsentProjection')
     expect(document.components.schemas).toHaveProperty('ErrorResponse')
@@ -76,17 +80,20 @@ describe('OpenAPI document', () => {
     expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey' || parameter.$ref === '#/components/parameters/FormalIdempotencyKey'))).toBe(true)
     const startStageAttemptOperation = document.paths['/api/v1/stage-exams/{stageExamId}/attempts']?.post
     const putVoiceConsentOperation = document.paths['/v1/me/consents/voice-processing']?.put
+    const putCurrentDeviceOperation = document.paths['/v1/me/devices/current']?.put
     const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
     const submitStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/submit']?.post
     const getStageAttemptResultOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/result']?.get
     const listStudentKnowledgeOperation = document.paths['/api/v1/student-knowledge']?.get
     expect(startStageAttemptOperation).toBeDefined()
     expect(putVoiceConsentOperation).toBeDefined()
+    expect(putCurrentDeviceOperation).toBeDefined()
     expect(getStageAttemptOperation).toBeDefined()
     expect(submitStageAttemptOperation).toBeDefined()
     expect(getStageAttemptResultOperation).toBeDefined()
     expect(listStudentKnowledgeOperation).toBeDefined()
     expect(putVoiceConsentOperation!.security).toContainEqual({ BearerAuth: [] })
+    expect(putCurrentDeviceOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
     expect(getStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])

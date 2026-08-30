@@ -169,6 +169,47 @@ describe('database migrations', () => {
     ])
   })
 
+  it('upserts current device metadata without storing raw device ids', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const student = '00000000-0000-0000-0000-000000000081'
+    await database.query("INSERT INTO users (id, role, birth_month, is_minor) VALUES ($1, 'student', '2000-01-01', false)", [student])
+    const repository = new PostgresStudentRepository({ query: database.query.bind(database) } as unknown as Pool)
+
+    await expect(repository.upsertCurrentDevice({
+      studentId: student,
+      platform: 'ios',
+      deviceIdHash: '9c6f7ad1e2b4',
+      appVersion: '1.0.0',
+      osVersion: '18',
+      lastSeenAt: new Date('2026-08-30T00:00:00.000Z'),
+    })).resolves.toEqual({ platform: 'ios', pushEnabled: false, lastSeenAt: '2026-08-30T00:00:00.000Z' })
+    await expect(repository.upsertCurrentDevice({
+      studentId: student,
+      platform: 'android',
+      deviceIdHash: '9c6f7ad1e2b4',
+      appVersion: '1.0.1',
+      osVersion: '15',
+      lastSeenAt: new Date('2026-08-31T00:00:00.000Z'),
+    })).resolves.toEqual({ platform: 'android', pushEnabled: false, lastSeenAt: '2026-08-31T00:00:00.000Z' })
+
+    const devices = await database.query<{ platform: string; device_id_hash: string; app_version: string; os_version: string; push_enabled: boolean; last_seen_at: Date }>(`
+      SELECT platform, device_id_hash, app_version, os_version, push_enabled, last_seen_at
+      FROM user_devices
+      WHERE user_id = $1
+    `, [student])
+    expect(devices.rows).toEqual([{
+      platform: 'android',
+      device_id_hash: '9c6f7ad1e2b4',
+      app_version: '1.0.1',
+      os_version: '15',
+      push_enabled: false,
+      last_seen_at: new Date('2026-08-31T00:00:00.000Z'),
+    }])
+    expect(JSON.stringify(devices.rows)).not.toContain('device-1')
+  })
+
   it('persists the consenting guardian on consent records and rejects cross-user impersonation', async () => {
     vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
     const database = new PGlite()

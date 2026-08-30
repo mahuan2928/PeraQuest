@@ -6,6 +6,7 @@ import type {
   CapabilityResponse,
   ClientPlatform,
   ConsentResponse,
+  CurrentDeviceRegistrationResponse,
   GuardianLinkResponse,
   NotificationChannel,
   PaymentChannel,
@@ -37,6 +38,12 @@ const onboardingSchema = z.object({
   }),
 })
 const consentSchema = z.object({ status: z.enum(['granted', 'denied', 'withdrawn']), version: z.string().min(1) })
+const currentDeviceSchema = z.object({
+  platform: platformSchema,
+  deviceId: z.string().min(1).max(200),
+  appVersion: z.string().min(1).max(50).optional(),
+  osVersion: z.string().min(1).max(100).optional(),
+}).strict()
 const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
 const idempotencyKeySchema = z.string().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/)
@@ -64,6 +71,13 @@ const channelsFor = (platform: ClientPlatform): { payments: PaymentChannel[]; no
   if (platform === 'android') return { payments: ['google_play'], notifications: ['android_push', 'line'] }
   return { payments: ['web_checkout'], notifications: ['web_push', 'line'] }
 }
+
+const hashDeviceId = (studentId: string, deviceId: string): string => createHash('sha256')
+  .update('peraquest:user-device:v1:')
+  .update(studentId)
+  .update(':')
+  .update(deviceId)
+  .digest('hex')
 
 export interface BuildAppOptions {
   repository?: StudentRepository
@@ -147,7 +161,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
   }
 
-  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge')
+  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/v1/me/devices/current')
   const protectedPath = (url: string): boolean => formalProtectedPath(url) || url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return
@@ -246,6 +260,23 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       lineReturnTargets: parsedPlatform.data === 'pc' ? ['web_https'] : ['app_deep_link', 'web_https'],
       entitlements,
     }
+  })
+
+  app.put('/v1/me/devices/current', async (request, reply): Promise<CurrentDeviceRegistrationResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const parsed = currentDeviceSchema.safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'device', reason: 'invalid' })
+    const student = await repository.findById(actor.id)
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    return repository.upsertCurrentDevice({
+      studentId: actor.id,
+      platform: parsed.data.platform,
+      deviceIdHash: hashDeviceId(actor.id, parsed.data.deviceId),
+      ...(parsed.data.appVersion === undefined ? {} : { appVersion: parsed.data.appVersion }),
+      ...(parsed.data.osVersion === undefined ? {} : { osVersion: parsed.data.osVersion }),
+      lastSeenAt: now(),
+    })
   })
 
   app.post('/v1/trial-attempts', async (request, reply): Promise<TrialAttemptResponse | void> => {

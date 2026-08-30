@@ -23,6 +23,7 @@ describe('OpenAPI document', () => {
       '/v1/me/capabilities',
       '/v1/me/consents/voice-processing',
       '/v1/me/devices/current',
+      '/v1/me/devices/current/push-disabled',
       '/v1/me/guardian-link',
       '/v1/me/voice-upload-ticket',
       '/v1/students/onboarding',
@@ -49,7 +50,10 @@ describe('OpenAPI document', () => {
     expect(document.components.schemas).toHaveProperty('AuthActor')
     expect(document.components.schemas).toHaveProperty('CurrentDeviceRegistrationRequest')
     expect(document.components.schemas).toHaveProperty('CurrentDeviceRegistrationResponse')
+    expect(document.components.schemas).toHaveProperty('CurrentDevicePushDisableRequest')
+    expect(document.components.schemas).toHaveProperty('CurrentDevicePushDisableResponse')
     expect(document.components.schemas.CurrentDeviceRegistrationRequest?.properties).not.toHaveProperty('pushToken')
+    expect(document.components.schemas.CurrentDevicePushDisableRequest?.properties).not.toHaveProperty('pushToken')
     expect(document.components.schemas).toHaveProperty('GuardianLinkProjection')
     expect(document.components.schemas).toHaveProperty('ConsentProjection')
     expect(document.components.schemas).toHaveProperty('ErrorResponse')
@@ -81,6 +85,7 @@ describe('OpenAPI document', () => {
     const startStageAttemptOperation = document.paths['/api/v1/stage-exams/{stageExamId}/attempts']?.post
     const putVoiceConsentOperation = document.paths['/v1/me/consents/voice-processing']?.put
     const putCurrentDeviceOperation = document.paths['/v1/me/devices/current']?.put
+    const putCurrentDevicePushDisabledOperation = document.paths['/v1/me/devices/current/push-disabled']?.put
     const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
     const submitStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/submit']?.post
     const getStageAttemptResultOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/result']?.get
@@ -88,12 +93,14 @@ describe('OpenAPI document', () => {
     expect(startStageAttemptOperation).toBeDefined()
     expect(putVoiceConsentOperation).toBeDefined()
     expect(putCurrentDeviceOperation).toBeDefined()
+    expect(putCurrentDevicePushDisabledOperation).toBeDefined()
     expect(getStageAttemptOperation).toBeDefined()
     expect(submitStageAttemptOperation).toBeDefined()
     expect(getStageAttemptResultOperation).toBeDefined()
     expect(listStudentKnowledgeOperation).toBeDefined()
     expect(putVoiceConsentOperation!.security).toContainEqual({ BearerAuth: [] })
     expect(putCurrentDeviceOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(putCurrentDevicePushDisabledOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
     expect(getStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])

@@ -44,6 +44,7 @@ const identities = new Map([
   ['google:provider-mismatch-sub', 'provider-mismatch-user'],
   ['email_magic_link:guardian-sub', GUARDIAN],
 ])
+const registeredDeviceKeys = new Set<string>()
 
 const fakePool = {
   query: async (sql: string, parameters: unknown[] = []) => {
@@ -59,7 +60,14 @@ const fakePool = {
     if (sql.includes('FROM subscription_entitlements')) return { rows: [], rowCount: 0 }
     if (sql.includes('INSERT INTO consent_records')) return { rows: [], rowCount: 1 }
     if (sql.includes('INSERT INTO user_devices')) {
+      registeredDeviceKeys.add(`${String(parameters[0])}:${String(parameters[2])}`)
       return { rows: [{ platform: parameters[1], push_enabled: false, last_seen_at: parameters[5] }], rowCount: 1 }
+    }
+    if (sql.includes('UPDATE user_devices')) {
+      const key = `${String(parameters[0])}:${String(parameters[2])}`
+      return registeredDeviceKeys.has(key)
+        ? { rows: [{ platform: parameters[1], push_enabled: false, last_seen_at: parameters[5] }], rowCount: 1 }
+        : { rows: [], rowCount: 0 }
     }
     throw new Error(`unexpected test query: ${sql}`)
   },
@@ -159,6 +167,31 @@ describe('real Bearer business path', () => {
     expect(response.json().lastSeenAt).toEqual(expect.any(String))
   })
 
+  it('allows a Bearer student to disable current device push without accepting a token', async () => {
+    const headers = { authorization: `Bearer ${await tokenFor('adult-sub')}` }
+    const payload = { platform: 'ios', deviceId: 'device-disable-1', appVersion: '1.0.0', osVersion: '18' }
+    await app.inject({ method: 'PUT', url: '/v1/me/devices/current', headers, payload })
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/devices/current/push-disabled',
+      headers,
+      payload,
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ platform: 'ios', pushEnabled: false })
+    expect(response.json().lastSeenAt).toEqual(expect.any(String))
+
+    const tokenPayload = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/devices/current/push-disabled',
+      headers,
+      payload: { ...payload, pushToken: 'raw-token' },
+    })
+    expect(tokenPayload.statusCode).toBe(400)
+    expect(tokenPayload.json()).toEqual({ code: 'VALIDATION_FAILED', details: { reason: 'invalid' } })
+  })
+
   it('rejects guardian and legacy current device registration', async () => {
     const guardian = await app.inject({
       method: 'PUT',
@@ -177,6 +210,37 @@ describe('real Bearer business path', () => {
     })
     expect(legacy.statusCode).toBe(401)
     expect(legacy.json()).toEqual({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
+  })
+
+  it('rejects guardian and legacy current device push disable', async () => {
+    const guardian = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/devices/current/push-disabled',
+      headers: { authorization: `Bearer ${await tokenFor('guardian-sub')}` },
+      payload: { platform: 'ios', deviceId: 'device-1' },
+    })
+    expect(guardian.statusCode).toBe(403)
+    expect(guardian.json()).toEqual({ code: 'AUTH_FORBIDDEN' })
+
+    const legacy = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/devices/current/push-disabled',
+      headers: { 'x-student-id': ADULT_STUDENT },
+      payload: { platform: 'ios', deviceId: 'device-1' },
+    })
+    expect(legacy.statusCode).toBe(401)
+    expect(legacy.json()).toEqual({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
+  })
+
+  it('returns not found when disabling push for an unregistered current device', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/devices/current/push-disabled',
+      headers: { authorization: `Bearer ${await tokenFor('adult-sub')}` },
+      payload: { platform: 'ios', deviceId: 'unknown-device' },
+    })
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toEqual({ code: 'NOT_FOUND' })
   })
 
   it.each([

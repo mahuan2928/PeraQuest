@@ -6,6 +6,7 @@ import type {
   CapabilityResponse,
   ClientPlatform,
   ConsentResponse,
+  CurrentDevicePushDisableResponse,
   CurrentDeviceRegistrationResponse,
   GuardianLinkResponse,
   NotificationChannel,
@@ -277,6 +278,25 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       ...(parsed.data.osVersion === undefined ? {} : { osVersion: parsed.data.osVersion }),
       lastSeenAt: now(),
     })
+  })
+
+  app.put('/v1/me/devices/current/push-disabled', async (request, reply): Promise<CurrentDevicePushDisableResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const parsed = currentDeviceSchema.safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'device', reason: 'invalid' })
+    const student = await repository.findById(actor.id)
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    const disabled = await repository.disableCurrentDevicePush({
+      studentId: actor.id,
+      platform: parsed.data.platform,
+      deviceIdHash: hashDeviceId(actor.id, parsed.data.deviceId),
+      ...(parsed.data.appVersion === undefined ? {} : { appVersion: parsed.data.appVersion }),
+      ...(parsed.data.osVersion === undefined ? {} : { osVersion: parsed.data.osVersion }),
+      lastSeenAt: now(),
+    })
+    if (!disabled) return sendError(reply, 404, 'NOT_FOUND')
+    return disabled
   })
 
   app.post('/v1/trial-attempts', async (request, reply): Promise<TrialAttemptResponse | void> => {

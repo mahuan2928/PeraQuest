@@ -83,8 +83,8 @@ describe('AuthActor adapter', () => {
       headers: { authorization: 'Bearer token' },
       payload: { status: 'granted', version: 'v0' },
     })
-    expect(response.statusCode).toBe(401)
-    expect(response.json()).toEqual({ code: 'AUTH_REQUIRED' })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ code: 'AUTH_FORBIDDEN' })
     await app.close()
   })
 

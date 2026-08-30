@@ -13,7 +13,7 @@ Scope: iOS, Android, and PC clients for Eiken Grade 3 onboarding, guardian linka
 
 ## Next implementation order
 
-1. Replace the scaffold header identity with verified access tokens and identity linking.
+1. Continue replacing scaffold header identity with verified access tokens and identity linking. Formal stage-attempt runtime and adult voice-consent self-writes already support Bearer actors; legacy headers remain for compatibility routes.
 2. Replace the in-memory repository with PostgreSQL. The migration runner is available now via `DATABASE_URL=... npm run migrate -w @peraquest/api`; deployment must run it before API rollout.
 3. Implement guardian invitation/verification and guardian-authenticated consent writes.
 4. Add S3-compatible signed upload tickets with MIME, size, duration, checksum, expiry, and region enforcement.
@@ -32,7 +32,7 @@ Scope: iOS, Android, and PC clients for Eiken Grade 3 onboarding, guardian linka
 
 ## Web client alignment
 
-All clients send `X-Client-Platform`; authenticated calls currently use scaffold-only `X-Student-Id` until token middleware lands. A minor consent write additionally requires the matching scaffold-only `X-Guardian-Id`. These headers are not production authentication. Clients must consume capabilities rather than infer voice, payment, notification, or entitlement access locally.
+All clients send `X-Client-Platform`; formal learning calls and non-minor voice-consent self-writes use verified Bearer actors. Legacy compatibility routes may still accept scaffold-only `X-Student-Id`, and a minor consent write additionally requires the matching scaffold-only `X-Guardian-Id` until guardian Bearer authorization is designed. These headers are not production authentication. Clients must consume capabilities rather than infer voice, payment, notification, or entitlement access locally.
 
 The machine-readable API contract is `docs/api/openapi.json`.
 

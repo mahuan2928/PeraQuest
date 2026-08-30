@@ -162,6 +162,16 @@
       "put": {
         "operationId": "putVoiceConsent",
         "summary": "Record or withdraw the current voice-processing consent version.",
+        "description": "Supports Bearer student self-write for non-minor learners. Deprecated X-Student-Id/X-Guardian-Id headers remain only for legacy compatibility and minor guardian consent policy.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": [],
+            "LegacyGuardianHeader": []
+          }
+        ],
         "parameters": [
           {
             "$ref": "#/components/parameters/StudentId"

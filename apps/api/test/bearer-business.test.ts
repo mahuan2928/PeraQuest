@@ -11,6 +11,8 @@ import type { StageAttemptResultResponse, StartStageAttemptResponse, StudentKnow
 
 const STUDENT_A = '00000000-0000-0000-0000-000000000101'
 const STUDENT_B = '00000000-0000-0000-0000-000000000102'
+const ADULT_STUDENT = '00000000-0000-0000-0000-000000000103'
+const VERIFIED_MINOR = '00000000-0000-0000-0000-000000000104'
 const GUARDIAN = '00000000-0000-0000-0000-000000000105'
 
 interface UserRow {
@@ -18,7 +20,7 @@ interface UserRow {
   role: 'student' | 'guardian'
   birth_month: string | null
   is_minor: boolean
-  status: 'pending' | null
+  status: 'pending' | 'verified' | null
   guardian_id: string | null
   deleted: boolean
 }
@@ -26,6 +28,8 @@ interface UserRow {
 const users = new Map<string, UserRow>([
   [STUDENT_A, { id: STUDENT_A, role: 'student', birth_month: '2012-04-01', is_minor: true, status: 'pending', guardian_id: null, deleted: false }],
   [STUDENT_B, { id: STUDENT_B, role: 'student', birth_month: '2012-05-01', is_minor: true, status: 'pending', guardian_id: null, deleted: false }],
+  [ADULT_STUDENT, { id: ADULT_STUDENT, role: 'student', birth_month: '2000-01-01', is_minor: false, status: null, guardian_id: null, deleted: false }],
+  [VERIFIED_MINOR, { id: VERIFIED_MINOR, role: 'student', birth_month: '2012-03-01', is_minor: true, status: 'verified', guardian_id: GUARDIAN, deleted: false }],
   ['deleted-user', { id: 'deleted-user', role: 'student', birth_month: '2012-06-01', is_minor: true, status: 'pending', guardian_id: null, deleted: true }],
   ['provider-mismatch-user', { id: 'provider-mismatch-user', role: 'student', birth_month: '2012-07-01', is_minor: true, status: 'pending', guardian_id: null, deleted: false }],
   [GUARDIAN, { id: GUARDIAN, role: 'guardian', birth_month: null, is_minor: false, status: null, guardian_id: null, deleted: false }],
@@ -34,6 +38,8 @@ const users = new Map<string, UserRow>([
 const identities = new Map([
   ['email_magic_link:student-a-sub', STUDENT_A],
   ['email_magic_link:student-b-sub', STUDENT_B],
+  ['email_magic_link:adult-sub', ADULT_STUDENT],
+  ['email_magic_link:verified-minor-sub', VERIFIED_MINOR],
   ['email_magic_link:deleted-sub', 'deleted-user'],
   ['google:provider-mismatch-sub', 'provider-mismatch-user'],
   ['email_magic_link:guardian-sub', GUARDIAN],
@@ -50,6 +56,7 @@ const fakePool = {
       const user = users.get(String(parameters[0]))
       return { rows: user && !user.deleted && user.role === 'student' ? [user] : [], rowCount: user ? 1 : 0 }
     }
+    if (sql.includes('INSERT INTO consent_records')) return { rows: [], rowCount: 1 }
     throw new Error(`unexpected test query: ${sql}`)
   },
   end: async () => undefined,
@@ -97,6 +104,7 @@ describe('real Bearer business path', () => {
       AUTH_AUDIENCE: audience,
       AUTH_JWKS_URL: `http://127.0.0.1:${address.port}/jwks`,
       AUTH_CLOCK_SKEW_SECONDS: '0',
+      CONSENT_VERSION_REQUIRED: 'v1',
     })
     app = buildServerApp(config, fakePool)
   })
@@ -113,12 +121,45 @@ describe('real Bearer business path', () => {
     expect(response.json()).toMatchObject({ status: 'pending' })
   })
 
+  it('allows an adult Bearer student to write their own voice consent', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers: { authorization: `Bearer ${await tokenFor('adult-sub')}` },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ type: 'voice_processing', status: 'granted', version: 'v1' })
+  })
+
+  it('does not let a Bearer student bypass minor guardian consent policy', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers: { authorization: `Bearer ${await tokenFor('verified-minor-sub')}` },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
+  })
+
   it.each([
     ['an unbound subject', 'unbound-sub'],
     ['a deleted user', 'deleted-sub'],
     ['a subject bound under a different provider', 'provider-mismatch-sub'],
   ])('rejects %s', async (_case, subject) => {
     const response = await app.inject({ method: 'GET', url: '/v1/me/guardian-link', headers: { authorization: `Bearer ${await tokenFor(subject)}` } })
+    expect(response.statusCode).toBe(401)
+    expect(response.json()).toEqual({ code: 'AUTH_INVALID' })
+  })
+
+  it('rejects bearer and legacy identity mixing on consent writes', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers: { authorization: `Bearer ${await tokenFor('adult-sub')}`, 'x-student-id': STUDENT_A },
+      payload: { status: 'granted', version: 'v1' },
+    })
     expect(response.statusCode).toBe(401)
     expect(response.json()).toEqual({ code: 'AUTH_INVALID' })
   })

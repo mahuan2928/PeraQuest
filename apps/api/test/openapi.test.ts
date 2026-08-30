@@ -75,15 +75,18 @@ describe('OpenAPI document', () => {
     const writeOperations = Object.values(document.paths).flatMap((item) => Object.entries(item).filter(([method]) => ['post', 'put', 'patch', 'delete'].includes(method)).map(([, operation]) => operation as { parameters?: Array<{ $ref?: string }>; security?: unknown }))
     expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey' || parameter.$ref === '#/components/parameters/FormalIdempotencyKey'))).toBe(true)
     const startStageAttemptOperation = document.paths['/api/v1/stage-exams/{stageExamId}/attempts']?.post
+    const putVoiceConsentOperation = document.paths['/v1/me/consents/voice-processing']?.put
     const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
     const submitStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/submit']?.post
     const getStageAttemptResultOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/result']?.get
     const listStudentKnowledgeOperation = document.paths['/api/v1/student-knowledge']?.get
     expect(startStageAttemptOperation).toBeDefined()
+    expect(putVoiceConsentOperation).toBeDefined()
     expect(getStageAttemptOperation).toBeDefined()
     expect(submitStageAttemptOperation).toBeDefined()
     expect(getStageAttemptResultOperation).toBeDefined()
     expect(listStudentKnowledgeOperation).toBeDefined()
+    expect(putVoiceConsentOperation!.security).toContainEqual({ BearerAuth: [] })
     expect(startStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
     expect(getStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])

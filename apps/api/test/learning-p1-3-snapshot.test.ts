@@ -472,6 +472,50 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
     expect(learning.rows).toEqual([{ mastery_score: '0.000000', state: 'learning', due_matches: true }])
   })
 
+  it('keeps mastery threshold, partial score, rounding, and due rules deterministic', async () => {
+    const database = await createDatabase()
+    const rules = await database.query<{
+      learning_score: string
+      learning_state: string
+      learning_due_matches: boolean
+      review_score: string
+      review_state: string
+      review_due_matches: boolean
+      mastered_score: string
+      mastered_state: string
+      mastered_due_matches: boolean
+      rounded_score: string
+    }>(`
+      SELECT
+        calculate_student_knowledge_mastery(1, 2)::numeric(7,6)::text AS learning_score,
+        calculate_student_knowledge_state(0.500000) AS learning_state,
+        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 0.500000)
+          = TIMESTAMPTZ '2026-08-28 00:00:00+00' AS learning_due_matches,
+        calculate_student_knowledge_mastery(3, 5)::numeric(7,6)::text AS review_score,
+        calculate_student_knowledge_state(0.600000) AS review_state,
+        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 0.600000)
+          = TIMESTAMPTZ '2026-08-30 00:00:00+00' AS review_due_matches,
+        calculate_student_knowledge_mastery(4, 5)::numeric(7,6)::text AS mastered_score,
+        calculate_student_knowledge_state(0.800000) AS mastered_state,
+        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 0.800000)
+          = TIMESTAMPTZ '2026-09-10 00:00:00+00' AS mastered_due_matches,
+        calculate_student_knowledge_mastery(2, 3)::numeric(7,6)::text AS rounded_score
+    `)
+
+    expect(rules.rows).toEqual([{
+      learning_score: '0.500000',
+      learning_state: 'learning',
+      learning_due_matches: true,
+      review_score: '0.600000',
+      review_state: 'review',
+      review_due_matches: true,
+      mastered_score: '0.800000',
+      mastered_state: 'mastered',
+      mastered_due_matches: true,
+      rounded_score: '0.666667',
+    }])
+  })
+
   it('accepts terminal audit events only when they match authoritative attempt terminal times', async () => {
     const database = await createDatabase()
     await seedPublishedExam(database)

@@ -207,6 +207,21 @@ export interface StudentKnowledgeDto {
   version: string
 }
 
+export type StudentKnowledgeProjectionState = 'learning' | 'review' | 'mastered'
+
+/** Current P1.3-6 mastery/due projection. This mirrors `student_knowledge`; it does not imply a read API. */
+export interface StudentKnowledgeProjectionDto {
+  studentId: string
+  knowledgePointRef: string
+  rawCorrectTotal: number
+  rawAttemptTotal: number
+  masteryScore: number
+  state: StudentKnowledgeProjectionState
+  lastOccurredAt: string
+  dueAt: string
+  updatedAt: string
+}
+
 /** Camel-case DTO projection of the append-only `knowledge_evidence` record. */
 export interface KnowledgeEvidenceDto {
   evidenceId: string

@@ -136,6 +136,7 @@ P1.3-6 只允许 Student 读取自己的 mastery/due。
 - 数据库迁移已新增 `student_knowledge` 和 `student_knowledge_applied_evidence`。
 - 正式 submit 事务会先生成 `knowledge_evidence`，再应用 mastery/due 投影。
 - 同一 submit/idempotency replay 不重复累计 evidence。
+- 真实 PostgreSQL 回归测试覆盖同一学生同一知识点并发 apply 无 lost update。
 - Trial 流程不写入 `knowledge_evidence`、`student_knowledge` 或 applied ledger。
 - `GET /api/v1/student-knowledge` 已开放 Student-only 只读 API，只返回已物化的投影行。
 - 共享契约新增当前投影 DTO 和列表响应 DTO。

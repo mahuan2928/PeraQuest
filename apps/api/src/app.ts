@@ -12,6 +12,7 @@ import type {
   StudentOnboardingResponse,
   StartStageAttemptResponse,
   StageAttemptResultResponse,
+  StudentKnowledgeProjectionListResponse,
   SubmitStageAttemptRequest,
   TrialAnswerResponse,
   TrialAttemptResponse,
@@ -146,7 +147,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
   }
 
-  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/')
+  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge')
   const protectedPath = (url: string): boolean => formalProtectedPath(url) || url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return
@@ -369,6 +370,13 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const result = await repository.findStageAttemptResult(actor.id, parsedAttemptId.data)
     if (!result) return sendError(reply, 404, 'STAGE_ATTEMPT_NOT_FOUND')
     return result
+  })
+
+  app.get('/api/v1/student-knowledge', async (request, reply): Promise<StudentKnowledgeProjectionListResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const items = await repository.listStudentKnowledgeProjections(actor.id)
+    return { items }
   })
 
   app.post<{ Params: { attemptId: string } }>('/v1/trial-attempts/:attemptId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {

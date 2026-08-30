@@ -368,6 +368,36 @@
         }
       }
     },
+    "/api/v1/student-knowledge": {
+      "get": {
+        "operationId": "listStudentKnowledgeProjections",
+        "summary": "List the current Bearer student's materialized mastery and due projections.",
+        "description": "Returns only existing student_knowledge projection rows for the authenticated Student. It does not materialize state=new rows and does not allow Guardian-derived student inference.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student mastery/due projections ordered by dueAt then knowledgePointRef",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentKnowledgeProjectionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/stage-attempts/{stageAttemptId}": {
       "get": {
         "operationId": "getStageAttempt",
@@ -1704,6 +1734,83 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/StageAttemptResultItem"
+            }
+          }
+        }
+      },
+      "StudentKnowledgeProjectionState": {
+        "type": "string",
+        "enum": [
+          "learning",
+          "review",
+          "mastered"
+        ]
+      },
+      "StudentKnowledgeProjection": {
+        "description": "Current P1.3-6 materialized mastery/due projection. It mirrors student_knowledge rows and excludes future fields such as stabilityDays or attemptCount.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "studentId",
+          "knowledgePointRef",
+          "rawCorrectTotal",
+          "rawAttemptTotal",
+          "masteryScore",
+          "state",
+          "lastOccurredAt",
+          "dueAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "knowledgePointRef": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rawCorrectTotal": {
+            "type": "number",
+            "minimum": 0
+          },
+          "rawAttemptTotal": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "masteryScore": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "state": {
+            "$ref": "#/components/schemas/StudentKnowledgeProjectionState"
+          },
+          "lastOccurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StudentKnowledgeProjectionListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StudentKnowledgeProjection"
             }
           }
         }

@@ -21,6 +21,7 @@ import {
   type RemediationTaskDto,
   type StartStageAttemptResponse,
   type StudentKnowledgeProjectionDto,
+  type StudentKnowledgeProjectionListResponse,
   type SubmitStageAttemptRequest,
   type UnlockStateDto,
 } from './index'
@@ -60,6 +61,7 @@ const masteryProjection = {
   dueAt: '2026-08-30T00:00:00.000Z',
   updatedAt: '2026-08-27T00:00:00.000Z',
 } satisfies StudentKnowledgeProjectionDto
+const masteryProjectionList = { items: [masteryProjection] } satisfies StudentKnowledgeProjectionListResponse
 
 const unlock = {
   studentId: evidence.studentId,
@@ -169,6 +171,7 @@ describe('knowledge-domain contracts', () => {
     })
     expect(masteryProjection).not.toHaveProperty('stabilityDays')
     expect(masteryProjection).not.toHaveProperty('attemptCount')
+    expect(masteryProjectionList.items).toEqual([masteryProjection])
   })
 
   it('keeps remediation and unlock vocabulary stable', () => {

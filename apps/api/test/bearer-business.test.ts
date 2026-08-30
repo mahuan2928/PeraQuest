@@ -7,7 +7,7 @@ import type { AuthUserResolver, TokenVerifier } from '../src/auth.js'
 import { loadConfig } from '../src/config.js'
 import { MemoryStudentRepository, type StartStageAttemptInput, type SubmitStageAttemptInput } from '../src/repository.js'
 import { buildServerApp } from '../src/server.js'
-import type { StageAttemptResultResponse, StartStageAttemptResponse } from '@peraquest/contracts'
+import type { StageAttemptResultResponse, StartStageAttemptResponse, StudentKnowledgeProjectionDto } from '@peraquest/contracts'
 
 const STUDENT_A = '00000000-0000-0000-0000-000000000101'
 const STUDENT_B = '00000000-0000-0000-0000-000000000102'
@@ -204,10 +204,22 @@ describe('formal stage attempt Bearer authorization', () => {
     passScore: 0.8,
     items: [{ itemId: attemptResponse.items[0]!.itemId, outcome: 'correct', earnedScore: 1, maxScore: 1 }],
   }
+  const masteryProjection: StudentKnowledgeProjectionDto = {
+    studentId: STUDENT_A,
+    knowledgePointRef: 'vocab-alpha',
+    rawCorrectTotal: 1,
+    rawAttemptTotal: 1,
+    masteryScore: 1,
+    state: 'mastered',
+    lastOccurredAt: '2027-01-15T08:05:00.000Z',
+    dueAt: '2027-01-29T08:05:00.000Z',
+    updatedAt: '2027-01-15T08:05:00.000Z',
+  }
 
   class FormalAttemptRepository extends MemoryStudentRepository {
     readonly starts: StartStageAttemptInput[] = []
     readonly submits: SubmitStageAttemptInput[] = []
+    readonly masteryReads: string[] = []
 
     async startStageAttempt(input: StartStageAttemptInput) {
       this.starts.push(input)
@@ -225,6 +237,11 @@ describe('formal stage attempt Bearer authorization', () => {
 
     async findStageAttemptResult(studentId: string, attemptId: string) {
       return studentId === STUDENT_A && attemptId === attemptResponse.attemptId ? resultResponse : null
+    }
+
+    async listStudentKnowledgeProjections(studentId: string) {
+      this.masteryReads.push(studentId)
+      return studentId === STUDENT_A ? [masteryProjection] : []
     }
   }
 
@@ -365,6 +382,49 @@ describe('formal stage attempt Bearer authorization', () => {
     })
     expect(response.statusCode).toBe(404)
     expect(response.json()).toEqual({ code: 'STAGE_ATTEMPT_NOT_FOUND' })
+    await app.close()
+  })
+
+  it('lists only the Bearer student mastery projections', async () => {
+    const { app, repository } = await buildFormalApp()
+    const studentA = await app.inject({
+      method: 'GET',
+      url: `/api/v1/student-knowledge?studentId=${STUDENT_B}`,
+      headers: { authorization: 'Bearer student-a-sub' },
+    })
+    expect(studentA.statusCode).toBe(200)
+    expect(studentA.json()).toEqual({ items: [masteryProjection] })
+    expect(repository.masteryReads).toEqual([STUDENT_A])
+
+    const studentB = await app.inject({
+      method: 'GET',
+      url: '/api/v1/student-knowledge',
+      headers: { authorization: 'Bearer student-b-sub' },
+    })
+    expect(studentB.statusCode).toBe(200)
+    expect(studentB.json()).toEqual({ items: [] })
+    expect(repository.masteryReads).toEqual([STUDENT_A, STUDENT_B])
+    await app.close()
+  })
+
+  it('rejects Guardian and legacy mastery reads before repository read is called', async () => {
+    const { app, repository } = await buildFormalApp()
+    const guardian = await app.inject({
+      method: 'GET',
+      url: '/api/v1/student-knowledge',
+      headers: { authorization: 'Bearer guardian-sub' },
+    })
+    expect(guardian.statusCode).toBe(403)
+    expect(guardian.json()).toEqual({ code: 'AUTH_FORBIDDEN' })
+
+    const legacy = await app.inject({
+      method: 'GET',
+      url: '/api/v1/student-knowledge',
+      headers: { 'x-student-id': STUDENT_A },
+    })
+    expect(legacy.statusCode).toBe(401)
+    expect(legacy.json()).toEqual({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
+    expect(repository.masteryReads).toEqual([])
     await app.close()
   })
 })

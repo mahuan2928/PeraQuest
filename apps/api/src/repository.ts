@@ -94,6 +94,7 @@ export interface StudentRepository {
   submitStageAttempt(input: SubmitStageAttemptInput): Promise<StageAttemptSubmitResult>
   findStageAttemptResult(studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null>
   listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
+  listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
 }
 
 interface StageAttemptHeaderRow extends Record<string, unknown> {
@@ -319,6 +320,18 @@ export class PostgresStudentRepository implements StudentRepository {
     await this.pool.query(`INSERT INTO consent_records (id, student_id, guardian_id, consent_type, status, version, granted_at, withdrawn_at)
       VALUES (gen_random_uuid(), $1, $2, 'voice_processing', $3, $4, CASE WHEN $3::consent_status = 'granted' THEN now() END, CASE WHEN $3::consent_status = 'withdrawn' THEN now() END)`, [studentId, guardianId, status, version])
     return { status, version }
+  }
+
+  async listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]> {
+    const result = await this.pool.query<{ entitlement_code: string }>(`
+      SELECT DISTINCT entitlement_code
+      FROM subscription_entitlements
+      WHERE student_id = $1
+        AND status IN ('active', 'grace_period')
+        AND (valid_until IS NULL OR valid_until > $2)
+      ORDER BY entitlement_code ASC
+    `, [studentId, asOf])
+    return result.rows.map((row) => row.entitlement_code)
   }
 
   async startTrial(studentId: string, attemptId: string, expiresAt: Date): Promise<TrialStartResult> {
@@ -724,6 +737,12 @@ export class MemoryStudentRepository implements StudentRepository {
     const consent = { status, version }
     this.consents.set(studentId, consent)
     return consent
+  }
+
+  async listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]> {
+    void studentId
+    void asOf
+    return []
   }
 
   async startTrial(studentId: string, attemptId: string, expiresAt: Date): Promise<TrialStartResult> {

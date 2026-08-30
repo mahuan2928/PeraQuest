@@ -285,6 +285,57 @@
         }
       }
     },
+    "/v1/me/devices/current": {
+      "put": {
+        "operationId": "upsertCurrentDevice",
+        "summary": "Register or refresh the authenticated student's current device metadata.",
+        "description": "Bearer student only. Stores a server-side hash of deviceId plus platform and version metadata. Push tokens are intentionally out of scope for this endpoint.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurrentDeviceRegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current device metadata registered or refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentDeviceRegistrationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/v1/me/voice-upload-ticket": {
       "post": {
         "operationId": "createVoiceUploadTicket",
@@ -847,6 +898,57 @@
           "android",
           "pc"
         ]
+      },
+      "CurrentDeviceRegistrationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Current device metadata for cross-platform capability and future notification routing. Raw deviceId is hashed server-side and push tokens are not accepted here.",
+        "required": [
+          "platform",
+          "deviceId"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/ClientPlatform"
+          },
+          "deviceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "appVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "osVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "CurrentDeviceRegistrationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "pushEnabled",
+          "lastSeenAt"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/ClientPlatform"
+          },
+          "pushEnabled": {
+            "type": "boolean",
+            "description": "Always false until push-token registration and provider integrations land."
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "GuardianLinkStatus": {
         "type": "string",

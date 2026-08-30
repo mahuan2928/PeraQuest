@@ -593,18 +593,22 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
         VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '20 minutes')
       `, [secondAttemptId, ids.student, ids.version])
-      const second = await setup.query<{ item_id: string }>(`
-        SELECT item.id AS item_id
+      const second = await setup.query<{ item_id: string; wrong_option_id: string }>(`
+        SELECT item.id AS item_id, option.id AS wrong_option_id
         FROM stage_attempt_item_snapshots item
+        JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+        JOIN stage_attempt_item_option_snapshots option ON option.item_snapshot_id = item.id
         WHERE item.attempt_id = $1
+          AND option.id <> keys.correct_option_snapshot_id
+        LIMIT 1
       `, [secondAttemptId])
       const secondSnapshot = second.rows[0]
       if (!secondSnapshot) throw new Error('expected snapshot for second attempt')
       await setup.query(`
         INSERT INTO stage_attempt_answers
           (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
-        VALUES ($1, $2, 'skipped', NULL, 'submit-1')
-      `, [secondAttemptId, secondSnapshot.item_id])
+        VALUES ($1, $2, 'answered', $3, 'submit-1')
+      `, [secondAttemptId, secondSnapshot.item_id, secondSnapshot.wrong_option_id])
       await setup.query(`
         UPDATE stage_attempts
         SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0,
@@ -613,6 +617,16 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
       `, [secondAttemptId])
       await setup.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [firstAttemptId, ids.student])
       await setup.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [secondAttemptId, ids.student])
+      const evidenceShape = await setup.query<{ earned_score: string; max_score: string }>(`
+        SELECT earned_score::text, max_score::text
+        FROM knowledge_evidence
+        WHERE attempt_id IN ($1, $2)
+        ORDER BY earned_score DESC
+      `, [firstAttemptId, secondAttemptId])
+      expect(evidenceShape.rows).toEqual([
+        { earned_score: '1.000000', max_score: '1.000000' },
+        { earned_score: '0.000000', max_score: '1.000000' },
+      ])
 
       await blocker.query('BEGIN')
       await blocker.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [ids.student, 'unassigned'])

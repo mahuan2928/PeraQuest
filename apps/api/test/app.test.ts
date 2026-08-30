@@ -71,6 +71,23 @@ describe('identity, consent, and capabilities slice', () => {
     expect(response.json()).toMatchObject({ platform, paymentChannels: payments, notificationChannels: notifications, lineReturnTargets: lineTargets, canUploadVoice: false })
   })
 
+  it('returns server-side active entitlements in capabilities without changing purchase policy', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    repository.listActiveEntitlements = async (studentId) => studentId === 'adult-1' ? ['exam_grade_3_full', 'premium_lesson_pack'] : []
+    const app = buildApp({ repository, now: () => new Date('2026-08-30T00:00:00.000Z') })
+    apps.push(app)
+
+    const response = await app.inject({ method: 'GET', url: '/v1/me/capabilities', headers: { 'x-student-id': 'adult-1', 'x-client-platform': 'pc' } })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      canPurchase: false,
+      entitlements: ['exam_grade_3_full', 'premium_lesson_pack'],
+      paymentChannels: ['web_checkout'],
+    })
+  })
+
   it('rejects capabilities requests without an explicit client platform', async () => {
     const repository = new MemoryStudentRepository()
     await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })

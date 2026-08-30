@@ -135,6 +135,40 @@ describe('database migrations', () => {
     expect(results.map(({ status }) => status).sort()).toEqual(['created', 'redeemed'])
   })
 
+  it('lists only active, unexpired subscription entitlements for the requested student', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const studentA = '00000000-0000-0000-0000-000000000061'
+    const studentB = '00000000-0000-0000-0000-000000000062'
+    const guardian = '00000000-0000-0000-0000-000000000063'
+    await database.query(`
+      INSERT INTO users (id, role, birth_month, is_minor)
+      VALUES
+        ($1, 'student', '2000-01-01', false),
+        ($2, 'student', '2001-01-01', false),
+        ($3, 'guardian', NULL, false)
+    `, [studentA, studentB, guardian])
+    await database.query(`
+      INSERT INTO subscription_entitlements
+        (id, student_id, purchaser_guardian_id, payment_channel, external_subscription_id,
+         entitlement_code, status, valid_until)
+      VALUES
+        ('00000000-0000-0000-0000-000000000071', $1, $3, 'web_checkout', 'sub-active', 'premium_lesson_pack', 'active', NULL),
+        ('00000000-0000-0000-0000-000000000072', $1, $3, 'apple_app_store', 'sub-grace', 'exam_grade_3_full', 'grace_period', TIMESTAMPTZ '2026-09-01 00:00:00+00'),
+        ('00000000-0000-0000-0000-000000000073', $1, $3, 'google_play', 'sub-expired-status', 'expired_status', 'expired', NULL),
+        ('00000000-0000-0000-0000-000000000074', $1, $3, 'web_checkout', 'sub-revoked', 'revoked_status', 'revoked', NULL),
+        ('00000000-0000-0000-0000-000000000075', $1, $3, 'apple_app_store', 'sub-expired-date', 'expired_date', 'active', TIMESTAMPTZ '2026-08-01 00:00:00+00'),
+        ('00000000-0000-0000-0000-000000000076', $2, $3, 'web_checkout', 'sub-other-student', 'other_student', 'active', NULL)
+    `, [studentA, studentB, guardian])
+    const repository = new PostgresStudentRepository({ query: database.query.bind(database) } as unknown as Pool)
+
+    await expect(repository.listActiveEntitlements(studentA, new Date('2026-08-30T00:00:00.000Z'))).resolves.toEqual([
+      'exam_grade_3_full',
+      'premium_lesson_pack',
+    ])
+  })
+
   it('persists the consenting guardian on consent records and rejects cross-user impersonation', async () => {
     vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
     const database = new PGlite()

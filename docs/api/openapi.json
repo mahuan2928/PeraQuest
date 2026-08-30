@@ -1079,6 +1079,7 @@
             }
           },
           "entitlements": {
+            "description": "Server-side active or grace-period entitlement codes for the current student. Expired, revoked, or past valid_until records are omitted.",
             "type": "array",
             "items": {
               "type": "string"

@@ -227,6 +227,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     const voiceConsent = await repository.getVoiceConsent(studentId, config.CONSENT_VERSION_REQUIRED)
+    const entitlements = await repository.listActiveEntitlements(studentId, now())
     const clientChannels = channelsFor(parsedPlatform.data)
     const guardianSatisfied = !student.isMinor || student.guardianLinkStatus === 'verified'
     const canUploadVoice = guardianSatisfied && voiceConsent.status === 'granted' && config.VOICE_FEATURE_PUBLIC_ENABLED && config.AI_VENDOR_APPROVED
@@ -243,7 +244,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       paymentChannels: clientChannels.payments,
       notificationChannels: clientChannels.notifications,
       lineReturnTargets: parsedPlatform.data === 'pc' ? ['web_https'] : ['app_deep_link', 'web_https'],
-      entitlements: [],
+      entitlements,
     }
   })
 

@@ -56,6 +56,7 @@ const fakePool = {
       const user = users.get(String(parameters[0]))
       return { rows: user && !user.deleted && user.role === 'student' ? [user] : [], rowCount: user ? 1 : 0 }
     }
+    if (sql.includes('FROM subscription_entitlements')) return { rows: [], rowCount: 0 }
     if (sql.includes('INSERT INTO consent_records')) return { rows: [], rowCount: 1 }
     throw new Error(`unexpected test query: ${sql}`)
   },

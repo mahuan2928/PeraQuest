@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { AuthProvider, ConsentStatus, GuardianLinkStatus, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, UserRole } from '@peraquest/contracts'
+import type { AuthProvider, ConsentStatus, GuardianLinkStatus, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -93,6 +93,7 @@ export interface StudentRepository {
   findStageAttempt(studentId: string, attemptId: string): Promise<StartStageAttemptResponse | null>
   submitStageAttempt(input: SubmitStageAttemptInput): Promise<StageAttemptSubmitResult>
   findStageAttemptResult(studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null>
+  listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
 }
 
 interface StageAttemptHeaderRow extends Record<string, unknown> {
@@ -136,6 +137,18 @@ interface StageAttemptResultItemRow extends Record<string, unknown> {
   outcome: KnowledgeEvidenceOutcome
   earned_score: string
   max_score: string
+}
+
+interface StudentKnowledgeProjectionRow extends Record<string, unknown> {
+  student_id: string
+  knowledge_point_ref: string
+  raw_correct_total: string
+  raw_attempt_total: string
+  mastery_score: string
+  state: StudentKnowledgeProjectionDto['state']
+  last_occurred_at: Date
+  due_at: Date
+  updated_at: Date
 }
 
 interface Queryable {
@@ -239,6 +252,27 @@ const readStageAttemptResult = async (database: Queryable, studentId: string, at
       maxScore: parseNumeric(item.max_score),
     })),
   }
+}
+
+const readStudentKnowledgeProjections = async (database: Queryable, studentId: string): Promise<StudentKnowledgeProjectionDto[]> => {
+  const result = await database.query<StudentKnowledgeProjectionRow>(`
+    SELECT student_id, knowledge_point_ref, raw_correct_total::text, raw_attempt_total::text,
+           mastery_score::text, state, last_occurred_at, due_at, updated_at
+    FROM student_knowledge
+    WHERE student_id = $1
+    ORDER BY due_at ASC, knowledge_point_ref ASC
+  `, [studentId])
+  return result.rows.map((row) => ({
+    studentId: row.student_id,
+    knowledgePointRef: row.knowledge_point_ref,
+    rawCorrectTotal: parseNumeric(row.raw_correct_total),
+    rawAttemptTotal: parseNumeric(row.raw_attempt_total),
+    masteryScore: parseNumeric(row.mastery_score),
+    state: row.state,
+    lastOccurredAt: toIso(row.last_occurred_at),
+    dueAt: toIso(row.due_at),
+    updatedAt: toIso(row.updated_at),
+  }))
 }
 
 export class PostgresStudentRepository implements StudentRepository {
@@ -658,6 +692,10 @@ export class PostgresStudentRepository implements StudentRepository {
   async findStageAttemptResult(studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null> {
     return readStageAttemptResult(this.pool, studentId, attemptId)
   }
+
+  async listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]> {
+    return readStudentKnowledgeProjections(this.pool, studentId)
+  }
 }
 
 export class MemoryStudentRepository implements StudentRepository {
@@ -731,5 +769,10 @@ export class MemoryStudentRepository implements StudentRepository {
     void studentId
     void attemptId
     return null
+  }
+
+  async listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]> {
+    void studentId
+    return []
   }
 }

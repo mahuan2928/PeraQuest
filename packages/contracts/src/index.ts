@@ -222,6 +222,10 @@ export interface StudentKnowledgeProjectionDto {
   updatedAt: string
 }
 
+export interface StudentKnowledgeProjectionListResponse {
+  items: StudentKnowledgeProjectionDto[]
+}
+
 /** Camel-case DTO projection of the append-only `knowledge_evidence` record. */
 export interface KnowledgeEvidenceDto {
   evidenceId: string

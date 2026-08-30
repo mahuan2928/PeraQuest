@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
+import { PostgresStudentRepository } from '../src/repository.js'
 
 const databases: PGlite[] = []
 
@@ -514,6 +515,51 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       mastered_due_matches: true,
       rounded_score: '0.666667',
     }])
+  })
+
+  it('lists materialized mastery projections for only the requested student by due date', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await database.query(`
+      INSERT INTO student_knowledge
+        (student_id, knowledge_point_ref, raw_correct_total, raw_attempt_total,
+         mastery_score, state, last_occurred_at, due_at)
+      VALUES
+        ($1, 'vocab-late', 1, 1, 1.000000, 'mastered',
+         TIMESTAMPTZ '2026-08-27 00:00:00+00', TIMESTAMPTZ '2026-09-10 00:00:00+00'),
+        ($1, 'vocab-early', 3, 5, 0.600000, 'review',
+         TIMESTAMPTZ '2026-08-27 00:00:00+00', TIMESTAMPTZ '2026-08-30 00:00:00+00'),
+        ($2, 'other-student', 1, 2, 0.500000, 'learning',
+         TIMESTAMPTZ '2026-08-27 00:00:00+00', TIMESTAMPTZ '2026-08-28 00:00:00+00')
+    `, [ids.student, ids.guardian])
+    const repository = new PostgresStudentRepository(database as unknown as ConstructorParameters<typeof PostgresStudentRepository>[0])
+
+    const projections = await repository.listStudentKnowledgeProjections(ids.student)
+
+    expect(projections).toEqual([
+      {
+        studentId: ids.student,
+        knowledgePointRef: 'vocab-early',
+        rawCorrectTotal: 3,
+        rawAttemptTotal: 5,
+        masteryScore: 0.6,
+        state: 'review',
+        lastOccurredAt: '2026-08-27T00:00:00.000Z',
+        dueAt: '2026-08-30T00:00:00.000Z',
+        updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      },
+      {
+        studentId: ids.student,
+        knowledgePointRef: 'vocab-late',
+        rawCorrectTotal: 1,
+        rawAttemptTotal: 1,
+        masteryScore: 1,
+        state: 'mastered',
+        lastOccurredAt: '2026-08-27T00:00:00.000Z',
+        dueAt: '2026-09-10T00:00:00.000Z',
+        updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      },
+    ])
   })
 
   it('accepts terminal audit events only when they match authoritative attempt terminal times', async () => {

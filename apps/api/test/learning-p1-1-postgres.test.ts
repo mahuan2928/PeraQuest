@@ -550,6 +550,127 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
     }
   }, 30_000)
 
+  it('serializes concurrent mastery projection application without lost updates', async () => {
+    const schema = await createSchema()
+    const setup = await connect(schema)
+    const blocker = await connect(schema)
+    const firstApplier = await connect(schema)
+    const secondApplier = await connect(schema)
+    const firstAttemptId = '00000000-0000-0000-0000-000000000311'
+    const secondAttemptId = '00000000-0000-0000-0000-000000000312'
+    try {
+      await runMigrations(setup)
+      await seedCompleteDraft(setup)
+      await setup.query(`
+        UPDATE stage_exam_versions
+        SET status = 'published', published_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [ids.version])
+      await setup.query(`
+        INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '20 minutes')
+      `, [firstAttemptId, ids.student, ids.version])
+      const first = await setup.query<{ item_id: string; option_id: string }>(`
+        SELECT item.attempt_id, item.id AS item_id, keys.correct_option_snapshot_id AS option_id
+        FROM stage_attempt_item_snapshots item
+        JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+        WHERE item.attempt_id = $1
+      `, [firstAttemptId])
+      const firstSnapshot = first.rows[0]
+      if (!firstSnapshot) throw new Error('expected snapshot for first attempt')
+      await setup.query(`
+        INSERT INTO stage_attempt_answers
+          (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+        VALUES ($1, $2, 'answered', $3, 'submit-1')
+      `, [firstAttemptId, firstSnapshot.item_id, firstSnapshot.option_id])
+      await setup.query(`
+        UPDATE stage_attempts
+        SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1,
+            passed = true, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [firstAttemptId])
+      await setup.query(`
+        INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '20 minutes')
+      `, [secondAttemptId, ids.student, ids.version])
+      const second = await setup.query<{ item_id: string }>(`
+        SELECT item.id AS item_id
+        FROM stage_attempt_item_snapshots item
+        WHERE item.attempt_id = $1
+      `, [secondAttemptId])
+      const secondSnapshot = second.rows[0]
+      if (!secondSnapshot) throw new Error('expected snapshot for second attempt')
+      await setup.query(`
+        INSERT INTO stage_attempt_answers
+          (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+        VALUES ($1, $2, 'skipped', NULL, 'submit-1')
+      `, [secondAttemptId, secondSnapshot.item_id])
+      await setup.query(`
+        UPDATE stage_attempts
+        SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0,
+            passed = false, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [secondAttemptId])
+      await setup.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [firstAttemptId, ids.student])
+      await setup.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [secondAttemptId, ids.student])
+
+      await blocker.query('BEGIN')
+      await blocker.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [ids.student, 'unassigned'])
+      const firstApply = firstApplier.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [firstAttemptId, ids.student])
+      const secondApply = secondApplier.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [secondAttemptId, ids.student])
+      await Promise.all([expectStillBlocked(firstApply), expectStillBlocked(secondApply)])
+      await blocker.query('COMMIT')
+      await Promise.all([firstApply, secondApply])
+
+      const projected = await setup.query<{
+        evidence_count: number
+        applied_count: number
+        raw_correct_total: string
+        raw_attempt_total: string
+        mastery_score: string
+        state: string
+        due_matches: boolean
+      }>(`
+        SELECT
+          (SELECT count(*)::int FROM knowledge_evidence WHERE student_id = $1) AS evidence_count,
+          (SELECT count(*)::int FROM student_knowledge_applied_evidence WHERE student_id = $1) AS applied_count,
+          sk.raw_correct_total::text,
+          sk.raw_attempt_total::text,
+          sk.mastery_score::text,
+          sk.state,
+          sk.due_at = sk.last_occurred_at + interval '1 day' AS due_matches
+        FROM student_knowledge sk
+        WHERE sk.student_id = $1 AND sk.knowledge_point_ref = 'unassigned'
+      `, [ids.student])
+      expect(projected.rows).toEqual([{
+        evidence_count: 2,
+        applied_count: 2,
+        raw_correct_total: '1.000000',
+        raw_attempt_total: '2.000000',
+        mastery_score: '0.500000',
+        state: 'learning',
+        due_matches: true,
+      }])
+
+      await Promise.all([
+        setup.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [firstAttemptId, ids.student]),
+        setup.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [secondAttemptId, ids.student]),
+      ])
+      const replay = await setup.query<{ applied_count: number; raw_correct_total: string; raw_attempt_total: string }>(`
+        SELECT
+          (SELECT count(*)::int FROM student_knowledge_applied_evidence WHERE student_id = $1) AS applied_count,
+          raw_correct_total::text,
+          raw_attempt_total::text
+        FROM student_knowledge
+        WHERE student_id = $1 AND knowledge_point_ref = 'unassigned'
+      `, [ids.student])
+      expect(replay.rows).toEqual([{ applied_count: 2, raw_correct_total: '1.000000', raw_attempt_total: '2.000000' }])
+    } finally {
+      await blocker.query('ROLLBACK').catch(() => undefined)
+      await Promise.all([setup.end(), blocker.end(), firstApplier.end(), secondApplier.end()])
+    }
+  }, 30_000)
+
   it('rolls back answers, terminal status, and idempotency when submit audit fails', async () => {
     const schema = await createSchema()
     const client = await connect(schema)

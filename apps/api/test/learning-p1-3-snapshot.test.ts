@@ -214,6 +214,7 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
         (SELECT count(*)::int FROM stage_attempts) +
         (SELECT count(*)::int FROM stage_attempt_item_snapshots) +
         (SELECT count(*)::int FROM stage_attempt_answers) +
+        (SELECT count(*)::int FROM knowledge_evidence) +
         (SELECT count(*)::int FROM learning_audit_events) AS count
     `)
     await database.query('INSERT INTO trial_redemptions (student_id) VALUES ($1)', [ids.student])
@@ -226,6 +227,7 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
         (SELECT count(*)::int FROM stage_attempts) +
         (SELECT count(*)::int FROM stage_attempt_item_snapshots) +
         (SELECT count(*)::int FROM stage_attempt_answers) +
+        (SELECT count(*)::int FROM knowledge_evidence) +
         (SELECT count(*)::int FROM learning_audit_events) AS count
     `)
     expect(after.rows).toEqual(before.rows)
@@ -294,7 +296,7 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
     `, [ids.attemptTwo])
     expect(skipped.rows).toEqual([{ outcome: 'skipped', earned_score: '0.000000' }])
 
-    await startAttempt(database, ids.attemptThree, ids.versionOne)
+    await startAttempt(database, ids.attemptThree, ids.versionTwo)
     const thirdSnapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string }>(`
       SELECT item.id AS item_snapshot_id, keys.correct_option_snapshot_id
       FROM stage_attempt_item_snapshots item
@@ -320,6 +322,113 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
     `, [ids.attemptThree])).rejects.toThrow(/expired stage attempts cannot be submitted/)
+  })
+
+  it('creates one immutable knowledge evidence row per scored answer from snapshots', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+
+    const snapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string }>(`
+      SELECT item.id AS item_snapshot_id, keys.correct_option_snapshot_id
+      FROM stage_attempt_item_snapshots item
+      JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+      WHERE item.attempt_id = $1
+    `, [ids.attemptOne])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'submit-1')
+    `, [ids.attemptOne, snapshot.rows[0]!.item_snapshot_id, snapshot.rows[0]!.correct_option_snapshot_id])
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1, passed = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptOne])
+    await database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptOne, ids.student])
+    await database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptOne, ids.student])
+    await expect(database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptOne, ids.guardian]))
+      .rejects.toThrow(/exactly one evidence/)
+
+    const evidence = await database.query<{
+      skill_ref: string
+      knowledge_point_ref: string
+      outcome: string
+      earned_score: string
+      max_score: string
+      time_matches: boolean
+      count: number
+    }>(`
+      SELECT ev.skill_ref, ev.knowledge_point_ref, ev.outcome,
+             ev.earned_score::text, ev.max_score::text,
+             ev.occurred_at = attempts.submitted_at AS time_matches,
+             count(*) OVER ()::int AS count
+      FROM knowledge_evidence ev
+      JOIN stage_attempts attempts ON attempts.id = ev.attempt_id
+      WHERE ev.attempt_id = $1
+    `, [ids.attemptOne])
+    expect(evidence.rows).toEqual([{
+      skill_ref: 'reading',
+      knowledge_point_ref: 'vocab-alpha',
+      outcome: 'correct',
+      earned_score: '1.000000',
+      max_score: '1.000000',
+      time_matches: true,
+      count: 1,
+    }])
+    await expect(database.query(`
+      UPDATE knowledge_evidence SET earned_score = 0 WHERE attempt_id = $1
+    `, [ids.attemptOne])).rejects.toThrow(/append-only/)
+
+    await startAttempt(database, ids.attemptTwo, ids.versionOne)
+    const secondSnapshot = await database.query<{ item_snapshot_id: string }>(`
+      SELECT id AS item_snapshot_id FROM stage_attempt_item_snapshots WHERE attempt_id = $1
+    `, [ids.attemptTwo])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'skipped', NULL, 'submit-1')
+    `, [ids.attemptTwo, secondSnapshot.rows[0]!.item_snapshot_id])
+    await expect(database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptTwo, ids.student]))
+      .rejects.toThrow(/submitted formal attempt|exactly one evidence/)
+
+    await startAttempt(database, ids.attemptThree, ids.versionTwo)
+    const thirdSnapshot = await database.query<{ item_snapshot_id: string; source_item_id: string }>(`
+      SELECT id AS item_snapshot_id, source_item_id
+      FROM stage_attempt_item_snapshots
+      WHERE attempt_id = $1
+    `, [ids.attemptThree])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'skipped', NULL, 'submit-1')
+    `, [ids.attemptThree, thirdSnapshot.rows[0]!.item_snapshot_id])
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0, passed = false,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptThree])
+    const thirdAnswer = await database.query<{ answer_id: string }>(`
+      SELECT id AS answer_id FROM stage_attempt_answers WHERE attempt_id = $1
+    `, [ids.attemptThree])
+    await expect(database.query(`
+      INSERT INTO knowledge_evidence
+        (student_id, attempt_id, exam_version_id, item_snapshot_id, answer_id,
+         source_item_id, skill_ref, knowledge_point_ref, outcome, earned_score, max_score, occurred_at)
+      SELECT $1, $2, $3, $4, $5, $6, 'reading', 'forged-knowledge',
+             'correct', 1, 1, submitted_at
+      FROM stage_attempts
+      WHERE id = $2
+    `, [
+      ids.student,
+      ids.attemptThree,
+      ids.versionTwo,
+      thirdSnapshot.rows[0]!.item_snapshot_id,
+      thirdAnswer.rows[0]!.answer_id,
+      thirdSnapshot.rows[0]!.source_item_id,
+    ])).rejects.toThrow(/must match/)
   })
 
   it('accepts terminal audit events only when they match authoritative attempt terminal times', async () => {

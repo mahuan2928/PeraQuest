@@ -39,6 +39,7 @@ describe('database migrations', () => {
       '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
       '0007_learning_p1_3_3_submit_grading.sql',
       '0008_learning_p1_3_4_terminal_audit.sql',
+      '0009_learning_p1_3_5_knowledge_evidence.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -53,6 +54,7 @@ describe('database migrations', () => {
       'consent_records',
       'guardian_links',
       'idempotency_records',
+      'knowledge_evidence',
       'learning_audit_events',
       'line_links',
       'schema_migrations',
@@ -106,13 +108,13 @@ describe('database migrations', () => {
     const attemptColumns = await database.query<{ column_name: string }>("SELECT column_name FROM information_schema.columns WHERE table_name = 'trial_attempts' ORDER BY column_name")
     expect(attemptColumns.rows.map(({ column_name }) => column_name)).not.toContain('answers')
 
-    const durableKnowledgeTables = await database.query<{ table_name: string }>(`
+    const futureKnowledgeTables = await database.query<{ table_name: string }>(`
       SELECT table_name
       FROM information_schema.tables
       WHERE table_schema = 'public'
-        AND table_name IN ('knowledge_evidence', 'student_knowledge', 'remediation_tasks', 'unlock_states')
+        AND table_name IN ('student_knowledge', 'remediation_tasks', 'unlock_states')
     `)
-    expect(durableKnowledgeTables.rows).toEqual([])
+    expect(futureKnowledgeTables.rows).toEqual([])
   })
 
   it('enforces one-time redemption atomically through the PostgreSQL repository', async () => {

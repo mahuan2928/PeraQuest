@@ -134,6 +134,7 @@ describe('learning P1.1 migration', () => {
       '0006_learning_p1_3_1_stage_attempt_snapshot.sql',
       '0007_learning_p1_3_3_submit_grading.sql',
       '0008_learning_p1_3_4_terminal_audit.sql',
+      '0009_learning_p1_3_5_knowledge_evidence.sql',
     ])
     const rows = await database.query<{ id: string }>('SELECT id FROM trial_attempts ORDER BY id')
     expect(rows.rows).toEqual([{ id: '00000000-0000-0000-0000-000000000121' }])
@@ -367,12 +368,12 @@ describe('learning P1.1 migration', () => {
     }])
   })
 
-  it('creates the required foreign keys, checks, non-null columns, and indexes without P2 tables', async () => {
+  it('creates the required foreign keys, checks, non-null columns, and indexes without future mastery tables', async () => {
     const database = await createDatabase()
     const forbiddenTables = await database.query<{ table_name: string }>(`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public'
-        AND table_name IN ('knowledge_evidence', 'knowledge_evidence_weights', 'student_knowledge', 'remediation_tasks')
+        AND table_name IN ('knowledge_evidence_weights', 'student_knowledge', 'remediation_tasks')
     `)
     expect(forbiddenTables.rows).toEqual([])
 

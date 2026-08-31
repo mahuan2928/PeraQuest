@@ -11,6 +11,7 @@ import type {
   GuardianInvitationResponse,
   GuardianLinkResponse,
   GuardianLinkVerificationResponse,
+  GuardianVoiceConsentWriteResponse,
   NotificationChannel,
   PaymentChannel,
   StudentOnboardingResponse,
@@ -189,7 +190,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
   }
 
-  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification')
+  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification') || url.startsWith('/v1/guardian-links/')
   const protectedPath = (url: string): boolean => formalProtectedPath(url) || url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return
@@ -270,6 +271,24 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     })
     if (!verified) return sendError(reply, 404, 'NOT_FOUND')
     return verified
+  })
+
+  app.put('/v1/guardian-links/:studentId/consents/voice-processing', async (request, reply): Promise<GuardianVoiceConsentWriteResponse | void> => {
+    const actor = formalGuardianActor(request, reply)
+    if (!actor) return
+    const params = z.object({ studentId: uuidSchema }).safeParse(request.params)
+    if (!params.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'guardian_link', reason: 'invalid' })
+    const parsed = consentSchema.safeParse(request.body)
+    if (!parsed.success || parsed.data.version !== config.CONSENT_VERSION_REQUIRED) {
+      return sendError(reply, 400, 'INVALID_CONSENT_VERSION', { field: 'version', reason: 'invalid', resource: 'consent' })
+    }
+    const student = await repository.findById(params.data.studentId)
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    if (!student.isMinor) return sendError(reply, 403, 'AUTH_FORBIDDEN')
+    if (student.guardianLinkStatus !== 'verified') return sendError(reply, 403, 'GUARDIAN_VERIFICATION_REQUIRED')
+    if (student.guardianId !== actor.id) return sendError(reply, 403, 'GUARDIAN_AUTH_REQUIRED')
+    const consent = await repository.setVoiceConsent(params.data.studentId, actor.id, parsed.data.status, parsed.data.version)
+    return { type: 'voice_processing', ...consent }
   })
 
   app.put('/v1/me/consents/voice-processing', async (request, reply): Promise<ConsentResponse | void> => {

@@ -250,6 +250,66 @@
         }
       }
     },
+    "/v1/guardian-links/{studentId}/consents/voice-processing": {
+      "put": {
+        "operationId": "putGuardianVoiceConsent",
+        "summary": "Record voice-processing consent for a verified minor as the linked Bearer guardian.",
+        "description": "Bearer guardian only. The student must be a minor with a verified guardian link whose guardian_id matches the authenticated guardian.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardianVoiceConsentWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guardian consent recorded for the verified minor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianVoiceConsentWriteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/v1/me/consents/voice-processing": {
       "put": {
         "operationId": "putVoiceConsent",
@@ -1343,6 +1403,51 @@
           }
         },
         "required": [
+          "status",
+          "version"
+        ]
+      },
+      "GuardianVoiceConsentWriteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "granted",
+              "denied",
+              "withdrawn"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ]
+      },
+      "GuardianVoiceConsentWriteResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "voice_processing"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConsentStatus"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type",
           "status",
           "version"
         ]

@@ -23,6 +23,8 @@ import {
   type GuardianInvitationResponse,
   type GuardianLinkVerificationRequest,
   type GuardianLinkVerificationResponse,
+  type GuardianVoiceConsentWriteRequest,
+  type GuardianVoiceConsentWriteResponse,
   type KnowledgeEvidenceDto,
   type PublicStageExamItemDto,
   type RemediationTaskDto,
@@ -95,6 +97,15 @@ const guardianVerificationResponse = {
   purchaseAllowed: true,
   verifiedAt: '2026-08-30T00:00:00.000Z',
 } satisfies GuardianLinkVerificationResponse
+const guardianVoiceConsentWrite = {
+  status: 'granted',
+  version: 'v1',
+} satisfies GuardianVoiceConsentWriteRequest
+const guardianVoiceConsentResponse = {
+  type: 'voice_processing',
+  status: guardianVoiceConsentWrite.status,
+  version: guardianVoiceConsentWrite.version,
+} satisfies GuardianVoiceConsentWriteResponse
 
 const unlock = {
   studentId: evidence.studentId,
@@ -154,6 +165,11 @@ describe('shared security contracts', () => {
     expect(guardianInvitation).toMatchObject({ inviteCode: guardianVerificationRequest.inviteCode })
     expect(guardianVerificationResponse).toMatchObject({ status: 'verified', purchaseAllowed: true })
     expect(guardianVerificationResponse.studentId).toBe(evidence.studentId)
+  })
+
+  it('exposes guardian voice consent write contracts', () => {
+    expect(guardianVoiceConsentWrite).toEqual({ status: 'granted', version: 'v1' })
+    expect(guardianVoiceConsentResponse).toEqual({ type: 'voice_processing', status: 'granted', version: 'v1' })
   })
 })
 

@@ -171,6 +171,48 @@ describe('real Bearer business path', () => {
     expect(response.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
   })
 
+  it('lets a verified Bearer guardian write voice consent for a linked minor', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/v1/guardian-links/${VERIFIED_MINOR}/consents/voice-processing`,
+      headers: { authorization: `Bearer ${await tokenFor('guardian-sub')}` },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ type: 'voice_processing', status: 'granted', version: 'v1' })
+  })
+
+  it('rejects legacy and non-guardian actors on Bearer guardian voice consent writes', async () => {
+    const legacy = await app.inject({
+      method: 'PUT',
+      url: `/v1/guardian-links/${VERIFIED_MINOR}/consents/voice-processing`,
+      headers: { 'x-student-id': VERIFIED_MINOR, 'x-guardian-id': GUARDIAN },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(legacy.statusCode).toBe(401)
+    expect(legacy.json()).toEqual({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
+
+    const studentActor = await app.inject({
+      method: 'PUT',
+      url: `/v1/guardian-links/${VERIFIED_MINOR}/consents/voice-processing`,
+      headers: { authorization: `Bearer ${await tokenFor('verified-minor-sub')}` },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(studentActor.statusCode).toBe(403)
+    expect(studentActor.json()).toEqual({ code: 'AUTH_FORBIDDEN' })
+  })
+
+  it('requires a verified guardian link before Bearer guardian voice consent writes', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/v1/guardian-links/${STUDENT_B}/consents/voice-processing`,
+      headers: { authorization: `Bearer ${await tokenFor('guardian-sub')}` },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ code: 'GUARDIAN_VERIFICATION_REQUIRED' })
+  })
+
   it('lets a minor Bearer student create an invite and a Bearer guardian verify it', async () => {
     const invitation = await app.inject({
       method: 'POST',

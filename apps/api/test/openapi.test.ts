@@ -21,6 +21,7 @@ describe('OpenAPI document', () => {
       '/api/v1/student-knowledge',
       '/health',
       '/v1/guardian-links/verification',
+      '/v1/guardian-links/{studentId}/consents/voice-processing',
       '/v1/me/capabilities',
       '/v1/me/consents/voice-processing',
       '/v1/me/devices/current',
@@ -59,6 +60,8 @@ describe('OpenAPI document', () => {
     expect(document.components.schemas).toHaveProperty('GuardianInvitationResponse')
     expect(document.components.schemas).toHaveProperty('GuardianLinkVerificationRequest')
     expect(document.components.schemas).toHaveProperty('GuardianLinkVerificationResponse')
+    expect(document.components.schemas).toHaveProperty('GuardianVoiceConsentWriteRequest')
+    expect(document.components.schemas).toHaveProperty('GuardianVoiceConsentWriteResponse')
     expect(document.components.schemas).toHaveProperty('GuardianLinkProjection')
     expect(document.components.schemas).toHaveProperty('ConsentProjection')
     expect(document.components.schemas).toHaveProperty('ErrorResponse')
@@ -93,6 +96,7 @@ describe('OpenAPI document', () => {
     const putCurrentDevicePushDisabledOperation = document.paths['/v1/me/devices/current/push-disabled']?.put
     const postGuardianInvitationOperation = document.paths['/v1/me/guardian-link/invitations']?.post
     const putGuardianVerificationOperation = document.paths['/v1/guardian-links/verification']?.put
+    const putGuardianVoiceConsentOperation = document.paths['/v1/guardian-links/{studentId}/consents/voice-processing']?.put
     const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
     const submitStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/submit']?.post
     const getStageAttemptResultOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/result']?.get
@@ -103,6 +107,7 @@ describe('OpenAPI document', () => {
     expect(putCurrentDevicePushDisabledOperation).toBeDefined()
     expect(postGuardianInvitationOperation).toBeDefined()
     expect(putGuardianVerificationOperation).toBeDefined()
+    expect(putGuardianVoiceConsentOperation).toBeDefined()
     expect(getStageAttemptOperation).toBeDefined()
     expect(submitStageAttemptOperation).toBeDefined()
     expect(getStageAttemptResultOperation).toBeDefined()
@@ -112,6 +117,7 @@ describe('OpenAPI document', () => {
     expect(putCurrentDevicePushDisabledOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(postGuardianInvitationOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(putGuardianVerificationOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(putGuardianVoiceConsentOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
     expect(getStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])

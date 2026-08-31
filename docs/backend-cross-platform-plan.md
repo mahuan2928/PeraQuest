@@ -10,17 +10,17 @@ Scope: iOS, Android, and PC clients for Eiken Grade 3 onboarding, guardian linka
 - Payment channels are platform-specific: App Store on iOS, Play Billing on Android, and web checkout on PC. Entitlements are normalized server-side so access follows the learner across platforms; capabilities now read active/grace-period entitlement projections from `subscription_entitlements`.
 - Notifications are device registrations, not account fields: current device metadata upsert and conservative push disable are available for Bearer students, while APNs, FCM, web push token registration, and guardian LINE provider integrations remain separate work.
 - Guardian invitation/verification is Bearer-only: minor students can issue short-lived invite codes, and guardians verify them with Bearer identity; only invite hashes are stored.
+- Verified guardians can write voice-processing consent for linked minor students with Bearer identity; legacy guardian headers remain only for compatibility routes.
 - LINE OAuth state must store an allowlisted return target. Mobile may return by app deep link with HTTPS fallback; PC uses HTTPS only.
 
 ## Next implementation order
 
 1. Continue replacing scaffold header identity with verified access tokens and identity linking. Formal stage-attempt runtime and adult voice-consent self-writes already support Bearer actors; legacy headers remain for compatibility routes.
 2. Replace the in-memory repository with PostgreSQL. The migration runner is available now via `DATABASE_URL=... npm run migrate -w @peraquest/api`; deployment must run it before API rollout.
-3. Implement guardian-authenticated consent writes on top of verified guardian links.
-4. Add S3-compatible signed upload tickets with MIME, size, duration, checksum, expiry, and region enforcement.
-5. Add idempotent App Store, Play, and web-payment webhooks; project all receipts into `subscription_entitlements`. Read-side capability projection is already wired.
-6. Add APNs/FCM/web-push token registration and LINE OAuth callback/state validation. Current-device metadata registration and push disable are already wired without accepting push tokens.
-7. Add audit events and deletion jobs for consent withdrawal and voice retention.
+3. Add S3-compatible signed upload tickets with MIME, size, duration, checksum, expiry, and region enforcement.
+4. Add idempotent App Store, Play, and web-payment webhooks; project all receipts into `subscription_entitlements`. Read-side capability projection is already wired.
+5. Add APNs/FCM/web-push token registration and LINE OAuth callback/state validation. Current-device metadata registration and push disable are already wired without accepting push tokens.
+6. Add audit events and deletion jobs for consent withdrawal and voice retention.
 
 ## Architect decisions still required
 

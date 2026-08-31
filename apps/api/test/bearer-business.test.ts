@@ -50,6 +50,7 @@ const voiceConsents = new Map<string, { status: 'granted' | 'denied' | 'withdraw
 
 const fakePool = {
   query: async (sql: string, parameters: unknown[] = []) => {
+    if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [], rowCount: 0 }
     if (sql.includes('FROM auth_identities ai')) {
       const userId = identities.get(`${String(parameters[0])}:${String(parameters[1])}`)
       const user = userId ? users.get(userId) : undefined
@@ -66,8 +67,10 @@ const fakePool = {
     }
     if (sql.includes('INSERT INTO consent_records')) {
       voiceConsents.set(String(parameters[0]), { status: parameters[2] as 'granted' | 'denied' | 'withdrawn', version: String(parameters[3]) })
-      return { rows: [], rowCount: 1 }
+      return { rows: [{ id: `consent-${voiceConsents.size}` }], rowCount: 1 }
     }
+    if (sql.includes('INSERT INTO voice_consent_audit_events')) return { rows: [], rowCount: 1 }
+    if (sql.includes('INSERT INTO voice_data_deletion_jobs')) return { rows: [], rowCount: 1 }
     if (sql.includes('UPDATE guardian_links') && sql.includes('invitation_created_at')) {
       const student = users.get(String(parameters[0]))
       if (!student || student.status !== 'pending') return { rows: [], rowCount: 0 }
@@ -95,6 +98,7 @@ const fakePool = {
     }
     throw new Error(`unexpected test query: ${sql}`)
   },
+  connect: async () => ({ query: fakePool.query, release: () => undefined }),
   end: async () => undefined,
 } as unknown as Pool
 

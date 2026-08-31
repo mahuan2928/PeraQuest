@@ -44,6 +44,7 @@ describe('database migrations', () => {
       '0010_learning_p1_3_6_mastery_due.sql',
       '0011_guardian_invitation.sql',
       '0012_student_knowledge_concurrent_timestamp.sql',
+      '0013_voice_consent_withdrawal_jobs.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -81,6 +82,8 @@ describe('database migrations', () => {
       'trial_redemptions',
       'user_devices',
       'users',
+      'voice_consent_audit_events',
+      'voice_data_deletion_jobs',
     ])
   })
 
@@ -386,6 +389,48 @@ describe('database migrations', () => {
       ('SELECT guardian_id, student_id FROM consent_records WHERE student_id = $1', [studentB])
     expect(bearerRecords.rows).toEqual([{ guardian_id: guardianB, student_id: studentB }])
     await app.close()
+  })
+
+  it('records voice consent audit events and queues deletion jobs on withdrawal', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const adult = '00000000-0000-0000-0000-000000000087'
+    const minor = '00000000-0000-0000-0000-000000000088'
+    const guardian = '00000000-0000-0000-0000-000000000089'
+    await database.query(`
+      INSERT INTO users (id, role, birth_month, is_minor) VALUES
+        ($1, 'student', '2000-01-01', false),
+        ($2, 'student', '2012-01-01', true),
+        ($3, 'guardian', NULL, false)
+    `, [adult, minor, guardian])
+    await database.query("INSERT INTO guardian_links (id, student_id, guardian_id, status) VALUES ('00000000-0000-0000-0000-000000000090', $1, $2, 'verified')", [minor, guardian])
+    const pool = { query: database.query.bind(database), connect: async () => ({ query: database.query.bind(database), release: () => undefined }) } as unknown as Pool
+    const repository = new PostgresStudentRepository(pool)
+
+    await expect(repository.setVoiceConsent(adult, null, 'granted', 'v1')).resolves.toEqual({ status: 'granted', version: 'v1' })
+    await expect(repository.setVoiceConsent(adult, null, 'withdrawn', 'v1')).resolves.toEqual({ status: 'withdrawn', version: 'v1' })
+    await expect(repository.setVoiceConsent(minor, guardian, 'withdrawn', 'v1')).resolves.toEqual({ status: 'withdrawn', version: 'v1' })
+
+    const audit = await database.query<{ student_id: string; guardian_id: string | null; status: string; version: string; event_type: string }>(`
+      SELECT student_id, guardian_id, status, version, event_type
+      FROM voice_consent_audit_events
+      ORDER BY student_id, status
+    `)
+    expect(audit.rows).toEqual([
+      { student_id: adult, guardian_id: null, status: 'granted', version: 'v1', event_type: 'voice_consent_recorded' },
+      { student_id: adult, guardian_id: null, status: 'withdrawn', version: 'v1', event_type: 'voice_consent_recorded' },
+      { student_id: minor, guardian_id: guardian, status: 'withdrawn', version: 'v1', event_type: 'voice_consent_recorded' },
+    ])
+    const jobs = await database.query<{ student_id: string; guardian_id: string | null; reason: string; status: string }>(`
+      SELECT student_id, guardian_id, reason, status
+      FROM voice_data_deletion_jobs
+      ORDER BY student_id
+    `)
+    expect(jobs.rows).toEqual([
+      { student_id: adult, guardian_id: null, reason: 'voice_consent_withdrawn', status: 'pending' },
+      { student_id: minor, guardian_id: guardian, reason: 'voice_consent_withdrawn', status: 'pending' },
+    ])
   })
 
   it('enforces one active guardian link for a student', async () => {

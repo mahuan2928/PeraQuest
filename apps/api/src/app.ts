@@ -55,6 +55,7 @@ const voiceUploadTicketSchema = z.object({
   durationSeconds: z.number().positive(),
   checksumSha256: z.string().regex(/^[a-f0-9]{64}$/i),
 }).strict()
+const demoSessionSchema = z.object({ scenario: z.literal('minor_guardian_voice').optional() }).strict()
 const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
 const idempotencyKeySchema = z.string().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/)
@@ -98,6 +99,8 @@ const hashGuardianInviteCode = (inviteCode: string): string => createHash('sha25
   .digest('hex')
 
 const createGuardianInviteCode = (): string => randomBytes(24).toString('base64url')
+const encodeDemoTokenPart = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url')
+const signDemoToken = (payload: string, secret: string): string => createHmac('sha256', secret).update(payload).digest('base64url')
 
 const compactDate = (date: Date): string => date.toISOString().slice(0, 10).replaceAll('-', '')
 const amzDate = (date: Date): string => date.toISOString().replaceAll('-', '').replaceAll(':', '').replace(/\.\d{3}Z$/, 'Z')
@@ -192,6 +195,57 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   const tokenVerifier = options.tokenVerifier ?? createJwksTokenVerifier(authConfig)
   const authUserResolver = options.authUserResolver ?? { resolve: async () => null }
   const now = options.now ?? (() => new Date())
+  const demoSessions = new Map<string, { studentId: string; guardianId: string; expiresAt: Date }>()
+
+  const createDemoToken = (sessionId: string, role: 'student' | 'guardian'): string => {
+    const issuedAt = Math.floor(now().getTime() / 1000)
+    const payload = {
+      iss: config.AUTH_ISSUER,
+      aud: config.AUTH_AUDIENCE,
+      sub: `demo:${sessionId}:${role}`,
+      iat: issuedAt,
+      exp: issuedAt + config.DEMO_TOKEN_TTL_SECONDS,
+    }
+    const encodedPayload = encodeDemoTokenPart(payload)
+    return `demo.${encodedPayload}.${signDemoToken(encodedPayload, config.DEMO_SESSION_SECRET!)}`
+  }
+
+  const verifyDemoToken = (token: string): ReturnType<TokenVerifier['verify']> | null => {
+    if (!config.DEMO_API_ENABLED || !token.startsWith('demo.')) return null
+    const [, encodedPayload, signature] = token.split('.')
+    if (!encodedPayload || !signature || signature !== signDemoToken(encodedPayload, config.DEMO_SESSION_SECRET!)) throw new AuthFailure('AUTH_INVALID')
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as unknown
+    const claims = z.object({
+      iss: z.string(),
+      aud: z.union([z.string(), z.array(z.string())]),
+      sub: z.string(),
+      iat: z.number(),
+      exp: z.number(),
+    }).parse(payload)
+    return Promise.resolve(claims)
+  }
+
+  const activeTokenVerifier: TokenVerifier = {
+    async verify(token, verifierConfig) {
+      const demoClaims = verifyDemoToken(token)
+      if (demoClaims) return demoClaims
+      return tokenVerifier.verify(token, verifierConfig)
+    },
+  }
+
+  const activeAuthUserResolver: AuthUserResolver = {
+    async resolve(issuer, providerSubject) {
+      if (config.DEMO_API_ENABLED && issuer === config.AUTH_ISSUER && providerSubject.startsWith('demo:')) {
+        const [, sessionId, role] = providerSubject.split(':')
+        const session = sessionId ? demoSessions.get(sessionId) : undefined
+        if (!session || session.expiresAt <= now()) return null
+        if (role === 'student') return { id: session.studentId, role: 'student' }
+        if (role === 'guardian') return { id: session.guardianId, role: 'guardian' }
+        return null
+      }
+      return authUserResolver.resolve(issuer, providerSubject)
+    },
+  }
   app.setErrorHandler((error, _request, reply) => {
     // Keep provider/raw/stack/token details server-side; the public contract exposes only a stable code.
     return sendError(reply, 500, 'INTERNAL_ERROR')
@@ -274,7 +328,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       if (authorization !== undefined) {
         if (request.headers['x-student-id'] !== undefined || request.headers['x-guardian-id'] !== undefined) throw new AuthFailure('AUTH_INVALID')
         const token = parseBearerToken(authorization)
-        request.authActor = await createAuthActor(token, authConfig, tokenVerifier, authUserResolver, () => now().getTime())
+        request.authActor = await createAuthActor(token, authConfig, activeTokenVerifier, activeAuthUserResolver, () => now().getTime())
         return
       }
       if (formalProtectedPath(request.url) && (request.headers['x-student-id'] !== undefined || request.headers['x-guardian-id'] !== undefined)) {
@@ -293,6 +347,32 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   })
 
   app.get('/health', async () => ({ status: 'ok' as const }))
+
+  if (config.DEMO_API_ENABLED) {
+    app.post('/v1/demo/session', async (request, reply) => {
+      const parsed = demoSessionSchema.safeParse(request.body ?? {})
+      if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'demo_session', reason: 'invalid' })
+      const sessionId = randomUUID()
+      const studentId = randomUUID()
+      const guardianId = randomUUID()
+      const expiresAt = new Date(now().getTime() + config.DEMO_TOKEN_TTL_SECONDS * 1000)
+      await repository.create({
+        id: studentId,
+        birthMonth: '2012-04',
+        isMinor: true,
+        guardianLinkStatus: 'pending',
+        guardianId: null,
+      })
+      demoSessions.set(sessionId, { studentId, guardianId, expiresAt })
+      return reply.code(201).send({
+        scenario: parsed.data.scenario ?? 'minor_guardian_voice',
+        studentId,
+        expiresAt: expiresAt.toISOString(),
+        studentToken: createDemoToken(sessionId, 'student'),
+        guardianToken: createDemoToken(sessionId, 'guardian'),
+      })
+    })
+  }
 
   app.post('/v1/students/onboarding', async (request, reply): Promise<StudentOnboardingResponse | void> => {
     const parsed = onboardingSchema.safeParse(request.body)

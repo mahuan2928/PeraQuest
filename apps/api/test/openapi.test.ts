@@ -20,6 +20,7 @@ describe('OpenAPI document', () => {
       '/api/v1/stage-exams/{stageExamId}/attempts',
       '/api/v1/student-knowledge',
       '/health',
+      '/v1/demo/session',
       '/v1/guardian-links/verification',
       '/v1/guardian-links/{studentId}/consents/voice-processing',
       '/v1/me/capabilities',
@@ -57,6 +58,8 @@ describe('OpenAPI document', () => {
     expect(document.components.schemas).toHaveProperty('CurrentDevicePushDisableResponse')
     expect(document.components.schemas.CurrentDeviceRegistrationRequest?.properties).not.toHaveProperty('pushToken')
     expect(document.components.schemas.CurrentDevicePushDisableRequest?.properties).not.toHaveProperty('pushToken')
+    expect(document.components.schemas).toHaveProperty('DemoSessionRequest')
+    expect(document.components.schemas).toHaveProperty('DemoSessionResponse')
     expect(document.components.schemas).toHaveProperty('GuardianInvitationResponse')
     expect(document.components.schemas).toHaveProperty('GuardianLinkVerificationRequest')
     expect(document.components.schemas).toHaveProperty('GuardianLinkVerificationResponse')
@@ -90,8 +93,13 @@ describe('OpenAPI document', () => {
     expect(document.paths).not.toHaveProperty('/v1/me/stage-attempts/{attemptId}/submit')
     expect(document.components.securitySchemes).toHaveProperty('BearerAuth')
     expect(document.components.securitySchemes).toHaveProperty('LegacyGuardianHeader')
-    const writeOperations = Object.values(document.paths).flatMap((item) => Object.entries(item).filter(([method]) => ['post', 'put', 'patch', 'delete'].includes(method)).map(([, operation]) => operation as { parameters?: Array<{ $ref?: string }>; security?: unknown }))
+    const writeOperations = Object.values(document.paths)
+      .flatMap((item) => Object.entries(item)
+        .filter(([method]) => ['post', 'put', 'patch', 'delete'].includes(method))
+        .map(([, operation]) => operation as { operationId?: string; parameters?: Array<{ $ref?: string }>; security?: unknown }))
+      .filter((operation) => operation.operationId !== 'createDemoSession')
     expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey' || parameter.$ref === '#/components/parameters/FormalIdempotencyKey'))).toBe(true)
+    const createDemoSessionOperation = document.paths['/v1/demo/session']?.post
     const startStageAttemptOperation = document.paths['/api/v1/stage-exams/{stageExamId}/attempts']?.post
     const putVoiceConsentOperation = document.paths['/v1/me/consents/voice-processing']?.put
     const putCurrentDeviceOperation = document.paths['/v1/me/devices/current']?.put
@@ -104,6 +112,7 @@ describe('OpenAPI document', () => {
     const submitStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/submit']?.post
     const getStageAttemptResultOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/result']?.get
     const listStudentKnowledgeOperation = document.paths['/api/v1/student-knowledge']?.get
+    expect(createDemoSessionOperation).toBeDefined()
     expect(startStageAttemptOperation).toBeDefined()
     expect(putVoiceConsentOperation).toBeDefined()
     expect(putCurrentDeviceOperation).toBeDefined()
@@ -116,6 +125,7 @@ describe('OpenAPI document', () => {
     expect(submitStageAttemptOperation).toBeDefined()
     expect(getStageAttemptResultOperation).toBeDefined()
     expect(listStudentKnowledgeOperation).toBeDefined()
+    expect(createDemoSessionOperation!.security).toEqual([])
     expect(putVoiceConsentOperation!.security).toContainEqual({ BearerAuth: [] })
     expect(putCurrentDeviceOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(putCurrentDevicePushDisabledOperation!.security).toEqual([{ BearerAuth: [] }])

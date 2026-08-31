@@ -29,6 +29,9 @@ const schema = z.object({
   VOICE_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().max(50 * 1024 * 1024).default(10 * 1024 * 1024),
   VOICE_UPLOAD_MAX_DURATION_SECONDS: z.coerce.number().int().positive().max(30 * 60).default(5 * 60),
   VOICE_UPLOAD_TICKET_TTL_SECONDS: z.coerce.number().int().positive().max(15 * 60).default(5 * 60),
+  DEMO_API_ENABLED: booleanFlag.default(false),
+  DEMO_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().max(15 * 60).default(10 * 60),
+  DEMO_SESSION_SECRET: z.string().min(16).optional(),
   ALLOW_LEGACY_TEST_HEADERS: booleanFlag.default(false),
   AUTH_PROVIDER: z.enum(['apple', 'google', 'email_magic_link']).default('email_magic_link'),
   AUTH_ISSUER: z.string().url().default('https://issuer.example.test'),
@@ -47,6 +50,7 @@ export type RuntimeConfig = z.infer<typeof schema>
 
 export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): RuntimeConfig => {
   const config = schema.parse(environment)
+  if (config.NODE_ENV !== 'production' && config.DEMO_API_ENABLED && !config.DEMO_SESSION_SECRET) throw new Error('DEMO_SESSION_SECRET is required when DEMO_API_ENABLED is true')
   if (config.NODE_ENV === 'production') {
     for (const key of productionAuthKeys) {
       if (!environment[key]?.trim()) throw new Error(`${key} is required in production`)
@@ -55,5 +59,9 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): Runtim
       throw new Error('AUTH_ISSUER and AUTH_JWKS_URL must use HTTPS in production')
     }
   }
-  return { ...config, ALLOW_LEGACY_TEST_HEADERS: config.NODE_ENV !== 'production' && config.ALLOW_LEGACY_TEST_HEADERS }
+  return {
+    ...config,
+    ALLOW_LEGACY_TEST_HEADERS: config.NODE_ENV !== 'production' && config.ALLOW_LEGACY_TEST_HEADERS,
+    DEMO_API_ENABLED: config.NODE_ENV !== 'production' && config.DEMO_API_ENABLED,
+  }
 }

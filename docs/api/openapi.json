@@ -57,6 +57,43 @@
         "parameters": []
       }
     },
+    "/v1/demo/session": {
+      "post": {
+        "operationId": "createDemoSession",
+        "summary": "Create a short-lived non-production demo session for the live API demo.",
+        "description": "Disabled by default and forced off in production. Intended only for local or controlled demo environments.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Demo session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [],
+        "security": []
+      }
+    },
     "/v1/students/onboarding": {
       "post": {
         "operationId": "onboardStudent",
@@ -1252,6 +1289,52 @@
           "denied",
           "withdrawn",
           "outdated"
+        ]
+      },
+      "DemoSessionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "enum": [
+              "minor_guardian_voice"
+            ],
+            "default": "minor_guardian_voice"
+          }
+        }
+      },
+      "DemoSessionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Short-lived non-production demo credentials. Disabled by default and forced off in production.",
+        "properties": {
+          "scenario": {
+            "const": "minor_guardian_voice"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "studentToken": {
+            "type": "string",
+            "description": "Short-lived demo Bearer token for the minor student actor."
+          },
+          "guardianToken": {
+            "type": "string",
+            "description": "Short-lived demo Bearer token for the guardian actor."
+          }
+        },
+        "required": [
+          "scenario",
+          "studentId",
+          "expiresAt",
+          "studentToken",
+          "guardianToken"
         ]
       },
       "StudentOnboardingRequest": {

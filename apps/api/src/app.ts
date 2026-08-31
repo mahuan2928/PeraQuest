@@ -256,7 +256,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   const corsHeaders = {
     'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
-    'access-control-allow-headers': 'content-type,authorization,x-client-platform',
+    'access-control-allow-headers': 'content-type,authorization,x-client-platform,idempotency-key',
     vary: 'Origin',
   }
 
@@ -363,6 +363,9 @@ export const buildApp = (options: BuildAppOptions = {}) => {
         guardianLinkStatus: 'pending',
         guardianId: null,
       })
+      await repository.createDemoGuardian?.(guardianId)
+      await repository.createDemoAuthIdentity?.(studentId, config.AUTH_PROVIDER, `demo:${sessionId}:student`)
+      await repository.createDemoAuthIdentity?.(guardianId, config.AUTH_PROVIDER, `demo:${sessionId}:guardian`)
       demoSessions.set(sessionId, { studentId, guardianId, expiresAt })
       return reply.code(201).send({
         scenario: parsed.data.scenario ?? 'minor_guardian_voice',
@@ -372,6 +375,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
         guardianToken: createDemoToken(sessionId, 'guardian'),
       })
     })
+
   }
 
   app.post('/v1/students/onboarding', async (request, reply): Promise<StudentOnboardingResponse | void> => {

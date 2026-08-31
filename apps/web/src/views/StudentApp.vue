@@ -1,0 +1,370 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import {
+  createDemoGuardianInvitation,
+  createDemoVoiceUploadTicket,
+  fetchDemoStageAttemptResult,
+  fetchDemoStudentKnowledge,
+  registerDemoDevice,
+  startDemoStageAttempt,
+  submitDemoStageAttempt,
+  type DemoSessionResponse,
+} from '../api/demoFlow'
+
+type CapabilityState = {
+  canLearn?: boolean
+  canUploadVoice?: boolean
+  voiceUploadMode?: string
+  canPurchase?: boolean
+  guardianLinkStatus?: string
+  voiceConsentStatus?: string
+}
+
+type StageQuestion = {
+  itemId: string
+  prompt: string
+  support: string | null
+  options: Array<{ optionId: string; text: string }>
+}
+
+type StageAttempt = {
+  attemptId: string
+  items: StageQuestion[]
+}
+
+type KnowledgeItem = {
+  knowledgePointRef: string
+  masteryScore: number
+  state: string
+  dueAt: string | null
+}
+
+const props = defineProps<{
+  session: DemoSessionResponse
+  capabilities: CapabilityState | null
+  invitationCode: string
+  knowledgeItems: KnowledgeItem[]
+}>()
+
+const emit = defineEmits<{
+  refresh: []
+  invitationCreated: [code: string]
+  knowledgeUpdated: [items: KnowledgeItem[]]
+}>()
+
+const demoStageExamId = import.meta.env.VITE_DEMO_STAGE_EXAM_ID ?? '11111111-1111-4111-8111-111111111111'
+const busy = ref(false)
+const message = ref('')
+const error = ref('')
+const attempt = ref<StageAttempt | null>(null)
+const selected = ref<Record<string, string>>({})
+const resultSummary = ref<{ passed?: boolean; score?: number; maxScore?: number } | null>(null)
+const voiceReady = ref(false)
+const deviceReady = ref(false)
+
+const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
+const learnReady = computed(() => props.capabilities?.canLearn === true)
+const voiceEnabled = computed(() => props.capabilities?.canUploadVoice === true)
+const answered = computed(() => attempt.value?.items.every((item) => selected.value[item.itemId]) === true)
+const masteryAverage = computed(() => {
+  if (!props.knowledgeItems.length) return 0
+  return Math.round((props.knowledgeItems.reduce((sum, item) => sum + item.masteryScore, 0) / props.knowledgeItems.length) * 100)
+})
+
+function toUserMessage() {
+  return '接続を確認して、もう一度お試しください。'
+}
+
+async function runAction(action: () => Promise<void>) {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    await action()
+  } catch (caught) {
+    console.error(caught)
+    error.value = toUserMessage()
+  } finally {
+    busy.value = false
+  }
+}
+
+async function createInvitation() {
+  await runAction(async () => {
+    const response = await createDemoGuardianInvitation(props.session.studentToken)
+    console.info('guardian invitation result', response)
+    if (!response.ok) throw new Error('invitation failed')
+    emit('invitationCreated', response.body.inviteCode)
+    message.value = '保護者に確認依頼を送りました。'
+  })
+}
+
+async function startLevelCheck() {
+  await runAction(async () => {
+    const response = await startDemoStageAttempt(props.session.studentToken, demoStageExamId, `student-start-${props.session.studentId}`)
+    console.info('stage attempt start result', response)
+    if (!response.ok) throw new Error('stage attempt start failed')
+    attempt.value = response.body as StageAttempt
+    selected.value = {}
+    resultSummary.value = null
+    message.value = 'レベルチェックを開始しました。'
+  })
+}
+
+async function submitLevelCheck() {
+  if (!attempt.value || !answered.value) return
+  await runAction(async () => {
+    const answers = attempt.value!.items.map((item) => ({
+      itemId: item.itemId,
+      selectedOptionId: selected.value[item.itemId] ?? null,
+    }))
+    const submitted = await submitDemoStageAttempt(props.session.studentToken, attempt.value!.attemptId, answers, `student-submit-${props.session.studentId}`)
+    console.info('stage attempt submit result', submitted)
+    if (!submitted.ok) throw new Error('stage attempt submit failed')
+    const result = await fetchDemoStageAttemptResult(props.session.studentToken, attempt.value!.attemptId)
+    console.info('stage attempt result', result)
+    if (!result.ok) throw new Error('stage attempt result failed')
+    resultSummary.value = result.body as { passed?: boolean; score?: number; maxScore?: number }
+    const knowledge = await fetchDemoStudentKnowledge(props.session.studentToken)
+    console.info('student knowledge result', knowledge)
+    if (knowledge.ok) emit('knowledgeUpdated', ((knowledge.body as { items?: KnowledgeItem[] }).items ?? []))
+    message.value = 'レベルチェックの結果を保存しました。復習予定を更新しました。'
+  })
+}
+
+async function prepareVoicePractice() {
+  await runAction(async () => {
+    const response = await createDemoVoiceUploadTicket(props.session.studentToken)
+    console.info('voice upload preparation result', response)
+    if (!response.ok) throw new Error('voice upload failed')
+    voiceReady.value = true
+    message.value = '音声練習を提出できる状態になりました。'
+  })
+}
+
+async function registerDevice() {
+  await runAction(async () => {
+    const response = await registerDemoDevice(props.session.studentToken)
+    console.info('device registration result', response)
+    if (!response.ok) throw new Error('device registration failed')
+    deviceReady.value = true
+    message.value = 'この端末で体験を続けられるようにしました。'
+  })
+}
+</script>
+
+<template>
+  <section
+    class="product-panel"
+    aria-labelledby="student-app-title"
+  >
+    <header class="product-hero">
+      <p class="eyebrow">
+        生徒アプリ
+      </p>
+      <h1 id="student-app-title">
+        今日の学習を始めます
+      </h1>
+      <p class="lead">
+        保護者の確認、学習プラン、音声練習の準備が整うと、レベルチェックと復習が進められます。
+      </p>
+    </header>
+
+    <ul class="safety-list">
+      <li :class="{ done: guardianReady }">
+        <span>{{ guardianReady ? '✓' : '1' }}</span>
+        <div>
+          <strong>保護者の確認</strong>
+          <small>{{ guardianReady ? '保護者の確認が完了しました。' : '保護者の確認を待っています。' }}</small>
+        </div>
+      </li>
+      <li :class="{ done: learnReady }">
+        <span>{{ learnReady ? '✓' : '2' }}</span>
+        <div>
+          <strong>学習の解放</strong>
+          <small>{{ learnReady ? 'レベルチェックを開始できます。' : '確認後に学習が解放されます。' }}</small>
+        </div>
+      </li>
+      <li :class="{ done: voiceEnabled }">
+        <span>{{ voiceEnabled ? '✓' : '3' }}</span>
+        <div>
+          <strong>音声練習</strong>
+          <small>{{ voiceEnabled ? '音声練習を提出できます。' : '保護者の同意が必要です。' }}</small>
+        </div>
+      </li>
+    </ul>
+
+    <section class="student-grid">
+      <article class="action-card">
+        <p class="card-kicker">
+          家族連携
+        </p>
+        <h2>保護者に確認を依頼します</h2>
+        <p>保護者アプリで入力する招待コードを発行します。</p>
+        <button
+          class="primary-action"
+          type="button"
+          :disabled="busy || Boolean(invitationCode)"
+          @click="createInvitation"
+        >
+          {{ invitationCode ? '招待コードを発行済みです' : '招待コードを発行します' }}
+        </button>
+        <p
+          v-if="invitationCode"
+          class="invitation-code"
+        >
+          {{ invitationCode }}
+        </p>
+      </article>
+
+      <article class="action-card">
+        <p class="card-kicker">
+          学習プラン
+        </p>
+        <h2>学習プラン</h2>
+        <p>正式なお支払い機能は準備中です。現在の体験では、保護者確認後にレベルチェックへ進めます。</p>
+        <span class="plan-badge">近日公開</span>
+      </article>
+    </section>
+
+    <section class="lesson-panel">
+      <header class="lesson-header">
+        <div>
+          <p class="eyebrow">
+            レベルチェック
+          </p>
+          <strong>英検3級 · レベルチェック</strong>
+        </div>
+        <p>{{ attempt ? `${attempt.items.length} 問` : '未開始' }}</p>
+      </header>
+      <button
+        v-if="!attempt"
+        class="primary-action"
+        type="button"
+        :disabled="busy || !learnReady"
+        @click="startLevelCheck"
+      >
+        レベルチェックを開始します
+      </button>
+
+      <article
+        v-else-if="!resultSummary"
+        class="question-card"
+      >
+        <div
+          v-for="(item, index) in attempt.items"
+          :key="item.itemId"
+          class="stage-question"
+        >
+          <span class="ability-tag">問題 {{ index + 1 }}</span>
+          <h2>{{ item.prompt }}</h2>
+          <p class="question-support">
+            {{ item.support }}
+          </p>
+          <fieldset :disabled="busy">
+            <legend class="sr-only">
+              答えを1つ選んでください
+            </legend>
+            <label
+              v-for="option in item.options"
+              :key="option.optionId"
+              class="choice"
+              :class="{ selected: selected[item.itemId] === option.optionId }"
+            >
+              <input
+                v-model="selected[item.itemId]"
+                type="radio"
+                :name="item.itemId"
+                :value="option.optionId"
+              >
+              <span>{{ option.text }}</span>
+            </label>
+          </fieldset>
+        </div>
+        <button
+          class="primary-action"
+          type="button"
+          :disabled="busy || !answered"
+          @click="submitLevelCheck"
+        >
+          答えを提出します
+        </button>
+      </article>
+
+      <article
+        v-else
+        class="result-card"
+      >
+        <strong>{{ resultSummary.passed ? '合格ラインに到達しました' : '復習から始めましょう' }}</strong>
+        <p>今回の結果をもとに、復習予定を更新しました。</p>
+        <p class="score-line">
+          {{ resultSummary.score }} / {{ resultSummary.maxScore }}
+        </p>
+      </article>
+    </section>
+
+    <section class="student-grid">
+      <article class="action-card">
+        <p class="card-kicker">
+          音声練習
+        </p>
+        <h2>音声練習</h2>
+        <p>{{ voiceEnabled ? '保護者の同意により利用できます。' : '現在は利用できません。' }}</p>
+        <button
+          class="primary-action"
+          type="button"
+          :disabled="busy || !voiceEnabled || voiceReady"
+          @click="prepareVoicePractice"
+        >
+          {{ voiceReady ? '提出準備が完了しました' : '音声練習を提出します' }}
+        </button>
+      </article>
+
+      <article class="action-card">
+        <p class="card-kicker">
+          復習予定
+        </p>
+        <h2>復習予定</h2>
+        <p>{{ knowledgeItems.length ? `${knowledgeItems.length} 件の復習予定があります。` : 'レベルチェック後に復習予定が表示されます。' }}</p>
+        <div
+          v-if="knowledgeItems.length"
+          class="mini-mastery"
+        >
+          <strong>{{ masteryAverage }}%</strong>
+          <span>平均習熟度</span>
+        </div>
+      </article>
+
+      <article class="action-card">
+        <p class="card-kicker">
+          端末設定
+        </p>
+        <h2>端末設定</h2>
+        <p>{{ deviceReady ? '端末登録が完了しました。' : 'この端末で続きから体験できます。' }}</p>
+        <button
+          class="primary-action"
+          type="button"
+          :disabled="busy || deviceReady"
+          @click="registerDevice"
+        >
+          {{ deviceReady ? '登録済みです' : '端末を登録します' }}
+        </button>
+      </article>
+    </section>
+
+    <p
+      v-if="message"
+      class="status-note"
+      role="status"
+    >
+      {{ message }}
+    </p>
+    <p
+      v-if="error"
+      class="field-error"
+      role="alert"
+    >
+      {{ error }}
+    </p>
+  </section>
+</template>

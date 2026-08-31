@@ -56,6 +56,15 @@ describe('live API demo session', () => {
     })
     expect(invite.statusCode).toBe(201)
 
+    const consentBeforeVerification = await app.inject({
+      method: 'PUT',
+      url: `/v1/guardian-links/${body.studentId}/consents/voice-processing`,
+      headers: { authorization: `Bearer ${body.guardianToken}` },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(consentBeforeVerification.statusCode).toBe(403)
+    expect(consentBeforeVerification.json()).toEqual({ code: 'GUARDIAN_VERIFICATION_REQUIRED' })
+
     const verified = await app.inject({
       method: 'PUT',
       url: '/v1/guardian-links/verification',
@@ -64,6 +73,14 @@ describe('live API demo session', () => {
     })
     expect(verified.statusCode).toBe(200)
     expect(verified.json()).toMatchObject({ studentId: body.studentId, status: 'verified' })
+
+    const afterVerification = await app.inject({
+      method: 'GET',
+      url: '/v1/me/capabilities',
+      headers: { authorization: `Bearer ${body.studentToken}`, 'x-client-platform': 'pc' },
+    })
+    expect(afterVerification.statusCode).toBe(200)
+    expect(afterVerification.json()).toMatchObject({ canLearn: true, canPurchase: false, guardianLinkStatus: 'verified', entitlements: [] })
 
     const granted = await app.inject({
       method: 'PUT',

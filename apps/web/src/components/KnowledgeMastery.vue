@@ -22,7 +22,7 @@ import { knowledgeGroups } from '../data/knowledge'
           class="demo-notice"
           data-testid="mastery-demo-notice"
         >
-          <strong>DEMO ONLY</strong> 表示中の掌握度はサンプルです。実際の学習データではありません。
+          <strong>体験表示</strong> 表示中の掌握度はサンプルです。実際の学習データではありません。
         </p>
       </div>
       <div
@@ -107,10 +107,10 @@ import { knowledgeGroups } from '../data/knowledge'
               class="practice-button"
               type="button"
               disabled
-              :aria-label="`${point.title}の練習はDemoでは利用できません`"
+              :aria-label="`${point.title}の練習は体験表示では利用できません`"
               data-testid="practice-unavailable"
             >
-              練習する（Demoでは利用できません）
+              練習する（体験表示では利用できません）
             </button>
           </li>
         </ul>
@@ -120,7 +120,7 @@ import { knowledgeGroups } from '../data/knowledge'
 </template>
 
 <style scoped>
-/* Knowledge mastery demo: use the shared ink/paper/green/lime/orange tokens and bold, readable blocks. */
+/* Knowledge mastery view: use the shared ink/paper/green/lime/orange design variables and bold, readable blocks. */
 .mastery-panel { width: min(920px, 100%); color: var(--ink); }
 .mastery-header { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
 .mastery-header h1 { font-size: clamp(2.5rem, 7vw, 5.2rem); }

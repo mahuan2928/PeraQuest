@@ -2,14 +2,17 @@
 import { ref } from 'vue'
 import type { TrialQuestion } from '@peraquest/contracts'
 import { ApiRequestError, createStudentOnboarding, createTrialAttempt, getCapabilities, getGuardianStatus } from './api/onboarding'
+import { createDemoSession, fetchDemoCapabilities, fetchDemoStudentKnowledge, type DemoSessionResponse } from './api/demoFlow'
 import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
 import TrialLesson from './components/TrialLesson.vue'
 import TrialResult from './components/TrialResult.vue'
 import KnowledgeMastery from './components/KnowledgeMastery.vue'
-import ApiDemoFlow from './components/ApiDemoFlow.vue'
+import StudentApp from './views/StudentApp.vue'
+import GuardianApp from './views/GuardianApp.vue'
 
-type Step = 'onboarding' | 'guardian' | 'trial' | 'result' | 'adult' | 'apiDemo'
+type Step = 'onboarding' | 'guardian' | 'trial' | 'result' | 'adult' | 'demo'
+type DemoRole = 'student' | 'guardian'
 const step = ref<Step>('onboarding')
 const score = ref(0)
 const trialRedeemed = ref(false)
@@ -22,6 +25,60 @@ type TrialStatus = 'idle' | 'loading' | 'error' | 'expired' | 'complete'
 const trialStatus = ref<TrialStatus>('idle')
 const onboardingPending = ref(false)
 const onboardingError = ref('')
+const demoPending = ref(false)
+const demoError = ref('')
+const demoRole = ref<DemoRole>('student')
+const demoSession = ref<DemoSessionResponse | null>(null)
+const demoCapabilities = ref<Record<string, unknown> | null>(null)
+const demoInvitationCode = ref('')
+const demoKnowledgeItems = ref<Array<{ knowledgePointRef: string; masteryScore: number; state: string; dueAt: string | null }>>([])
+
+async function refreshDemoState() {
+  if (!demoSession.value) return
+  const capabilities = await fetchDemoCapabilities(demoSession.value.studentToken)
+  console.info('demo capabilities result', capabilities)
+  if (!capabilities.ok) throw new Error('demo capabilities failed')
+  demoCapabilities.value = capabilities.body as Record<string, unknown>
+}
+
+async function refreshDemoKnowledge() {
+  if (!demoSession.value) return
+  const knowledge = await fetchDemoStudentKnowledge(demoSession.value.studentToken)
+  console.info('demo knowledge result', knowledge)
+  if (!knowledge.ok) return
+  demoKnowledgeItems.value = ((knowledge.body as { items?: typeof demoKnowledgeItems.value }).items ?? [])
+}
+
+async function startProductDemo() {
+  demoPending.value = true
+  demoError.value = ''
+  try {
+    const session = await createDemoSession()
+    console.info('demo session started', { ok: session.ok, status: session.status })
+    if (!session.ok) throw new Error('demo session failed')
+    demoSession.value = session.body
+    demoInvitationCode.value = ''
+    demoKnowledgeItems.value = []
+    demoRole.value = 'student'
+    await refreshDemoState()
+    step.value = 'demo'
+  } catch (error) {
+    console.error(error)
+    demoError.value = '体験セッションの有効期限が切れました。もう一度開始してください。'
+  } finally {
+    demoPending.value = false
+  }
+}
+
+function resetProductDemo() {
+  demoSession.value = null
+  demoCapabilities.value = null
+  demoInvitationCode.value = ''
+  demoKnowledgeItems.value = []
+  demoRole.value = 'student'
+  demoError.value = ''
+  step.value = 'onboarding'
+}
 
 async function finishOnboarding(birthMonth: string) {
   onboardingPending.value = true
@@ -40,7 +97,7 @@ async function finishOnboarding(birthMonth: string) {
     else if (result.onboardingStatus === 'active' && capabilities.canLearn) step.value = 'adult'
     else throw new Error('INCONSISTENT_ACCESS_POLICY')
   } catch {
-    onboardingError.value = '安全設定を確認できませんでした。通信環境を確認して、もう一度お試しください。'
+    onboardingError.value = '安全設定を確認できませんでした。接続を確認して、もう一度お試しください。'
   } finally {
     onboardingPending.value = false
   }
@@ -65,7 +122,7 @@ async function startTrial() {
       trialError.value = 'このアカウントのおためしクエストは利用済みか、有効期限が切れています。'
     } else {
       trialStatus.value = 'error'
-      trialError.value = 'おためしクエストを開始できませんでした。通信環境を確認して、もう一度お試しください。'
+      trialError.value = 'おためしクエストを開始できませんでした。接続を確認して、もう一度お試しください。'
     }
   } finally {
     trialPending.value = false
@@ -89,8 +146,19 @@ function completeTrial(value: number) {
   step.value = 'result'
 }
 
-function showApiDemo() {
-  step.value = 'apiDemo'
+async function onDemoInvitationCreated(code: string) {
+  demoInvitationCode.value = code
+  demoRole.value = 'guardian'
+}
+
+async function onDemoChanged() {
+  try {
+    await refreshDemoState()
+    await refreshDemoKnowledge()
+  } catch (error) {
+    console.error(error)
+    demoError.value = '最新の状態を確認できませんでした。時間をおいてもう一度お試しください。'
+  }
 }
 </script>
 
@@ -105,15 +173,28 @@ function showApiDemo() {
         class="home-link"
         href="/"
         aria-label="LingoQuest JP ホーム"
-      ><span aria-hidden="true">LQ</span> LingoQuest JP</a><span>英検3級</span>
-      <button
-        class="demo-nav-button"
-        type="button"
-        data-testid="open-api-demo"
-        @click="showApiDemo"
+      ><span aria-hidden="true">LQ</span> LingoQuest JP</a>
+      <nav
+        v-if="step === 'demo'"
+        class="role-tabs"
+        aria-label="体験する役割"
       >
-        API Demo
-      </button>
+        <button
+          type="button"
+          :class="{ active: demoRole === 'student' }"
+          @click="demoRole = 'student'"
+        >
+          生徒として体験
+        </button>
+        <button
+          type="button"
+          :class="{ active: demoRole === 'guardian' }"
+          @click="demoRole = 'guardian'"
+        >
+          保護者として体験
+        </button>
+      </nav>
+      <span v-else>英検3級</span>
     </header>
     <div
       id="main-content"
@@ -123,9 +204,51 @@ function showApiDemo() {
       <BirthMonthForm
         v-if="step === 'onboarding'"
         :submitting="onboardingPending"
+        :demo-submitting="demoPending"
         :submit-error="onboardingError"
         @submit="finishOnboarding"
+        @start-demo="startProductDemo"
       />
+      <div
+        v-else-if="step === 'demo' && demoSession"
+        class="demo-product-shell"
+      >
+        <div class="demo-session-actions">
+          <button
+            type="button"
+            class="secondary-action"
+            @click="resetProductDemo"
+          >
+            もう一度開始します
+          </button>
+        </div>
+        <StudentApp
+          v-show="demoRole === 'student'"
+          :session="demoSession"
+          :capabilities="demoCapabilities"
+          :invitation-code="demoInvitationCode"
+          :knowledge-items="demoKnowledgeItems"
+          @refresh="onDemoChanged"
+          @invitation-created="onDemoInvitationCreated"
+          @knowledge-updated="demoKnowledgeItems = $event"
+        />
+        <GuardianApp
+          v-show="demoRole === 'guardian'"
+          :session="demoSession"
+          :invitation-code="demoInvitationCode"
+          :capabilities="demoCapabilities"
+          :knowledge-items="demoKnowledgeItems"
+          @verified="onDemoChanged"
+          @consent-changed="onDemoChanged"
+        />
+        <p
+          v-if="demoError"
+          class="field-error"
+          role="alert"
+        >
+          {{ demoError }}
+        </p>
+      </div>
       <GuardianWait
         v-else-if="step === 'guardian'"
         :trial-redeemed="trialRedeemed"
@@ -147,7 +270,6 @@ function showApiDemo() {
         :score="score"
         :total="trialQuestionCount"
       />
-      <ApiDemoFlow v-else-if="step === 'apiDemo'" />
       <KnowledgeMastery v-else />
     </div>
     <footer><span>© LingoQuest JP</span><span>安全とプライバシーを最優先に設計しています</span></footer>

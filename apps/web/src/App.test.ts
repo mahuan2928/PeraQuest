@@ -7,7 +7,6 @@ import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
 import KnowledgeMastery from './components/KnowledgeMastery.vue'
 import TrialLesson from './components/TrialLesson.vue'
-import ApiDemoFlow from './components/ApiDemoFlow.vue'
 
 const firstQuestion: TrialQuestion = {
   id: 'q1',
@@ -226,33 +225,27 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(false)
   })
 
-  it('opens the API demo flow from the header', async () => {
+  it('starts the product demo from the welcome page and switches roles', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        studentId: 'student-1',
+        studentToken: 'student-token',
+        guardianToken: 'guardian-token',
+        expiresAt: '2026-08-31T12:10:00.000Z',
+      }, 201))
+      .mockResolvedValueOnce(jsonResponse({ canLearn: false, canUploadVoice: false, guardianLinkStatus: 'pending', voiceConsentStatus: 'missing', entitlements: [] })))
     const wrapper = mount(App)
-    await wrapper.get('[data-testid="open-api-demo"]').trigger('click')
 
-    expect(wrapper.get('#api-demo-title').text()).toContain('体验一次真实的学生学习旅程')
-    expect(wrapper.text()).toContain('Student App')
-    expect(wrapper.text()).toContain('Guardian App')
-    expect(wrapper.text()).toContain('自动体验完整 Demo')
-    expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(false)
-  })
+    await wrapper.get('[data-testid="start-product-demo"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('今日の学習を始めます'))
 
-  it('renders completed backend checkpoints in the API demo flow', async () => {
-    const wrapper = mount(ApiDemoFlow)
-    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('静态演示模式')
+    expect(wrapper.text()).toContain('生徒として体験')
+    expect(wrapper.text()).toContain('保護者として体験')
+    expect(wrapper.text()).not.toContain('HTTP')
+    expect(wrapper.text()).not.toContain('token')
 
-    await wrapper.get('[data-testid="run-api-demo-flow"]').trigger('click')
-
-    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('今日体验完成')
-    expect(wrapper.text()).toContain('paymentStatus: paid')
-    expect(wrapper.text()).toContain('entitlementStatus: active')
-    expect(wrapper.text()).toContain('diagnosticScore: 2/3')
-    expect(wrapper.text()).toContain('reviewQueue: updated')
-    expect(wrapper.text()).toContain('voiceUploadMode: signed_upload')
-    expect(wrapper.text()).toContain('deletionJob: pending')
-    expect(wrapper.text()).toContain('120 XP')
-    expect(wrapper.get('[data-testid="api-demo-checkpoints"]').text()).toContain('POST /v1/me/voice-upload-ticket')
-    expect(wrapper.get('[data-testid="api-demo-checkpoints"]').text()).toContain('MOCK /guardian/reports/daily-summary')
+    await wrapper.get('nav button:nth-child(2)').trigger('click')
+    expect(wrapper.text()).toContain('お子さまの学習を見守ります')
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {
@@ -263,7 +256,7 @@ describe('minor onboarding vertical slice', () => {
 
     expect(buttons.length).toBeGreaterThan(0)
     expect(buttons.every((button) => button.attributes('disabled') !== undefined)).toBe(true)
-    expect(wrapper.text()).toContain('Demoでは利用できません')
+    expect(wrapper.text()).toContain('体験表示では利用できません')
 
     const firstButton = buttons.at(0)
     expect(firstButton).toBeDefined()

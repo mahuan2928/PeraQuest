@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-defineProps<{ submitting?: boolean; submitError?: string }>()
-const emit = defineEmits<{ submit: [birthMonth: string] }>()
+defineProps<{ submitting?: boolean; submitError?: string; demoSubmitting?: boolean }>()
+const emit = defineEmits<{ submit: [birthMonth: string], startDemo: [] }>()
 const birthMonth = ref('')
 const attempted = ref(false)
 const maxMonth = new Date().toISOString().slice(0, 7)
@@ -26,7 +26,7 @@ function submit() {
       Q
     </div>
     <p class="eyebrow">
-      EIKEN GRADE 3 · FIRST QUEST
+      英検3級・はじめてのクエスト
     </p>
     <h1 id="welcome-title">
       今日の3分が、<br><span>自信に変わる。</span>
@@ -34,6 +34,15 @@ function submit() {
     <p class="lead">
       英検3級に向けて、あなたに合う冒険を準備します。
     </p>
+    <button
+      class="primary-action demo-start-button"
+      type="button"
+      data-testid="start-product-demo"
+      :disabled="demoSubmitting"
+      @click="emit('startDemo')"
+    >
+      {{ demoSubmitting ? 'デモを準備しています…' : 'デモを体験する' }}
+    </button>
 
     <form
       class="birth-form"
@@ -73,7 +82,7 @@ function submit() {
         type="submit"
         :disabled="submitting"
       >
-        {{ submitting ? '安全設定を確認中…' : '冒険をはじめる' }} <span aria-hidden="true">→</span>
+        {{ submitting ? '安全設定を確認中…' : '自分で登録して体験する' }} <span aria-hidden="true">→</span>
       </button>
       <p
         v-if="submitError"

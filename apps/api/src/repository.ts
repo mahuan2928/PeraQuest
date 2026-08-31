@@ -105,6 +105,8 @@ export interface VerifyGuardianInviteInput {
 
 export interface StudentRepository {
   create(student: StudentRecord): Promise<void>
+  createDemoGuardian?(guardianId: string): Promise<void>
+  createDemoAuthIdentity?(userId: string, provider: AuthProvider, providerSubject: string): Promise<void>
   findById(id: string): Promise<StudentRecord | null>
   createGuardianInvite(input: CreateGuardianInviteInput): Promise<GuardianInvitationResponse | null>
   verifyGuardianInvite(input: VerifyGuardianInviteInput): Promise<GuardianLinkVerificationResponse | null>
@@ -319,6 +321,22 @@ export class PostgresStudentRepository implements StudentRepository {
     } finally {
       client.release()
     }
+  }
+
+  async createDemoGuardian(guardianId: string): Promise<void> {
+    await this.pool.query(`
+      INSERT INTO users (id, role, is_minor)
+      VALUES ($1, 'guardian', false)
+      ON CONFLICT (id) DO NOTHING
+    `, [guardianId])
+  }
+
+  async createDemoAuthIdentity(userId: string, provider: AuthProvider, providerSubject: string): Promise<void> {
+    await this.pool.query(`
+      INSERT INTO auth_identities (id, user_id, provider, provider_subject)
+      VALUES (gen_random_uuid(), $1, $2, $3)
+      ON CONFLICT (provider, provider_subject) DO NOTHING
+    `, [userId, provider, providerSubject])
   }
 
   async findById(id: string): Promise<StudentRecord | null> {
@@ -844,6 +862,16 @@ export class MemoryStudentRepository implements StudentRepository {
 
   async create(student: StudentRecord): Promise<void> {
     this.students.set(student.id, student)
+  }
+
+  async createDemoGuardian(guardianId: string): Promise<void> {
+    this.students.set(guardianId, { id: guardianId, birthMonth: '1970-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+  }
+
+  async createDemoAuthIdentity(userId: string, provider: AuthProvider, providerSubject: string): Promise<void> {
+    void userId
+    void provider
+    void providerSubject
   }
 
   async findById(id: string): Promise<StudentRecord | null> {

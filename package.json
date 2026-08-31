@@ -13,6 +13,7 @@
     "build": "npm run build --workspaces --if-present",
     "dev:web": "npm run dev -w @peraquest/web",
     "dev:api": "npm run dev -w @peraquest/api",
+    "demo:full": "node scripts/demo-full.mjs",
     "lint": "eslint .",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",

@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "demo:api": "tsx src/demo.ts",
+    "seed:demo": "tsx src/seed-demo.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "migrate": "tsx src/migrate.ts"

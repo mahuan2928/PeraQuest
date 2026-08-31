@@ -1,38 +1,52 @@
-# API Demo Script
+# Product Demo
 
-This demo runs the backend in-process with an in-memory repository and fake Bearer identities. It does not require PostgreSQL, object storage, a voice vendor, payment providers, or push providers.
+The web demo is a product-facing experience for a short-lived student and guardian demo session. It requires the API to run with `DEMO_API_ENABLED=true` and PostgreSQL, because guardian verification, voice consent, level check attempts, answers, and student knowledge projections are written to the database.
 
-## Run
+## One Command
+
+```bash
+npm run demo:full
+```
+
+The command reuses `DATABASE_URL` or `TEST_DATABASE_URL` when present. If neither is set, it starts a local Docker PostgreSQL container, runs migrations, seeds the published demo stage exam, then starts the API and web app in live mode.
+
+## Seed Data
+
+```bash
+npm run migrate -w @peraquest/api
+npm run seed:demo -w @peraquest/api
+```
+
+`seed:demo` inserts one published `stage_exams` record, one published `stage_exam_versions` record, and six EIKEN Grade 3 questions with options and answer keys. It is idempotent and can be executed repeatedly.
+
+The seeded stage exam id is:
+
+```text
+11111111-1111-4111-8111-111111111111
+```
+
+## Backend CLI Smoke Test
 
 ```bash
 npm run demo:api -w @peraquest/api
 ```
 
-For a lightweight front-end presentation, open the web app and choose **API Demo** in the header. By default the page visualizes the same backend checkpoints without calling PostgreSQL, object storage, voice vendors, payment providers, or push providers.
+This script exercises the guardian and voice consent path in-process. The full browser experience should use `npm run demo:full`.
 
 ## Flow Covered
 
-1. Minor student reads capabilities before guardian verification.
-2. Minor student creates a guardian invitation.
-3. Guardian verifies the invitation with Bearer identity.
-4. Guardian grants voice-processing consent for the minor.
-5. Minor student reads capabilities and sees `signed_upload`.
-6. Minor student requests a constrained S3-compatible voice upload ticket.
-7. Minor student registers current device metadata.
-8. Minor student disables push for the current device.
-9. Guardian withdraws voice-processing consent.
-10. Minor student reads capabilities and sees voice upload disabled.
-11. Demo prints the queued voice data deletion job scaffold.
+1. A demo student and guardian session is created.
+2. The student starts from the product home page and creates a guardian invitation.
+3. The guardian enters the invitation code and completes verification.
+4. The student view refreshes capabilities and unlocks the level check.
+5. The student starts a seeded stage exam attempt.
+6. The student submits answers and receives a persisted result.
+7. Student knowledge projections are refreshed from `student_knowledge`.
+8. The guardian view shows the child's learning status using the same mastery-card language as the student product UI.
+9. The guardian grants or withdraws voice-processing consent.
+10. The student view refreshes capabilities and voice practice availability changes.
 
-## Front-End Demo View
-
-The web demo starts in static walkthrough mode. It is useful for product reviews because it shows the ready API checkpoints, the expected state transitions, and the integrations that remain intentionally out of scope.
-
-```bash
-npm run dev -w @peraquest/web
-```
-
-To run the front end against live demo API calls, start the API with demo sessions explicitly enabled:
+## Manual Live Run
 
 ```bash
 DEMO_API_ENABLED=true \
@@ -45,22 +59,26 @@ VOICE_UPLOAD_REGION=ap-northeast-1 \
 VOICE_UPLOAD_ENDPOINT=https://storage.demo.test \
 VOICE_UPLOAD_ACCESS_KEY_ID=DEMO_ACCESS_KEY \
 VOICE_UPLOAD_SECRET_ACCESS_KEY=demo-secret-only-used-for-local-signing \
+npm run migrate -w @peraquest/api && \
+npm run seed:demo -w @peraquest/api && \
 npm run dev -w @peraquest/api
 ```
 
-Then start the web app in live mode:
+Then start the web app:
 
 ```bash
-VITE_API_DEMO_MODE=live npm run dev -w @peraquest/web
+VITE_API_BASE_URL=http://localhost:3000 \
+VITE_DEMO_STAGE_EXAM_ID=11111111-1111-4111-8111-111111111111 \
+npm run dev -w @peraquest/web
 ```
 
-Live mode calls `POST /v1/demo/session` first, receives short-lived demo Bearer tokens, and then calls the same guardian, consent, voice upload ticket, and device endpoints used by the backend demo. The browser never receives signing secrets, and sensitive response fields such as upload policy/signature and invite code are redacted in the UI output.
+The browser receives a short-lived demo session from the API. The product UI must not display bearer credentials, expiry timestamps, raw response bodies, endpoints, or status codes. Diagnostic details belong in DevTools console only.
 
 ## Intentional Limits
 
 - No real object upload is performed.
 - No AI voice vendor is called.
-- No payment webhook is simulated.
+- Payment, game rewards, and guardian reports are not implemented yet; the product UI should show a quiet upcoming state instead of simulated orders.
 - No APNs, FCM, or web-push token is accepted or sent.
-- The script uses deterministic fake Bearer subjects for demo only.
-- `POST /v1/demo/session` is disabled by default and forced off in production.
+- The script uses deterministic demo identities only for local demo sessions.
+- Demo endpoints are disabled by default and forced off in production.

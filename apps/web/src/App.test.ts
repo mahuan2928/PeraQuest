@@ -7,6 +7,7 @@ import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
 import KnowledgeMastery from './components/KnowledgeMastery.vue'
 import TrialLesson from './components/TrialLesson.vue'
+import ApiDemoFlow from './components/ApiDemoFlow.vue'
 
 const firstQuestion: TrialQuestion = {
   id: 'q1',
@@ -223,6 +224,27 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('全体の掌握度')
     expect(wrapper.get('[data-testid="mastery-demo-notice"]').text()).toContain('実際の学習データではありません')
     expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(false)
+  })
+
+  it('opens the API demo flow from the header', async () => {
+    const wrapper = mount(App)
+    await wrapper.get('[data-testid="open-api-demo"]').trigger('click')
+
+    expect(wrapper.get('#api-demo-title').text()).toContain('保護者確認から音声アップロードまで')
+    expect(wrapper.text()).toContain('Run Demo Flow')
+    expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(false)
+  })
+
+  it('renders completed backend checkpoints in the API demo flow', async () => {
+    const wrapper = mount(ApiDemoFlow)
+    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('Ready to replay')
+
+    await wrapper.get('[data-testid="run-api-demo-flow"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('Demo flow completed')
+    expect(wrapper.text()).toContain('voiceUploadMode: signed_upload')
+    expect(wrapper.text()).toContain('deletionJob: pending')
+    expect(wrapper.get('[data-testid="api-demo-checkpoints"]').text()).toContain('POST /v1/me/voice-upload-ticket')
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {

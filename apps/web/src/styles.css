@@ -24,6 +24,8 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .home-link { display: flex; align-items: center; min-width: 44px; min-height: 44px; gap: 10px; color: var(--ink); font-weight: 900; text-decoration: none; letter-spacing: -.03em; }
 .brand-bar a span { display: grid; place-items: center; width: 36px; height: 36px; border: 2px solid var(--ink); border-radius: 50%; color: var(--paper); background: var(--green); font-size: .72rem; letter-spacing: 0; }
 .brand-bar > span { padding: 5px 10px; border: 1px solid var(--ink); border-radius: 999px; font-size: .75rem; font-weight: 800; }
+.demo-nav-button { min-height: 44px; padding: 8px 12px; border: 2px solid var(--ink); color: var(--ink); background: var(--lime); font-size: .75rem; font-weight: 900; box-shadow: 3px 3px 0 var(--ink); }
+.demo-nav-button:hover { transform: translate(1px, 1px); box-shadow: 2px 2px 0 var(--ink); }
 .stage { display: grid; align-items: center; width: min(1160px, calc(100% - 32px)); margin: 0 auto; padding: clamp(36px, 7vw, 96px) 0; }
 .onboarding-panel, .guardian-panel, .result-panel, .adult-panel { width: min(680px, 100%); }
 .quest-mark { float: right; display: grid; place-items: center; width: clamp(90px, 17vw, 150px); aspect-ratio: 1; margin: -20px 0 20px 30px; border: 3px solid var(--ink); border-radius: 28% 72% 68% 32% / 34% 32% 68% 66%; color: var(--ink); background: var(--lime); font-size: clamp(3rem, 8vw, 6rem); font-weight: 1000; transform: rotate(7deg); box-shadow: 12px 12px 0 var(--ink); }
@@ -90,6 +92,7 @@ fieldset { display: grid; gap: 12px; margin: 0; padding: 0; border: 0; }
 footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px clamp(20px, 5vw, 72px) calc(20px + var(--safe-bottom)); border-top: 1px solid var(--line); color: #66716d; font-size: .72rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 @media (max-width: 680px) {
+  .brand-bar { flex-wrap: wrap; gap: 10px 14px; }
   .stage { width: min(100% - 24px, 560px); padding: 32px 0 56px; }
   .quest-mark { width: 84px; box-shadow: 7px 7px 0 var(--ink); }
   .trial-card { grid-template-columns: 1fr; }

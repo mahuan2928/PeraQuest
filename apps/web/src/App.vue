@@ -7,8 +7,9 @@ import GuardianWait from './components/GuardianWait.vue'
 import TrialLesson from './components/TrialLesson.vue'
 import TrialResult from './components/TrialResult.vue'
 import KnowledgeMastery from './components/KnowledgeMastery.vue'
+import ApiDemoFlow from './components/ApiDemoFlow.vue'
 
-type Step = 'onboarding' | 'guardian' | 'trial' | 'result' | 'adult'
+type Step = 'onboarding' | 'guardian' | 'trial' | 'result' | 'adult' | 'apiDemo'
 const step = ref<Step>('onboarding')
 const score = ref(0)
 const trialRedeemed = ref(false)
@@ -87,6 +88,10 @@ function completeTrial(value: number) {
   trialStatus.value = 'complete'
   step.value = 'result'
 }
+
+function showApiDemo() {
+  step.value = 'apiDemo'
+}
 </script>
 
 <template>
@@ -101,6 +106,14 @@ function completeTrial(value: number) {
         href="/"
         aria-label="LingoQuest JP ホーム"
       ><span aria-hidden="true">LQ</span> LingoQuest JP</a><span>英検3級</span>
+      <button
+        class="demo-nav-button"
+        type="button"
+        data-testid="open-api-demo"
+        @click="showApiDemo"
+      >
+        API Demo
+      </button>
     </header>
     <div
       id="main-content"
@@ -134,6 +147,7 @@ function completeTrial(value: number) {
         :score="score"
         :total="trialQuestionCount"
       />
+      <ApiDemoFlow v-else-if="step === 'apiDemo'" />
       <KnowledgeMastery v-else />
     </div>
     <footer><span>© LingoQuest JP</span><span>安全とプライバシーを最優先に設計しています</span></footer>

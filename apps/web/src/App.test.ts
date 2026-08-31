@@ -230,7 +230,7 @@ describe('minor onboarding vertical slice', () => {
     const wrapper = mount(App)
     await wrapper.get('[data-testid="open-api-demo"]').trigger('click')
 
-    expect(wrapper.get('#api-demo-title').text()).toContain('学生、家长、支付、学习到游戏化复习的全流程 Demo')
+    expect(wrapper.get('#api-demo-title').text()).toContain('体验一次真实的学生学习旅程')
     expect(wrapper.text()).toContain('Student App')
     expect(wrapper.text()).toContain('Guardian App')
     expect(wrapper.text()).toContain('自动体验完整 Demo')
@@ -243,14 +243,14 @@ describe('minor onboarding vertical slice', () => {
 
     await wrapper.get('[data-testid="run-api-demo-flow"]').trigger('click')
 
-    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('全流程页面 Demo 已完成')
+    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('今日体验完成')
     expect(wrapper.text()).toContain('paymentStatus: paid')
     expect(wrapper.text()).toContain('entitlementStatus: active')
     expect(wrapper.text()).toContain('diagnosticScore: 2/3')
     expect(wrapper.text()).toContain('reviewQueue: updated')
     expect(wrapper.text()).toContain('voiceUploadMode: signed_upload')
     expect(wrapper.text()).toContain('deletionJob: pending')
-    expect(wrapper.get('[data-testid="api-demo-product-state"]').text()).toContain('120 XP')
+    expect(wrapper.text()).toContain('120 XP')
     expect(wrapper.get('[data-testid="api-demo-checkpoints"]').text()).toContain('POST /v1/me/voice-upload-ticket')
     expect(wrapper.get('[data-testid="api-demo-checkpoints"]').text()).toContain('MOCK /guardian/reports/daily-summary')
   })

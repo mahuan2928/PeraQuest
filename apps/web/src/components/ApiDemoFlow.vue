@@ -194,7 +194,6 @@ const checkpointOutput = computed(() => checkpoints.value.length > 0
 const maskedInviteCode = computed(() => runtime.value.invitation?.inviteCode ? '•••• ••••' : '未生成')
 const sessionExpiry = computed(() => runtime.value.session?.expiresAt ?? '未创建')
 const selectedPlan = computed(() => mockOrder.value ? `${mockOrder.value.plan} / ${mockOrder.value.amount}` : '未选择')
-const progressPercent = computed(() => `${Math.round((completedCount.value / demoSteps.length) * 100)}%`)
 const completedStepIds = computed(() => new Set(demoSteps.slice(0, completedCount.value).map((step) => step.id)))
 const isStepComplete = (stepId: string) => completedStepIds.value.has(stepId)
 const studentVoiceStatus = computed(() => {
@@ -422,55 +421,16 @@ function resetDemo() {
     <header class="api-demo-hero">
       <div>
         <p class="eyebrow">
-          LIVE PAGE DEMO
+          PERAQUEST DEMO
         </p>
         <h1 id="api-demo-title">
-          学生、家长、支付、学习到游戏化复习的全流程 Demo
+          体验一次真实的学生学习旅程
         </h1>
         <p class="api-demo-lead">
-          用可见页面完整走一遍业务流程：学生选套餐、邀请家长、mock 支付、权益开通、开始测试、学习、语音练习、复习、游戏奖励和家长报告。
+          从学生打开 App 开始，到家长确认、mock 支付、开始测试、学习、语音练习、复习、获得奖励和家长查看日报。
         </p>
       </div>
-      <div
-        class="api-demo-scorecard"
-        aria-label="Demo progress"
-      >
-        <strong>{{ completedCount }}/{{ demoSteps.length }}</strong>
-        <span>closed-loop steps</span>
-      </div>
     </header>
-
-    <div class="api-demo-progress" aria-hidden="true">
-      <span :style="{ width: progressPercent }" />
-    </div>
-
-    <div class="api-demo-personas">
-      <article class="api-demo-persona">
-        <span>学生</span>
-        <strong>{{ studentVoiceStatus }}</strong>
-        <small>Session expires: {{ sessionExpiry }}</small>
-      </article>
-      <article class="api-demo-persona api-demo-persona--guardian">
-        <span>监护人</span>
-        <strong>{{ guardianStatus }}</strong>
-        <small>Invite code: {{ maskedInviteCode }}</small>
-      </article>
-      <article class="api-demo-persona api-demo-persona--payment">
-        <span>支付 / 权益</span>
-        <strong>{{ paymentStatus }}</strong>
-        <small>Plan: {{ selectedPlan }}</small>
-      </article>
-      <article class="api-demo-persona api-demo-persona--learning">
-        <span>测试 / 学习 / 复习</span>
-        <strong>{{ learningStatus }}</strong>
-        <small>Score {{ learningSummary.score }} · Mastery {{ learningSummary.mastery }}</small>
-      </article>
-      <article class="api-demo-persona api-demo-persona--game">
-        <span>游戏化</span>
-        <strong>{{ gameStatus }}</strong>
-        <small>Coins {{ gameSummary.coins }} · Streak {{ gameSummary.streak }} day</small>
-      </article>
-    </div>
 
     <section
       v-if="activeStep"
@@ -483,7 +443,13 @@ function resetDemo() {
           <strong>PeraQuest</strong>
         </header>
 
-        <div v-if="activeStep.id === 'student-entry'" class="demo-screen">
+        <div v-if="hasRun" class="demo-screen demo-reward">
+          <p class="demo-kicker">Today Complete</p>
+          <h2>今日の冒険クリア</h2>
+          <p>診断、学習、音声練習、復習まで完了しました。次回は明日の復習キューから始まります。</p>
+          <strong>{{ gameSummary.xp }} XP · {{ gameSummary.coins }} coins</strong>
+        </div>
+        <div v-else-if="activeStep.id === 'student-entry'" class="demo-screen">
           <p class="demo-kicker">Welcome</p>
           <h2>今日の冒険をはじめよう</h2>
           <p>英検3級に向けた学習体験を開始します。未成年アカウントなので、購入と音声機能は家長確認後に開きます。</p>
@@ -543,7 +509,13 @@ function resetDemo() {
           <span>Guardian App</span>
           <strong>Parent View</strong>
         </header>
-        <div v-if="['verification', 'consent-granted', 'payment-approved'].includes(activeStep.id)" class="demo-screen">
+        <div v-if="hasRun" class="demo-screen">
+          <p class="demo-kicker">Daily Report</p>
+          <h2>今日の学習レポート</h2>
+          <p>診断 {{ learningSummary.score }}、掌握度 {{ learningSummary.mastery }}、報酬 {{ gameSummary.xp }} XP。音声同意は撤回済みです。</p>
+          <small>明日は past tense を復習しましょう。</small>
+        </div>
+        <div v-else-if="['verification', 'consent-granted', 'payment-approved'].includes(activeStep.id)" class="demo-screen">
           <p class="demo-kicker">Approval</p>
           <h2>{{ activeStep.title }}</h2>
           <p>{{ activeStep.story }}</p>
@@ -585,15 +557,6 @@ function resetDemo() {
         {{ running ? '处理中...' : hasRun ? '今日体验已完成' : activeStep?.cta }}
       </button>
       <button
-        class="api-demo-secondary"
-        type="button"
-        :disabled="running || hasRun"
-        data-testid="run-api-demo-flow"
-        @click="runDemo"
-      >
-        自动体验完整 Demo
-      </button>
-      <button
         class="api-demo-reset"
         type="button"
         :disabled="running || completedCount === 0"
@@ -610,7 +573,7 @@ function resetDemo() {
       aria-live="polite"
       data-testid="api-demo-status"
     >
-      {{ running ? '正在推进当前业务步骤...' : hasRun ? '全流程页面 Demo 已完成：选课、家长、mock 支付、权益、测试、学习、复习、游戏、报告、撤回都已走通。' : liveMode ? 'Live mode enabled. 现有后端步骤会调用真实 demo API，支付、学习、复习和游戏步骤为前端 mock。' : '静态演示模式：无需后端即可走完整页面闭环。' }}
+      {{ running ? '正在加载当前页面...' : hasRun ? '今日体验完成：学生和家长都看到了各自真实会看到的页面。' : liveMode ? 'Live mode enabled. 真实后端能力会在对应页面被调用，学习与支付仍为 mock。' : '静态演示模式：可以像普通用户一样体验完整产品流程。' }}
     </p>
     <p
       v-if="error"
@@ -621,35 +584,17 @@ function resetDemo() {
       {{ error }}
     </p>
 
-    <section
-      class="api-demo-product"
-      aria-label="Visible product demo state"
-      data-testid="api-demo-product-state"
-    >
-      <article>
-        <span>诊断测试</span>
-        <strong>{{ learningSummary.score }}</strong>
-        <p>3 道 mock placement 题定位起点：EIKEN Grade 3。</p>
-      </article>
-      <article>
-        <span>学习任务</span>
-        <strong>{{ learningSummary.mastery }}</strong>
-        <p>语法讲解、例题、即时反馈组成今日 lesson session。</p>
-      </article>
-      <article>
-        <span>复习队列</span>
-        <strong>{{ learningSummary.review }}</strong>
-        <p>错题知识点进入 spaced review，生成明日复习计划。</p>
-      </article>
-      <article>
-        <span>游戏奖励</span>
-        <strong>{{ gameSummary.xp }} XP</strong>
-        <p>金币 {{ gameSummary.coins }}，连胜 {{ gameSummary.streak }} 天，地图节点解锁。</p>
-      </article>
-    </section>
-
     <details class="api-demo-events">
-      <summary>开发者事件流</summary>
+      <summary>开发者工具：事件流和自动演示</summary>
+      <button
+        class="api-demo-secondary"
+        type="button"
+        :disabled="running || hasRun"
+        data-testid="run-api-demo-flow"
+        @click="runDemo"
+      >
+        自动体验完整 Demo
+      </button>
       <ol class="api-demo-timeline">
         <li
           v-for="(step, index) in demoSteps"

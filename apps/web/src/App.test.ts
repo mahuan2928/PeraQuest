@@ -230,21 +230,27 @@ describe('minor onboarding vertical slice', () => {
     const wrapper = mount(App)
     await wrapper.get('[data-testid="open-api-demo"]').trigger('click')
 
-    expect(wrapper.get('#api-demo-title').text()).toContain('保護者確認から音声アップロードまで')
-    expect(wrapper.text()).toContain('Run Demo Flow')
+    expect(wrapper.get('#api-demo-title').text()).toContain('学生、家长、支付、学习到游戏化复习的全流程 Demo')
+    expect(wrapper.text()).toContain('一键跑完整闭环')
     expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(false)
   })
 
   it('renders completed backend checkpoints in the API demo flow', async () => {
     const wrapper = mount(ApiDemoFlow)
-    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('Ready to replay')
+    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('静态演示模式')
 
     await wrapper.get('[data-testid="run-api-demo-flow"]').trigger('click')
 
-    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('Demo flow completed')
+    expect(wrapper.get('[data-testid="api-demo-status"]').text()).toContain('全流程页面 Demo 已完成')
+    expect(wrapper.text()).toContain('paymentStatus: paid')
+    expect(wrapper.text()).toContain('entitlementStatus: active')
+    expect(wrapper.text()).toContain('diagnosticScore: 2/3')
+    expect(wrapper.text()).toContain('reviewQueue: updated')
     expect(wrapper.text()).toContain('voiceUploadMode: signed_upload')
     expect(wrapper.text()).toContain('deletionJob: pending')
+    expect(wrapper.get('[data-testid="api-demo-product-state"]').text()).toContain('120 XP')
     expect(wrapper.get('[data-testid="api-demo-checkpoints"]').text()).toContain('POST /v1/me/voice-upload-ticket')
+    expect(wrapper.get('[data-testid="api-demo-checkpoints"]').text()).toContain('MOCK /guardian/reports/daily-summary')
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {

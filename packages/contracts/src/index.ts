@@ -62,6 +62,19 @@ export interface GuardianLinkResponse {
   verifiedAt: string | null
 }
 
+export interface GuardianInvitationResponse {
+  inviteCode: string
+  expiresAt: string
+}
+
+export interface GuardianLinkVerificationRequest {
+  inviteCode: string
+}
+
+export interface GuardianLinkVerificationResponse extends GuardianLinkResponse {
+  studentId: string
+}
+
 export interface ConsentResponse {
   type: 'voice_processing'
   status: ConsentStatus

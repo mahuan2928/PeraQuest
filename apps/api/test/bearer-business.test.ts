@@ -45,6 +45,7 @@ const identities = new Map([
   ['email_magic_link:guardian-sub', GUARDIAN],
 ])
 const registeredDeviceKeys = new Set<string>()
+const guardianInviteHashes = new Map<string, string>()
 
 const fakePool = {
   query: async (sql: string, parameters: unknown[] = []) => {
@@ -59,6 +60,21 @@ const fakePool = {
     }
     if (sql.includes('FROM subscription_entitlements')) return { rows: [], rowCount: 0 }
     if (sql.includes('INSERT INTO consent_records')) return { rows: [], rowCount: 1 }
+    if (sql.includes('UPDATE guardian_links') && sql.includes('invitation_created_at')) {
+      const student = users.get(String(parameters[0]))
+      if (!student || student.status !== 'pending') return { rows: [], rowCount: 0 }
+      guardianInviteHashes.set(String(parameters[1]), student.id)
+      return { rows: [{ invitation_expires_at: parameters[2] }], rowCount: 1 }
+    }
+    if (sql.includes('UPDATE guardian_links') && sql.includes("status = 'verified'")) {
+      const studentId = guardianInviteHashes.get(String(parameters[1]))
+      const student = studentId ? users.get(studentId) : undefined
+      if (!student || student.status !== 'pending') return { rows: [], rowCount: 0 }
+      student.status = 'verified'
+      student.guardian_id = String(parameters[0])
+      guardianInviteHashes.delete(String(parameters[1]))
+      return { rows: [{ student_id: student.id, verified_at: parameters[2] }], rowCount: 1 }
+    }
     if (sql.includes('INSERT INTO user_devices')) {
       registeredDeviceKeys.add(`${String(parameters[0])}:${String(parameters[2])}`)
       return { rows: [{ platform: parameters[1], push_enabled: false, last_seen_at: parameters[5] }], rowCount: 1 }
@@ -153,6 +169,49 @@ describe('real Bearer business path', () => {
     })
     expect(response.statusCode).toBe(403)
     expect(response.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
+  })
+
+  it('lets a minor Bearer student create an invite and a Bearer guardian verify it', async () => {
+    const invitation = await app.inject({
+      method: 'POST',
+      url: '/v1/me/guardian-link/invitations',
+      headers: { authorization: `Bearer ${await tokenFor('student-a-sub')}` },
+    })
+    expect(invitation.statusCode).toBe(201)
+    expect(invitation.json()).toEqual({ inviteCode: expect.any(String), expiresAt: expect.any(String) })
+
+    const verified = await app.inject({
+      method: 'PUT',
+      url: '/v1/guardian-links/verification',
+      headers: { authorization: `Bearer ${await tokenFor('guardian-sub')}` },
+      payload: { inviteCode: invitation.json().inviteCode },
+    })
+    expect(verified.statusCode).toBe(200)
+    expect(verified.json()).toEqual({
+      studentId: STUDENT_A,
+      status: 'verified',
+      purchaseAllowed: true,
+      verifiedAt: expect.any(String),
+    })
+  })
+
+  it('rejects legacy invite creation and non-guardian invite verification', async () => {
+    const legacy = await app.inject({
+      method: 'POST',
+      url: '/v1/me/guardian-link/invitations',
+      headers: { 'x-student-id': STUDENT_B },
+    })
+    expect(legacy.statusCode).toBe(401)
+    expect(legacy.json()).toEqual({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
+
+    const studentVerifier = await app.inject({
+      method: 'PUT',
+      url: '/v1/guardian-links/verification',
+      headers: { authorization: `Bearer ${await tokenFor('student-b-sub')}` },
+      payload: { inviteCode: 'missingInviteCode_123' },
+    })
+    expect(studentVerifier.statusCode).toBe(403)
+    expect(studentVerifier.json()).toEqual({ code: 'AUTH_FORBIDDEN' })
   })
 
   it('allows a Bearer student to register current device metadata', async () => {

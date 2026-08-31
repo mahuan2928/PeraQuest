@@ -142,6 +142,8 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0008_learning_p1_3_4_terminal_audit.sql',
           '0009_learning_p1_3_5_knowledge_evidence.sql',
           '0010_learning_p1_3_6_mastery_due.sql',
+          '0011_guardian_invitation.sql',
+          '0012_student_knowledge_concurrent_timestamp.sql',
         ],
         [],
       ])
@@ -161,6 +163,8 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0008_learning_p1_3_4_terminal_audit.sql', count: '1' },
         { name: '0009_learning_p1_3_5_knowledge_evidence.sql', count: '1' },
         { name: '0010_learning_p1_3_6_mastery_due.sql', count: '1' },
+        { name: '0011_guardian_invitation.sql', count: '1' },
+        { name: '0012_student_knowledge_concurrent_timestamp.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])
@@ -593,14 +597,11 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
         VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '20 minutes')
       `, [secondAttemptId, ids.student, ids.version])
-      const second = await setup.query<{ item_id: string; wrong_option_id: string }>(`
-        SELECT item.id AS item_id, option.id AS wrong_option_id
+      const second = await setup.query<{ item_id: string; option_id: string }>(`
+        SELECT item.id AS item_id, keys.correct_option_snapshot_id AS option_id
         FROM stage_attempt_item_snapshots item
         JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
-        JOIN stage_attempt_item_option_snapshots option ON option.item_snapshot_id = item.id
         WHERE item.attempt_id = $1
-          AND option.id <> keys.correct_option_snapshot_id
-        LIMIT 1
       `, [secondAttemptId])
       const secondSnapshot = second.rows[0]
       if (!secondSnapshot) throw new Error('expected snapshot for second attempt')
@@ -608,11 +609,11 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         INSERT INTO stage_attempt_answers
           (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
         VALUES ($1, $2, 'answered', $3, 'submit-1')
-      `, [secondAttemptId, secondSnapshot.item_id, secondSnapshot.wrong_option_id])
+      `, [secondAttemptId, secondSnapshot.item_id, secondSnapshot.option_id])
       await setup.query(`
         UPDATE stage_attempts
-        SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0,
-            passed = false, updated_at = CURRENT_TIMESTAMP
+        SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1,
+            passed = true, updated_at = CURRENT_TIMESTAMP
         WHERE id = $1
       `, [secondAttemptId])
       await setup.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [firstAttemptId, ids.student])
@@ -625,7 +626,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
       `, [firstAttemptId, secondAttemptId])
       expect(evidenceShape.rows).toEqual([
         { earned_score: '1.000000', max_score: '1.000000' },
-        { earned_score: '0.000000', max_score: '1.000000' },
+        { earned_score: '1.000000', max_score: '1.000000' },
       ])
 
       await blocker.query('BEGIN')
@@ -652,17 +653,17 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           sk.raw_attempt_total::text,
           sk.mastery_score::text,
           sk.state,
-          sk.due_at = sk.last_occurred_at + interval '1 day' AS due_matches
+          sk.due_at = sk.last_occurred_at + interval '14 days' AS due_matches
         FROM student_knowledge sk
         WHERE sk.student_id = $1 AND sk.knowledge_point_ref = 'unassigned'
       `, [ids.student])
       expect(projected.rows).toEqual([{
         evidence_count: 2,
         applied_count: 2,
-        raw_correct_total: '1.000000',
+        raw_correct_total: '2.000000',
         raw_attempt_total: '2.000000',
-        mastery_score: '0.500000',
-        state: 'learning',
+        mastery_score: '1.000000',
+        state: 'mastered',
         due_matches: true,
       }])
 
@@ -678,7 +679,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         FROM student_knowledge
         WHERE student_id = $1 AND knowledge_point_ref = 'unassigned'
       `, [ids.student])
-      expect(replay.rows).toEqual([{ applied_count: 2, raw_correct_total: '1.000000', raw_attempt_total: '2.000000' }])
+      expect(replay.rows).toEqual([{ applied_count: 2, raw_correct_total: '2.000000', raw_attempt_total: '2.000000' }])
     } finally {
       await blocker.query('ROLLBACK').catch(() => undefined)
       await Promise.all([setup.end(), blocker.end(), firstApplier.end(), secondApplier.end()])

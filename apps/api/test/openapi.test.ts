@@ -62,6 +62,8 @@ describe('OpenAPI document', () => {
     expect(document.components.schemas).toHaveProperty('GuardianLinkVerificationResponse')
     expect(document.components.schemas).toHaveProperty('GuardianVoiceConsentWriteRequest')
     expect(document.components.schemas).toHaveProperty('GuardianVoiceConsentWriteResponse')
+    expect(document.components.schemas).toHaveProperty('VoiceUploadTicketRequest')
+    expect(document.components.schemas).toHaveProperty('VoiceUploadTicketResponse')
     expect(document.components.schemas).toHaveProperty('GuardianLinkProjection')
     expect(document.components.schemas).toHaveProperty('ConsentProjection')
     expect(document.components.schemas).toHaveProperty('ErrorResponse')
@@ -95,6 +97,7 @@ describe('OpenAPI document', () => {
     const putCurrentDeviceOperation = document.paths['/v1/me/devices/current']?.put
     const putCurrentDevicePushDisabledOperation = document.paths['/v1/me/devices/current/push-disabled']?.put
     const postGuardianInvitationOperation = document.paths['/v1/me/guardian-link/invitations']?.post
+    const postVoiceUploadTicketOperation = document.paths['/v1/me/voice-upload-ticket']?.post
     const putGuardianVerificationOperation = document.paths['/v1/guardian-links/verification']?.put
     const putGuardianVoiceConsentOperation = document.paths['/v1/guardian-links/{studentId}/consents/voice-processing']?.put
     const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
@@ -106,6 +109,7 @@ describe('OpenAPI document', () => {
     expect(putCurrentDeviceOperation).toBeDefined()
     expect(putCurrentDevicePushDisabledOperation).toBeDefined()
     expect(postGuardianInvitationOperation).toBeDefined()
+    expect(postVoiceUploadTicketOperation).toBeDefined()
     expect(putGuardianVerificationOperation).toBeDefined()
     expect(putGuardianVoiceConsentOperation).toBeDefined()
     expect(getStageAttemptOperation).toBeDefined()
@@ -116,6 +120,7 @@ describe('OpenAPI document', () => {
     expect(putCurrentDeviceOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(putCurrentDevicePushDisabledOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(postGuardianInvitationOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(postVoiceUploadTicketOperation!.security).toContainEqual({ BearerAuth: [] })
     expect(putGuardianVerificationOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(putGuardianVoiceConsentOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])

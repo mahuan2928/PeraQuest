@@ -542,7 +542,16 @@
     "/v1/me/voice-upload-ticket": {
       "post": {
         "operationId": "createVoiceUploadTicket",
-        "summary": "Request a signed upload ticket after the server repeats guardian and Consent Gate checks.",
+        "summary": "Request a constrained S3-compatible signed upload ticket after guardian and Consent Gate checks.",
+        "description": "Returns a short-lived SigV4 POST policy when voice feature flags, current consent, guardian status, request limits, and object storage configuration all pass. Legacy student headers are retained only for compatibility routes and are disabled in production.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": []
+          }
+        ],
         "parameters": [
           {
             "$ref": "#/components/parameters/StudentId"
@@ -554,12 +563,32 @@
             "$ref": "#/components/parameters/IfMatchRevision"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceUploadTicketRequest"
+              }
+            }
+          }
+        },
         "responses": {
+          "200": {
+            "description": "Signed voice upload ticket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceUploadTicketResponse"
+                }
+              }
+            }
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
           "501": {
-            "description": "Gate passed, but object storage is not configured in this slice",
+            "description": "Gate passed, but object storage signing is not configured",
             "content": {
               "application/json": {
                 "schema": {
@@ -1472,6 +1501,95 @@
           "type",
           "status",
           "version"
+        ]
+      },
+      "VoiceUploadTicketRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "audio/webm",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/wav",
+              "audio/x-m4a"
+            ]
+          },
+          "contentLengthBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Requested upload size in bytes. The server enforces the configured maximum in the signed policy."
+          },
+          "durationSeconds": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Client-measured audio duration in seconds. The server enforces the configured maximum before signing."
+          },
+          "checksumSha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "Hex-encoded SHA-256 checksum recorded as signed object metadata."
+          }
+        },
+        "required": [
+          "contentType",
+          "contentLengthBytes",
+          "durationSeconds",
+          "checksumSha256"
+        ]
+      },
+      "VoiceUploadTicketResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "uploadUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "method": {
+            "const": "POST"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "S3-compatible POST form fields, including key, policy, x-amz-* signature fields, content type, and signed metadata."
+          },
+          "objectKey": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxDurationSeconds": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "uploadUrl",
+          "method",
+          "fields",
+          "objectKey",
+          "bucket",
+          "region",
+          "expiresAt",
+          "maxBytes",
+          "maxDurationSeconds"
         ]
       },
       "Capabilities": {

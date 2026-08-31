@@ -33,6 +33,8 @@ import {
   type StudentKnowledgeProjectionListResponse,
   type SubmitStageAttemptRequest,
   type UnlockStateDto,
+  type VoiceUploadTicketRequest,
+  type VoiceUploadTicketResponse,
 } from './index'
 
 const evidence = {
@@ -106,6 +108,27 @@ const guardianVoiceConsentResponse = {
   status: guardianVoiceConsentWrite.status,
   version: guardianVoiceConsentWrite.version,
 } satisfies GuardianVoiceConsentWriteResponse
+const voiceUploadTicketRequest = {
+  contentType: 'audio/webm',
+  contentLengthBytes: 1024,
+  durationSeconds: 12.5,
+  checksumSha256: 'a'.repeat(64),
+} satisfies VoiceUploadTicketRequest
+const voiceUploadTicketResponse = {
+  uploadUrl: 'https://storage.example.test/voice-bucket',
+  method: 'POST',
+  fields: {
+    key: 'voice/20260830/student-1/upload',
+    policy: 'base64-policy',
+    'x-amz-signature': 'signature',
+  },
+  objectKey: 'voice/20260830/student-1/upload',
+  bucket: 'voice-bucket',
+  region: 'ap-northeast-1',
+  expiresAt: '2026-08-30T00:05:00.000Z',
+  maxBytes: 10 * 1024 * 1024,
+  maxDurationSeconds: 300,
+} satisfies VoiceUploadTicketResponse
 
 const unlock = {
   studentId: evidence.studentId,
@@ -170,6 +193,13 @@ describe('shared security contracts', () => {
   it('exposes guardian voice consent write contracts', () => {
     expect(guardianVoiceConsentWrite).toEqual({ status: 'granted', version: 'v1' })
     expect(guardianVoiceConsentResponse).toEqual({ type: 'voice_processing', status: 'granted', version: 'v1' })
+  })
+
+  it('exposes signed voice upload ticket contracts without secrets', () => {
+    expect(voiceUploadTicketRequest.checksumSha256).toHaveLength(64)
+    expect(voiceUploadTicketResponse).toMatchObject({ method: 'POST', bucket: 'voice-bucket', region: 'ap-northeast-1' })
+    expect(voiceUploadTicketResponse.fields).toHaveProperty('policy')
+    expect(voiceUploadTicketResponse.fields).not.toHaveProperty('secretAccessKey')
   })
 })
 

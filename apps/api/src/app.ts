@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { sanitizeErrorDetails } from '@peraquest/contracts'
@@ -23,6 +23,7 @@ import type {
   TrialAttemptResponse,
   StableErrorCode,
   AuthActor,
+  VoiceUploadTicketResponse,
 } from '@peraquest/contracts'
 import { loadConfig, type RuntimeConfig } from './config.js'
 import { AuthFailure, createAuthActor, createJwksTokenVerifier, legacyActor, parseBearerToken, type AuthConfig, type AuthUserResolver, type TokenVerifier } from './auth.js'
@@ -47,6 +48,12 @@ const currentDeviceSchema = z.object({
   deviceId: z.string().min(1).max(200),
   appVersion: z.string().min(1).max(50).optional(),
   osVersion: z.string().min(1).max(100).optional(),
+}).strict()
+const voiceUploadTicketSchema = z.object({
+  contentType: z.enum(['audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/x-m4a']),
+  contentLengthBytes: z.number().int().positive(),
+  durationSeconds: z.number().positive(),
+  checksumSha256: z.string().regex(/^[a-f0-9]{64}$/i),
 }).strict()
 const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
@@ -91,6 +98,74 @@ const hashGuardianInviteCode = (inviteCode: string): string => createHash('sha25
   .digest('hex')
 
 const createGuardianInviteCode = (): string => randomBytes(24).toString('base64url')
+
+const compactDate = (date: Date): string => date.toISOString().slice(0, 10).replaceAll('-', '')
+const amzDate = (date: Date): string => date.toISOString().replaceAll('-', '').replaceAll(':', '').replace(/\.\d{3}Z$/, 'Z')
+const hmac = (key: string | Buffer, value: string): Buffer => createHmac('sha256', key).update(value).digest()
+const signingKey = (secret: string, date: string, region: string): Buffer => hmac(hmac(hmac(hmac(`AWS4${secret}`, date), region), 's3'), 'aws4_request')
+const isVoiceUploadConfigured = (config: RuntimeConfig): boolean =>
+  Boolean(config.VOICE_UPLOAD_BUCKET && config.VOICE_UPLOAD_REGION && config.VOICE_UPLOAD_ENDPOINT && config.VOICE_UPLOAD_ACCESS_KEY_ID && config.VOICE_UPLOAD_SECRET_ACCESS_KEY)
+
+const createVoiceUploadTicket = (input: {
+  studentId: string
+  contentType: string
+  contentLengthBytes: number
+  durationSeconds: number
+  checksumSha256: string
+  issuedAt: Date
+  config: RuntimeConfig
+}): VoiceUploadTicketResponse => {
+  const bucket = input.config.VOICE_UPLOAD_BUCKET!
+  const region = input.config.VOICE_UPLOAD_REGION!
+  const endpoint = input.config.VOICE_UPLOAD_ENDPOINT!.replace(/\/+$/, '')
+  const accessKeyId = input.config.VOICE_UPLOAD_ACCESS_KEY_ID!
+  const secretAccessKey = input.config.VOICE_UPLOAD_SECRET_ACCESS_KEY!
+  const date = compactDate(input.issuedAt)
+  const timestamp = amzDate(input.issuedAt)
+  const expiresAt = new Date(input.issuedAt.getTime() + input.config.VOICE_UPLOAD_TICKET_TTL_SECONDS * 1000)
+  const credential = `${accessKeyId}/${date}/${region}/s3/aws4_request`
+  const objectKey = `voice/${date}/${input.studentId}/${randomUUID()}`
+  const fields: Record<string, string> = {
+    key: objectKey,
+    bucket,
+    'Content-Type': input.contentType,
+    'x-amz-algorithm': 'AWS4-HMAC-SHA256',
+    'x-amz-credential': credential,
+    'x-amz-date': timestamp,
+    'x-amz-meta-student-id': input.studentId,
+    'x-amz-meta-checksum-sha256': input.checksumSha256.toLowerCase(),
+    'x-amz-meta-duration-seconds': String(Math.ceil(input.durationSeconds)),
+  }
+  const policy = {
+    expiration: expiresAt.toISOString(),
+    conditions: [
+      { bucket },
+      { key: objectKey },
+      { 'Content-Type': input.contentType },
+      ['content-length-range', 1, input.config.VOICE_UPLOAD_MAX_BYTES],
+      { 'x-amz-algorithm': fields['x-amz-algorithm'] },
+      { 'x-amz-credential': credential },
+      { 'x-amz-date': timestamp },
+      { 'x-amz-meta-student-id': input.studentId },
+      { 'x-amz-meta-checksum-sha256': fields['x-amz-meta-checksum-sha256'] },
+      { 'x-amz-meta-duration-seconds': fields['x-amz-meta-duration-seconds'] },
+    ],
+  }
+  const policyBase64 = Buffer.from(JSON.stringify(policy)).toString('base64')
+  fields.policy = policyBase64
+  fields['x-amz-signature'] = createHmac('sha256', signingKey(secretAccessKey, date, region)).update(policyBase64).digest('hex')
+  return {
+    uploadUrl: `${endpoint}/${bucket}`,
+    method: 'POST',
+    fields,
+    objectKey,
+    bucket,
+    region,
+    expiresAt: expiresAt.toISOString(),
+    maxBytes: input.config.VOICE_UPLOAD_MAX_BYTES,
+    maxDurationSeconds: input.config.VOICE_UPLOAD_MAX_DURATION_SECONDS,
+  }
+}
 
 export interface BuildAppOptions {
   repository?: StudentRepository
@@ -547,7 +622,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     }
   })
 
-  app.post('/v1/me/voice-upload-ticket', async (request, reply) => {
+  app.post('/v1/me/voice-upload-ticket', async (request, reply): Promise<VoiceUploadTicketResponse | void> => {
     const studentId = studentActorId(request, reply)
     if (!studentId) return
     const student = await repository.findById(studentId)
@@ -555,7 +630,21 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const consent = await repository.getVoiceConsent(studentId, config.CONSENT_VERSION_REQUIRED)
     const allowed = (!student.isMinor || student.guardianLinkStatus === 'verified') && consent.status === 'granted' && config.VOICE_FEATURE_PUBLIC_ENABLED && config.AI_VENDOR_APPROVED
     if (!allowed) return sendError(reply, 403, 'VOICE_CONSENT_REQUIRED')
-    return sendError(reply, 501, 'SIGNED_UPLOAD_NOT_CONFIGURED')
+    if (!isVoiceUploadConfigured(config)) return sendError(reply, 501, 'SIGNED_UPLOAD_NOT_CONFIGURED')
+    const parsed = voiceUploadTicketSchema.safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'voice_upload', reason: 'invalid' })
+    if (parsed.data.contentLengthBytes > config.VOICE_UPLOAD_MAX_BYTES || parsed.data.durationSeconds > config.VOICE_UPLOAD_MAX_DURATION_SECONDS) {
+      return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'voice_upload', reason: 'limit_exceeded' })
+    }
+    return createVoiceUploadTicket({
+      studentId,
+      contentType: parsed.data.contentType,
+      contentLengthBytes: parsed.data.contentLengthBytes,
+      durationSeconds: parsed.data.durationSeconds,
+      checksumSha256: parsed.data.checksumSha256,
+      issuedAt: now(),
+      config,
+    })
   })
 
   return app

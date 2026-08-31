@@ -46,6 +46,7 @@ const identities = new Map([
 ])
 const registeredDeviceKeys = new Set<string>()
 const guardianInviteHashes = new Map<string, string>()
+const voiceConsents = new Map<string, { status: 'granted' | 'denied' | 'withdrawn'; version: string }>()
 
 const fakePool = {
   query: async (sql: string, parameters: unknown[] = []) => {
@@ -59,7 +60,14 @@ const fakePool = {
       return { rows: user && !user.deleted && user.role === 'student' ? [user] : [], rowCount: user ? 1 : 0 }
     }
     if (sql.includes('FROM subscription_entitlements')) return { rows: [], rowCount: 0 }
-    if (sql.includes('INSERT INTO consent_records')) return { rows: [], rowCount: 1 }
+    if (sql.includes('FROM consent_records')) {
+      const consent = voiceConsents.get(String(parameters[0]))
+      return { rows: consent ? [consent] : [], rowCount: consent ? 1 : 0 }
+    }
+    if (sql.includes('INSERT INTO consent_records')) {
+      voiceConsents.set(String(parameters[0]), { status: parameters[2] as 'granted' | 'denied' | 'withdrawn', version: String(parameters[3]) })
+      return { rows: [], rowCount: 1 }
+    }
     if (sql.includes('UPDATE guardian_links') && sql.includes('invitation_created_at')) {
       const student = users.get(String(parameters[0]))
       if (!student || student.status !== 'pending') return { rows: [], rowCount: 0 }
@@ -133,6 +141,16 @@ describe('real Bearer business path', () => {
       AUTH_JWKS_URL: `http://127.0.0.1:${address.port}/jwks`,
       AUTH_CLOCK_SKEW_SECONDS: '0',
       CONSENT_VERSION_REQUIRED: 'v1',
+      VOICE_FEATURE_PUBLIC_ENABLED: 'true',
+      AI_VENDOR_APPROVED: 'true',
+      VOICE_UPLOAD_BUCKET: 'voice-bucket',
+      VOICE_UPLOAD_REGION: 'ap-northeast-1',
+      VOICE_UPLOAD_ENDPOINT: 'https://storage.example.test',
+      VOICE_UPLOAD_ACCESS_KEY_ID: 'AKIATEST',
+      VOICE_UPLOAD_SECRET_ACCESS_KEY: 'secret-test-key',
+      VOICE_UPLOAD_MAX_BYTES: '1048576',
+      VOICE_UPLOAD_MAX_DURATION_SECONDS: '120',
+      VOICE_UPLOAD_TICKET_TTL_SECONDS: '300',
     })
     app = buildServerApp(config, fakePool)
   })
@@ -158,6 +176,76 @@ describe('real Bearer business path', () => {
     })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ type: 'voice_processing', status: 'granted', version: 'v1' })
+  })
+
+  it('issues a constrained signed voice upload ticket after consent gates pass', async () => {
+    const headers = { authorization: `Bearer ${await tokenFor('adult-sub')}` }
+    await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers,
+      payload: { status: 'granted', version: 'v1' },
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/me/voice-upload-ticket',
+      headers,
+      payload: {
+        contentType: 'audio/webm',
+        contentLengthBytes: 4096,
+        durationSeconds: 30,
+        checksumSha256: 'b'.repeat(64),
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const ticket = response.json()
+    expect(ticket).toMatchObject({
+      uploadUrl: 'https://storage.example.test/voice-bucket',
+      method: 'POST',
+      bucket: 'voice-bucket',
+      region: 'ap-northeast-1',
+      maxBytes: 1048576,
+      maxDurationSeconds: 120,
+    })
+    expect(ticket.objectKey).toMatch(new RegExp(`^voice/\\d{8}/${ADULT_STUDENT}/[0-9a-f-]{36}$`))
+    expect(ticket.fields).toMatchObject({
+      key: ticket.objectKey,
+      bucket: 'voice-bucket',
+      'Content-Type': 'audio/webm',
+      'x-amz-algorithm': 'AWS4-HMAC-SHA256',
+      'x-amz-meta-student-id': ADULT_STUDENT,
+      'x-amz-meta-checksum-sha256': 'b'.repeat(64),
+      'x-amz-meta-duration-seconds': '30',
+    })
+    expect(JSON.stringify(ticket)).not.toContain('secret-test-key')
+    const policy = JSON.parse(Buffer.from(ticket.fields.policy, 'base64').toString('utf8'))
+    expect(policy.conditions).toContainEqual(['content-length-range', 1, 1048576])
+    expect(policy.conditions).toContainEqual({ 'x-amz-meta-checksum-sha256': 'b'.repeat(64) })
+  })
+
+  it('rejects signed voice upload ticket requests that exceed server limits', async () => {
+    const headers = { authorization: `Bearer ${await tokenFor('adult-sub')}` }
+    await app.inject({
+      method: 'PUT',
+      url: '/v1/me/consents/voice-processing',
+      headers,
+      payload: { status: 'granted', version: 'v1' },
+    })
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/me/voice-upload-ticket',
+      headers,
+      payload: {
+        contentType: 'audio/webm',
+        contentLengthBytes: 1048577,
+        durationSeconds: 30,
+        checksumSha256: 'c'.repeat(64),
+      },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toEqual({ code: 'VALIDATION_FAILED' })
   })
 
   it('does not let a Bearer student bypass minor guardian consent policy', async () => {

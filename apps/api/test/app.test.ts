@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { MemoryStudentRepository } from '../src/repository.js'
 
 describe('identity, consent, and capabilities slice', () => {
   const apps: ReturnType<typeof buildApp>[] = []
+
+  beforeEach(() => { vi.stubEnv('ALLOW_LEGACY_TEST_HEADERS', 'true') })
 
   afterEach(async () => {
     vi.unstubAllEnvs()
@@ -69,6 +71,23 @@ describe('identity, consent, and capabilities slice', () => {
     expect(response.json()).toMatchObject({ platform, paymentChannels: payments, notificationChannels: notifications, lineReturnTargets: lineTargets, canUploadVoice: false })
   })
 
+  it('returns server-side active entitlements in capabilities without changing purchase policy', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    repository.listActiveEntitlements = async (studentId) => studentId === 'adult-1' ? ['exam_grade_3_full', 'premium_lesson_pack'] : []
+    const app = buildApp({ repository, now: () => new Date('2026-08-30T00:00:00.000Z') })
+    apps.push(app)
+
+    const response = await app.inject({ method: 'GET', url: '/v1/me/capabilities', headers: { 'x-student-id': 'adult-1', 'x-client-platform': 'pc' } })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      canPurchase: false,
+      entitlements: ['exam_grade_3_full', 'premium_lesson_pack'],
+      paymentChannels: ['web_checkout'],
+    })
+  })
+
   it('rejects capabilities requests without an explicit client platform', async () => {
     const repository = new MemoryStudentRepository()
     await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
@@ -121,6 +140,39 @@ describe('identity, consent, and capabilities slice', () => {
     await expect(repository.getVoiceConsent('minor-b', 'v1')).resolves.toEqual({ status: 'missing', version: null })
   })
 
+  it('returns only allowlisted, redacted details for validation errors', async () => {
+    vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    const app = buildApp({ repository })
+    apps.push(app)
+    const invalidOnboarding = await app.inject({ method: 'POST', url: '/v1/students/onboarding', payload: { birthMonth: 'not-a-month' } })
+    expect(invalidOnboarding.statusCode).toBe(400)
+    expect(invalidOnboarding.json()).toEqual({ code: 'INVALID_ONBOARDING', details: { reason: 'invalid', resource: 'request' } })
+    const invalidConsent = await app.inject({ method: 'PUT', url: '/v1/me/consents/voice-processing', headers: { 'x-student-id': 'adult-1' }, payload: { status: 'granted', version: 'wrong' } })
+    expect(invalidConsent.statusCode).toBe(400)
+    expect(invalidConsent.json()).toEqual({ code: 'INVALID_CONSENT_VERSION', details: { field: 'version', reason: 'invalid', resource: 'consent' } })
+  })
+
+  it('redacts unexpected provider exceptions to the stable internal error contract', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    repository.findById = async () => {
+      const error = new Error('provider=acme raw=upstream stack=secret-stack token=secret-token')
+      error.stack = 'Error: provider=acme raw=upstream token=secret-token\\n at provider/client.ts:1:1'
+      throw error
+    }
+    const app = buildApp({ repository })
+    apps.push(app)
+    const response = await app.inject({ method: 'GET', url: '/v1/me/guardian-link', headers: { 'x-student-id': 'adult-1' } })
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toEqual({ code: 'INTERNAL_ERROR' })
+    expect(response.body).not.toContain('provider=acme')
+    expect(response.body).not.toContain('raw=upstream')
+    expect(response.body).not.toContain('secret-stack')
+    expect(response.body).not.toContain('secret-token')
+  })
+
   it('rejects future birth months during onboarding', async () => {
     const app = buildApp({ now: () => new Date('2026-08-19T00:00:00Z') })
     apps.push(app)
@@ -129,7 +181,7 @@ describe('identity, consent, and capabilities slice', () => {
     expect(response.json()).toEqual({ code: 'INVALID_BIRTH_MONTH' })
   })
 
-  it('allows one server-authoritative minor trial and never returns answers before submission', async () => {
+  it('allows one server-authoritative minor trial without durable knowledge-domain side effects', async () => {
     const repository = new MemoryStudentRepository()
     await repository.create({ id: 'minor-1', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'pending', guardianId: null })
     const app = buildApp({ repository, now: () => new Date('2026-08-19T00:00:00Z') })
@@ -149,6 +201,11 @@ describe('identity, consent, and capabilities slice', () => {
       expect(answer.statusCode).toBe(200)
       const body = answer.json()
       expect(body.progressPersisted).toBe(false)
+      expect(body).not.toHaveProperty('knowledgeEvidence')
+      expect(body).not.toHaveProperty('remediationTasks')
+      expect(body).not.toHaveProperty('unlockState')
+      expect(body).not.toHaveProperty('mastery')
+      expect(body).not.toHaveProperty('rewards')
       if (body.correct) score += 1
       if (index < 11) {
         expect(body.score).toBeNull()
@@ -216,5 +273,24 @@ describe('identity, consent, and capabilities slice', () => {
     expect(consent.statusCode).toBe(200)
     const response = await app.inject({ method: 'GET', url: '/v1/me/capabilities', headers: { 'x-student-id': 'adult-1', 'x-client-platform': 'pc' } })
     expect(response.json()).toMatchObject({ canUploadVoice: true, voiceUploadMode: 'signed_upload', voiceConsentStatus: 'granted' })
+  })
+
+  it('keeps signed voice upload ticket disabled when storage signing is not configured', async () => {
+    vi.stubEnv('VOICE_FEATURE_PUBLIC_ENABLED', 'true')
+    vi.stubEnv('AI_VENDOR_APPROVED', 'true')
+    vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    await repository.setVoiceConsent('adult-1', null, 'granted', 'v1')
+    const app = buildApp({ repository })
+    apps.push(app)
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/me/voice-upload-ticket',
+      headers: { 'x-student-id': 'adult-1' },
+      payload: { contentType: 'audio/webm', contentLengthBytes: 1024, durationSeconds: 10, checksumSha256: 'd'.repeat(64) },
+    })
+    expect(response.statusCode).toBe(501)
+    expect(response.json()).toEqual({ code: 'SIGNED_UPLOAD_NOT_CONFIGURED' })
   })
 })

@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { buildApiUrl, normalizeApiBaseUrl } from './onboarding'
+// @vitest-environment happy-dom
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { buildApiUrl, normalizeApiBaseUrl, submitTrialAnswer } from './onboarding'
+
+beforeEach(() => {
+  sessionStorage.clear()
+  vi.restoreAllMocks()
+})
 
 describe('API base URL handling', () => {
   it.each([
@@ -25,5 +31,22 @@ describe('API base URL handling', () => {
 
   it('removes all trailing slashes before joining a path', () => {
     expect(buildApiUrl('/v1/health', normalizeApiBaseUrl('https://dev.example.test///'))).toBe('https://dev.example.test/v1/health')
+  })
+
+  it('preserves the structured API code for an expired trial answer', async () => {
+    sessionStorage.setItem('lingoquest.student.id', 'student-test')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 410,
+      json: async () => ({ code: 'TRIAL_ATTEMPT_EXPIRED' }),
+    }))
+
+    await expect(submitTrialAnswer('expired-attempt', { questionId: 'q1', answer: 'play' }))
+      .rejects.toEqual(expect.objectContaining({
+        name: 'ApiRequestError',
+        message: 'REQUEST_FAILED_410',
+        status: 410,
+        code: 'TRIAL_ATTEMPT_EXPIRED',
+      }))
   })
 })

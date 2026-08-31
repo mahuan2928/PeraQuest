@@ -3,6 +3,7 @@ defineProps<{
   trialRedeemed: boolean
   trialPending?: boolean
   trialError?: string
+  trialStatus?: 'idle' | 'loading' | 'error' | 'expired' | 'complete'
 }>()
 const emit = defineEmits<{ startTrial: [] }>()
 </script>
@@ -52,22 +53,33 @@ const emit = defineEmits<{ startTrial: [] }>()
         :disabled="trialRedeemed || trialPending"
         @click="emit('startTrial')"
       >
-        {{ trialRedeemed ? 'おためし済みです' : trialPending ? '確認中…' : '1回だけ体験する' }}
+        {{ trialStatus === 'expired' || trialRedeemed ? 'おためし済みです' : trialPending ? '確認中…' : trialStatus === 'error' ? 'もう一度試す' : '1回だけ体験する' }}
       </button>
     </div>
     <p
       v-if="trialError"
       class="field-error"
       role="alert"
+      aria-live="assertive"
     >
       {{ trialError }}
     </p>
     <p
-      v-if="trialRedeemed"
+      v-if="trialStatus === 'loading'"
+      class="status-note"
+      role="status"
+      aria-live="polite"
+    >
+      安全な接続を確認しています。
+    </p>
+    <p
+      v-if="trialRedeemed || trialStatus === 'expired'"
       class="redeemed-note"
       role="status"
     >
-      このアカウントのおためしクエストは完了しています。保護者連携後に続きから学べます。
+      {{ trialStatus === 'expired'
+        ? 'このおためしは終了しました。新しいおためしは開始せず、保護者連携後に学習を続けてください。'
+        : 'このアカウントのおためしクエストは完了しています。保護者連携後に続きから学べます。' }}
     </p>
     <p class="restriction-note">
       保護者連携までは、音声アップロード・購入・長期学習記録は利用できません。

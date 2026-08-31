@@ -10,7 +10,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'PORT=3000 npm run dev -w @peraquest/api',
+      command: 'NODE_ENV=test ALLOW_LEGACY_TEST_HEADERS=true CORS_ORIGIN=http://127.0.0.1:4173 PORT=3000 npm run dev -w @peraquest/api',
       url: 'http://127.0.0.1:3000/health',
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

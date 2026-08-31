@@ -30,9 +30,68 @@
                   ]
                 }
               }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "parameters": []
+      }
+    },
+    "/v1/demo/session": {
+      "post": {
+        "operationId": "createDemoSession",
+        "summary": "Create a short-lived non-production demo session for the live API demo.",
+        "description": "Disabled by default and forced off in production. Intended only for local or controlled demo environments.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoSessionRequest"
+              }
             }
           }
-        }
+        },
+        "responses": {
+          "201": {
+            "description": "Demo session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [],
+        "security": []
       }
     },
     "/v1/students/onboarding": {
@@ -58,12 +117,35 @@
                   "$ref": "#/components/schemas/StudentOnboardingResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
             }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
-        }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
       }
     },
     "/v1/me/guardian-link": {
@@ -84,10 +166,180 @@
                   "$ref": "#/components/schemas/GuardianLink"
                 }
               }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
             }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/v1/me/guardian-link/invitations": {
+      "post": {
+        "operationId": "createGuardianInvitation",
+        "summary": "Create a short-lived guardian invitation code for the current minor student.",
+        "description": "Bearer student only. The raw invite code is returned once to the student client; only a server-side hash is stored.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Guardian invitation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianInvitationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/v1/guardian-links/verification": {
+      "put": {
+        "operationId": "verifyGuardianInvitation",
+        "summary": "Verify a guardian invitation code and bind the Bearer guardian to the student.",
+        "description": "Bearer guardian only. Accepts the one-time invite code, hashes it server-side, and verifies the pending guardian link if the invite has not expired.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardianLinkVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guardian link verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianLinkVerificationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/guardian-links/{studentId}/consents/voice-processing": {
+      "put": {
+        "operationId": "putGuardianVoiceConsent",
+        "summary": "Record voice-processing consent for a verified minor as the linked Bearer guardian.",
+        "description": "Bearer guardian only. The student must be a minor with a verified guardian link whose guardian_id matches the authenticated guardian.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardianVoiceConsentWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guardian consent recorded for the verified minor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianVoiceConsentWriteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -99,12 +351,28 @@
       "put": {
         "operationId": "putVoiceConsent",
         "summary": "Record or withdraw the current voice-processing consent version.",
+        "description": "Supports Bearer student self-write for non-minor learners. Deprecated X-Student-Id/X-Guardian-Id headers remain only for legacy compatibility and minor guardian consent policy.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": [],
+            "LegacyGuardianHeader": []
+          }
+        ],
         "parameters": [
           {
             "$ref": "#/components/parameters/StudentId"
           },
           {
             "$ref": "#/components/parameters/GuardianId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchRevision"
           }
         ],
         "requestBody": {
@@ -126,6 +394,15 @@
                   "$ref": "#/components/schemas/VoiceConsent"
                 }
               }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
             }
           },
           "400": {
@@ -139,8 +416,12 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
-        }
+        },
+        "description": "Consent writes may be attributed to the verified guardian actor. Legacy X-Guardian-Id is deprecated and retained only for compatibility."
       }
     },
     "/v1/me/capabilities": {
@@ -164,6 +445,15 @@
                   "$ref": "#/components/schemas/Capabilities"
                 }
               }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
             }
           },
           "400": {
@@ -174,6 +464,114 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/v1/me/devices/current": {
+      "put": {
+        "operationId": "upsertCurrentDevice",
+        "summary": "Register or refresh the authenticated student's current device metadata.",
+        "description": "Bearer student only. Stores a server-side hash of deviceId plus platform and version metadata. Push tokens are intentionally out of scope for this endpoint.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurrentDeviceRegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current device metadata registered or refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentDeviceRegistrationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/me/devices/current/push-disabled": {
+      "put": {
+        "operationId": "disableCurrentDevicePush",
+        "summary": "Disable push notifications for the authenticated student's current registered device.",
+        "description": "Bearer student only. Identifies the existing current device by platform and deviceId metadata, sets push_enabled=false, and defensively clears any stored push token envelope. This endpoint does not accept push tokens.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurrentDevicePushDisableRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Push disabled for the current registered device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentDevicePushDisableResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -181,18 +579,53 @@
     "/v1/me/voice-upload-ticket": {
       "post": {
         "operationId": "createVoiceUploadTicket",
-        "summary": "Request a signed upload ticket after the server repeats guardian and Consent Gate checks.",
+        "summary": "Request a constrained S3-compatible signed upload ticket after guardian and Consent Gate checks.",
+        "description": "Returns a short-lived SigV4 POST policy when voice feature flags, current consent, guardian status, request limits, and object storage configuration all pass. Legacy student headers are retained only for compatibility routes and are disabled in production.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "LegacyStudentHeader": []
+          }
+        ],
         "parameters": [
           {
             "$ref": "#/components/parameters/StudentId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchRevision"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceUploadTicketRequest"
+              }
+            }
+          }
+        },
         "responses": {
+          "200": {
+            "description": "Signed voice upload ticket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceUploadTicketResponse"
+                }
+              }
+            }
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
           "501": {
-            "description": "Gate passed, but object storage is not configured in this slice",
+            "description": "Gate passed, but object storage signing is not configured",
             "content": {
               "application/json": {
                 "schema": {
@@ -200,6 +633,248 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/stage-exams/{stageExamId}/attempts": {
+      "post": {
+        "operationId": "startStageAttempt",
+        "summary": "Start a formal stage exam attempt from the Bearer student identity.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "stageExamId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/FormalIdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Formal stage attempt started or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartStageAttemptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/student-knowledge": {
+      "get": {
+        "operationId": "listStudentKnowledgeProjections",
+        "summary": "List the current Bearer student's materialized mastery and due projections.",
+        "description": "Returns only existing student_knowledge projection rows for the authenticated Student. It does not materialize state=new rows and does not allow Guardian-derived student inference.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student mastery/due projections ordered by dueAt then knowledgePointRef",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentKnowledgeProjectionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/stage-attempts/{stageAttemptId}": {
+      "get": {
+        "operationId": "getStageAttempt",
+        "summary": "Read the current Bearer student's open formal stage attempt snapshot.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "stageAttemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Formal stage attempt snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartStageAttemptResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/stage-attempts/{stageAttemptId}/submit": {
+      "post": {
+        "operationId": "submitStageAttempt",
+        "summary": "Submit all formal stage attempt answers and receive the server-scored result.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "stageAttemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/FormalIdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitStageAttemptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-scored formal stage attempt result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageAttemptResultResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          }
+        }
+      }
+    },
+    "/api/v1/stage-attempts/{stageAttemptId}/result": {
+      "get": {
+        "operationId": "getStageAttemptResult",
+        "summary": "Read the current Bearer student's submitted formal stage attempt result.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "stageAttemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-scored formal stage attempt result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageAttemptResultResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -211,6 +886,12 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/StudentId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchRevision"
           }
         ],
         "responses": {
@@ -220,6 +901,15 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrialAttempt"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -242,6 +932,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           }
         }
       }
@@ -262,6 +955,12 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchRevision"
           }
         ],
         "requestBody": {
@@ -281,6 +980,15 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrialAnswerResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -313,6 +1021,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -324,19 +1035,23 @@
         "name": "X-Student-Id",
         "in": "header",
         "required": true,
-        "description": "Scaffold-only identity header; replace with verified bearer-token middleware.",
+        "description": "Scaffold-only identity header; replace with verified bearer-token middleware. Deprecated: use Authorization Bearer actor claims.",
         "schema": {
           "type": "string"
-        }
+        },
+        "deprecated": true,
+        "x-sunset": "2027-01-01"
       },
       "GuardianId": {
         "name": "X-Guardian-Id",
         "in": "header",
         "required": false,
-        "description": "Scaffold-only linked guardian identity, required when a minor's consent is written. Replace with verified actor claims.",
+        "description": "Scaffold-only linked guardian identity, required when a minor's consent is written. Replace with verified actor claims. Deprecated: use Authorization Bearer actor claims.",
         "schema": {
           "type": "string"
-        }
+        },
+        "deprecated": true,
+        "x-sunset": "2027-01-01"
       },
       "ClientPlatform": {
         "name": "X-Client-Platform",
@@ -344,6 +1059,51 @@
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/ClientPlatform"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Required for formal stage-attempt start runtime and planned for future submit routes. ASCII 8-128 using A-Z, a-z, 0-9, dot, underscore, colon, or hyphen.",
+        "schema": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        }
+      },
+      "FormalIdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "Required for formal stage-attempt start runtime. ASCII 8-128 using A-Z, a-z, 0-9, dot, underscore, colon, or hyphen.",
+        "schema": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        }
+      },
+      "IfMatchRevision": {
+        "name": "If-Match-Revision",
+        "in": "header",
+        "required": false,
+        "description": "planned future contract: If-Match-Revision will be required for revisioned writes once runtime revision support is implemented. Not implemented in this slice.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "LegacyGuardianHeader": {
+        "name": "X-Guardian-Id",
+        "in": "header",
+        "required": false,
+        "deprecated": true,
+        "x-sunset": "2027-01-01",
+        "description": "Deprecated compatibility guardian actor for consent writes; use verified bearer actor claims.",
+        "schema": {
+          "type": "string"
         }
       }
     },
@@ -387,6 +1147,16 @@
             }
           }
         }
+      },
+      "Conflict": {
+        "description": "Conflict or idempotency-key reuse/in-progress request",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
       }
     },
     "schemas": {
@@ -397,6 +1167,109 @@
           "android",
           "pc"
         ]
+      },
+      "CurrentDeviceRegistrationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Current device metadata for cross-platform capability and future notification routing. Raw deviceId is hashed server-side and push tokens are not accepted here.",
+        "required": [
+          "platform",
+          "deviceId"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/ClientPlatform"
+          },
+          "deviceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "appVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "osVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "CurrentDeviceRegistrationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "pushEnabled",
+          "lastSeenAt"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/ClientPlatform"
+          },
+          "pushEnabled": {
+            "type": "boolean",
+            "description": "Always false until push-token registration and provider integrations land."
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CurrentDevicePushDisableRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Current device metadata used to disable push. Raw deviceId is hashed server-side and push tokens are intentionally not accepted.",
+        "required": [
+          "platform",
+          "deviceId"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/ClientPlatform"
+          },
+          "deviceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "appVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "osVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "CurrentDevicePushDisableResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Current device state after push is disabled. pushEnabled is false.",
+        "required": [
+          "platform",
+          "pushEnabled",
+          "lastSeenAt"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/ClientPlatform"
+          },
+          "pushEnabled": {
+            "type": "boolean",
+            "description": "False after disabling push for the current registered device."
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "GuardianLinkStatus": {
         "type": "string",
@@ -416,6 +1289,52 @@
           "denied",
           "withdrawn",
           "outdated"
+        ]
+      },
+      "DemoSessionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "enum": [
+              "minor_guardian_voice"
+            ],
+            "default": "minor_guardian_voice"
+          }
+        }
+      },
+      "DemoSessionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Short-lived non-production demo credentials. Disabled by default and forced off in production.",
+        "properties": {
+          "scenario": {
+            "const": "minor_guardian_voice"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "studentToken": {
+            "type": "string",
+            "description": "Short-lived demo Bearer token for the minor student actor."
+          },
+          "guardianToken": {
+            "type": "string",
+            "description": "Short-lived demo Bearer token for the guardian actor."
+          }
+        },
+        "required": [
+          "scenario",
+          "studentId",
+          "expiresAt",
+          "studentToken",
+          "guardianToken"
         ]
       },
       "StudentOnboardingRequest": {
@@ -517,6 +1436,67 @@
           "verifiedAt"
         ]
       },
+      "GuardianInvitationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inviteCode": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "inviteCode",
+          "expiresAt"
+        ]
+      },
+      "GuardianLinkVerificationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inviteCode": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "inviteCode"
+        ]
+      },
+      "GuardianLinkVerificationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "verified"
+          },
+          "purchaseAllowed": {
+            "type": "boolean"
+          },
+          "verifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "studentId",
+          "status",
+          "purchaseAllowed",
+          "verifiedAt"
+        ]
+      },
       "VoiceConsentWrite": {
         "type": "object",
         "additionalProperties": false,
@@ -535,6 +1515,51 @@
           }
         },
         "required": [
+          "status",
+          "version"
+        ]
+      },
+      "GuardianVoiceConsentWriteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "granted",
+              "denied",
+              "withdrawn"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ]
+      },
+      "GuardianVoiceConsentWriteResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "voice_processing"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConsentStatus"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type",
           "status",
           "version"
         ]
@@ -559,6 +1584,95 @@
           "type",
           "status",
           "version"
+        ]
+      },
+      "VoiceUploadTicketRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "audio/webm",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/wav",
+              "audio/x-m4a"
+            ]
+          },
+          "contentLengthBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Requested upload size in bytes. The server enforces the configured maximum in the signed policy."
+          },
+          "durationSeconds": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Client-measured audio duration in seconds. The server enforces the configured maximum before signing."
+          },
+          "checksumSha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "Hex-encoded SHA-256 checksum recorded as signed object metadata."
+          }
+        },
+        "required": [
+          "contentType",
+          "contentLengthBytes",
+          "durationSeconds",
+          "checksumSha256"
+        ]
+      },
+      "VoiceUploadTicketResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "uploadUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "method": {
+            "const": "POST"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "S3-compatible POST form fields, including key, policy, x-amz-* signature fields, content type, and signed metadata."
+          },
+          "objectKey": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxDurationSeconds": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "uploadUrl",
+          "method",
+          "fields",
+          "objectKey",
+          "bucket",
+          "region",
+          "expiresAt",
+          "maxBytes",
+          "maxDurationSeconds"
         ]
       },
       "Capabilities": {
@@ -629,6 +1743,7 @@
             }
           },
           "entitlements": {
+            "description": "Server-side active or grace-period entitlement codes for the current student. Expired, revoked, or past valid_until records are omitted.",
             "type": "array",
             "items": {
               "type": "string"
@@ -653,15 +1768,18 @@
       },
       "Error": {
         "type": "object",
-        "properties": {
-          "code": {
-            "type": "string"
-          }
-        },
+        "additionalProperties": false,
         "required": [
           "code"
         ],
-        "additionalProperties": true
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/StableErrorCode"
+          },
+          "details": {
+            "$ref": "#/components/schemas/SafeErrorDetails"
+          }
+        }
       },
       "TrialQuestion": {
         "type": "object",
@@ -797,7 +1915,614 @@
           "score",
           "progressPersisted"
         ]
+      },
+      "AuthActor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "role",
+          "method"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian",
+              "admin",
+              "service"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "bearer",
+              "legacy_student_header",
+              "legacy_guardian_header",
+              "service_token"
+            ]
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/StableErrorCode"
+          },
+          "details": {
+            "$ref": "#/components/schemas/SafeErrorDetails"
+          }
+        }
+      },
+      "StableErrorCode": {
+        "type": "string",
+        "description": "Stable error-code registry. IDEMPOTENCY_REPLAY is deprecated and retained only for compatibility; P1.1 does not emit it.",
+        "x-deprecated-values": [
+          "IDEMPOTENCY_REPLAY"
+        ],
+        "x-compatibility-only-values": [
+          "IDEMPOTENCY_REPLAY"
+        ],
+        "enum": [
+          "AUTH_REQUIRED",
+          "AUTH_INVALID",
+          "AUTH_FORBIDDEN",
+          "CORS_ORIGIN_DENIED",
+          "INVALID_ONBOARDING",
+          "INVALID_BIRTH_MONTH",
+          "INVALID_CLIENT_PLATFORM",
+          "INVALID_CONSENT_VERSION",
+          "INVALID_TRIAL_ANSWER",
+          "STUDENT_NOT_FOUND",
+          "GUARDIAN_VERIFICATION_REQUIRED",
+          "GUARDIAN_AUTH_REQUIRED",
+          "TRIAL_NOT_AVAILABLE",
+          "TRIAL_ALREADY_REDEEMED",
+          "TRIAL_ATTEMPT_NOT_FOUND",
+          "TRIAL_ATTEMPT_EXPIRED",
+          "TRIAL_ANSWER_OUT_OF_SEQUENCE",
+          "TRIAL_ANSWER_ALREADY_SUBMITTED",
+          "VOICE_CONSENT_REQUIRED",
+          "SIGNED_UPLOAD_NOT_CONFIGURED",
+          "IDEMPOTENCY_KEY_REQUIRED",
+          "IDEMPOTENCY_REPLAY",
+          "REVISION_REQUIRED",
+          "REVISION_CONFLICT",
+          "NOT_FOUND",
+          "VALIDATION_FAILED",
+          "INTERNAL_ERROR",
+          "LEGACY_AUTH_NOT_ALLOWED",
+          "IDEMPOTENCY_KEY_INVALID",
+          "IDEMPOTENCY_KEY_REUSED",
+          "IDEMPOTENCY_REQUEST_IN_PROGRESS",
+          "STAGE_EXAM_NOT_AVAILABLE",
+          "STAGE_ATTEMPT_NOT_FOUND",
+          "STAGE_ATTEMPT_ALREADY_OPEN",
+          "STAGE_ATTEMPT_ALREADY_FINALIZED",
+          "STAGE_ATTEMPT_EXPIRED",
+          "INVALID_STAGE_SUBMISSION"
+        ]
+      },
+      "SafeErrorDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "invalid",
+              "missing",
+              "expired",
+              "conflict",
+              "not_allowed"
+            ]
+          },
+          "resource": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian_link",
+              "consent",
+              "trial_attempt",
+              "request",
+              "stage_exam",
+              "stage_attempt",
+              "submission"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "AuthorizationProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "canLearn",
+          "canUploadVoice",
+          "canPurchase"
+        ],
+        "properties": {
+          "canLearn": {
+            "type": "boolean"
+          },
+          "canUploadVoice": {
+            "type": "boolean"
+          },
+          "canPurchase": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GuardianLinkProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "studentId",
+          "status",
+          "revision",
+          "authorization"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuardianLinkStatus"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "authorization": {
+            "$ref": "#/components/schemas/AuthorizationProjection"
+          },
+          "guardianId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ConsentProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "studentId",
+          "type",
+          "status",
+          "version",
+          "revision",
+          "actor"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "string"
+          },
+          "type": {
+            "const": "voice_processing"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConsentStatus"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "StageExamVersionStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "published"
+        ]
+      },
+      "StageAttemptStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "passed",
+          "failed",
+          "expired"
+        ]
+      },
+      "PublicStageExamOption": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "optionId",
+          "text"
+        ],
+        "properties": {
+          "optionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicStageExamItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "itemRef",
+          "ordinal",
+          "prompt",
+          "support",
+          "options",
+          "points"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "itemRef": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "support": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "$ref": "#/components/schemas/PublicStageExamOption"
+            }
+          },
+          "points": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      },
+      "StartStageAttemptResponse": {
+        "description": "Formal P1.3 Start/Get runtime response. Item and option IDs are immutable attempt snapshot IDs and do not expose private answer keys.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "attemptId",
+          "examVersionId",
+          "status",
+          "startedAt",
+          "expiresAt",
+          "passScore",
+          "items"
+        ],
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "examVersionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "open"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "passScore": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicStageExamItem"
+            }
+          }
+        }
+      },
+      "SubmitStageAttemptRequest": {
+        "description": "Formal P1.3 submit runtime request. Null selectedOptionId explicitly represents a skipped item. Client score, passed, mastery, due, occurred_at, or evidence fields are not accepted.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "answers"
+        ],
+        "properties": {
+          "answers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "itemId",
+                "selectedOptionId"
+              ],
+              "properties": {
+                "itemId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "selectedOptionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      },
+      "StageAttemptResultItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "itemId",
+          "outcome",
+          "earnedScore",
+          "maxScore"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "correct",
+              "incorrect",
+              "skipped"
+            ]
+          },
+          "earnedScore": {
+            "type": "number",
+            "minimum": 0
+          },
+          "maxScore": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      },
+      "StageAttemptResultResponse": {
+        "description": "Formal P1.3 server-scored result. Scores are derived from immutable answer-key snapshots, not client-supplied values.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "attemptId",
+          "status",
+          "submittedAt",
+          "rawScore",
+          "maxScore",
+          "score",
+          "passed",
+          "passScore",
+          "items"
+        ],
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed"
+            ]
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rawScore": {
+            "type": "number",
+            "minimum": 0
+          },
+          "maxScore": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "passScore": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StageAttemptResultItem"
+            }
+          }
+        }
+      },
+      "StudentKnowledgeProjectionState": {
+        "type": "string",
+        "enum": [
+          "learning",
+          "review",
+          "mastered"
+        ]
+      },
+      "StudentKnowledgeProjection": {
+        "description": "Current P1.3-6 materialized mastery/due projection. It mirrors student_knowledge rows and excludes future fields such as stabilityDays or attemptCount.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "studentId",
+          "knowledgePointRef",
+          "rawCorrectTotal",
+          "rawAttemptTotal",
+          "masteryScore",
+          "state",
+          "lastOccurredAt",
+          "dueAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "knowledgePointRef": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rawCorrectTotal": {
+            "type": "number",
+            "minimum": 0
+          },
+          "rawAttemptTotal": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "masteryScore": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "state": {
+            "$ref": "#/components/schemas/StudentKnowledgeProjectionState"
+          },
+          "lastOccurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StudentKnowledgeProjectionListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StudentKnowledgeProjection"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Verified actor bearer authentication. Required for formal stage-attempt runtime; legacy identity headers are not accepted on formal routes."
+      },
+      "LegacyStudentHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Student-Id",
+        "description": "Deprecated compatibility identity used by the current scaffold runtime; replace with planned BearerAuth middleware."
+      },
+      "LegacyGuardianHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Guardian-Id",
+        "description": "Deprecated compatibility guardian actor used by the current scaffold runtime; replace with planned BearerAuth middleware."
       }
     }
+  },
+  "x-legacy-header-deprecation": {
+    "headers": [
+      "X-Student-Id",
+      "X-Guardian-Id"
+    ],
+    "sunset": "2027-01-01",
+    "replacement": "Authorization: Bearer <token>"
+  },
+  "x-runtime-contract-status": {
+    "authentication": "BearerAuth is implemented for formal stage-attempt runtime; deprecated X-Student-Id/X-Guardian-Id headers remain only for legacy non-formal compatibility routes",
+    "idempotency": "formal stage-attempt start and submit use Idempotency-Key; deprecated compatibility-only IDEMPOTENCY_REPLAY is not emitted",
+    "revision": "planned: If-Match-Revision is not implemented and is not currently required"
   }
 }

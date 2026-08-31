@@ -1,0 +1,656 @@
+import { PGlite } from '@electric-sql/pglite'
+import { afterEach, describe, expect, it } from 'vitest'
+import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
+import { PostgresStudentRepository } from '../src/repository.js'
+
+const databases: PGlite[] = []
+
+const asMigrationDatabase = (database: PGlite): MigrationDatabase => ({
+  query: async <Row extends Record<string, unknown>>(sql: string, parameters?: unknown[]) => {
+    if (parameters === undefined && sql.split(';').filter((statement) => statement.trim().length > 0).length > 1) {
+      const results = await database.exec(sql)
+      return { rows: (results.at(-1)?.rows ?? []) as Row[] }
+    }
+    const result = await database.query<Row>(sql, parameters)
+    return { rows: result.rows }
+  },
+})
+
+const ids = {
+  student: '00000000-0000-0000-0000-000000003001',
+  guardian: '00000000-0000-0000-0000-000000003002',
+  exam: '00000000-0000-0000-0000-000000003101',
+  versionOne: '00000000-0000-0000-0000-000000003111',
+  versionTwo: '00000000-0000-0000-0000-000000003112',
+  itemOne: '00000000-0000-0000-0000-000000003201',
+  itemTwo: '00000000-0000-0000-0000-000000003202',
+  optionOneA: '00000000-0000-0000-0000-000000003301',
+  optionOneB: '00000000-0000-0000-0000-000000003302',
+  optionTwoA: '00000000-0000-0000-0000-000000003303',
+  optionTwoB: '00000000-0000-0000-0000-000000003304',
+  attemptOne: '00000000-0000-0000-0000-000000003401',
+  attemptTwo: '00000000-0000-0000-0000-000000003402',
+  attemptThree: '00000000-0000-0000-0000-000000003403',
+  idempotency: '00000000-0000-0000-0000-000000003501',
+}
+
+const createDatabase = async (): Promise<PGlite> => {
+  const database = new PGlite()
+  databases.push(database)
+  await runMigrations(asMigrationDatabase(database))
+  return database
+}
+
+const seedPublishedExam = async (database: PGlite): Promise<void> => {
+  await database.exec(`
+    INSERT INTO users (id, role, is_minor) VALUES
+      ('${ids.student}', 'student', false),
+      ('${ids.guardian}', 'guardian', false);
+    INSERT INTO stage_exams (id, exam_level, stage, code)
+      VALUES ('${ids.exam}', 'eiken_grade_3', 1, 'diagnostic-stage');
+    INSERT INTO stage_exam_versions
+      (id, exam_id, version, pass_score, duration_seconds, content_hash)
+      VALUES
+      ('${ids.versionOne}', '${ids.exam}', 1, 0.8, 1200, decode(repeat('ab', 32), 'hex')),
+      ('${ids.versionTwo}', '${ids.exam}', 2, 0.8, 1200, decode(repeat('cd', 32), 'hex'));
+    INSERT INTO stage_exam_items
+      (id, exam_version_id, item_ref, ordinal, prompt, points, skill_ref, knowledge_point_ref)
+      VALUES
+      ('${ids.itemOne}', '${ids.versionOne}', 'item-1', 1, 'Choose Alpha.', 1, 'reading', 'vocab-alpha'),
+      ('${ids.itemTwo}', '${ids.versionTwo}', 'item-1', 1, 'Choose Gamma.', 1, 'reading', 'vocab-gamma');
+    INSERT INTO stage_exam_item_options (id, item_id, option_ref, option_text, ordinal) VALUES
+      ('${ids.optionOneA}', '${ids.itemOne}', 'a', 'Alpha', 1),
+      ('${ids.optionOneB}', '${ids.itemOne}', 'b', 'Beta', 2),
+      ('${ids.optionTwoA}', '${ids.itemTwo}', 'a', 'Gamma', 1),
+      ('${ids.optionTwoB}', '${ids.itemTwo}', 'b', 'Delta', 2);
+    INSERT INTO stage_exam_item_answer_keys (item_id, correct_option_id) VALUES
+      ('${ids.itemOne}', '${ids.optionOneA}'),
+      ('${ids.itemTwo}', '${ids.optionTwoA}');
+    UPDATE stage_exam_versions
+      SET status = 'published', published_at = CURRENT_TIMESTAMP
+      WHERE id IN ('${ids.versionOne}', '${ids.versionTwo}');
+  `)
+}
+
+const startAttempt = (database: PGlite, attemptId: string, versionId: string, studentId = ids.student): Promise<unknown> =>
+  database.query(`
+    INSERT INTO stage_attempts (id, student_id, exam_version_id, expires_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '20 minutes')
+  `, [attemptId, studentId, versionId])
+
+afterEach(async () => {
+  await Promise.all(databases.map((database) => database.close()))
+  databases.length = 0
+})
+
+describe('learning P1.3-1 stage attempt snapshots', () => {
+  it('creates immutable question, option, and private answer snapshots with a stable hash', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+
+    const attempts = await database.query<{ snapshot_hash: string; mode: string }>(`
+      SELECT snapshot_hash, mode FROM stage_attempts WHERE id = $1
+    `, [ids.attemptOne])
+    expect(attempts.rows).toEqual([{ snapshot_hash: expect.stringMatching(/^[0-9a-f]{64}$/), mode: 'formal' }])
+
+    const snapshots = await database.query<{
+      prompt: string
+      position: number
+      skill_ref: string
+      knowledge_point_ref: string
+      max_score: string
+      correct_option_text: string
+    }>(`
+      SELECT s.prompt, s.position, s.skill_ref, s.knowledge_point_ref, s.max_score::text,
+             os.option_text AS correct_option_text
+      FROM stage_attempt_item_snapshots s
+      JOIN stage_attempt_answer_key_snapshots k ON k.item_snapshot_id = s.id
+      JOIN stage_attempt_item_option_snapshots os ON os.id = k.correct_option_snapshot_id
+      WHERE s.attempt_id = $1
+    `, [ids.attemptOne])
+    expect(snapshots.rows).toEqual([{
+      prompt: 'Choose Alpha.',
+      position: 1,
+      skill_ref: 'reading',
+      knowledge_point_ref: 'vocab-alpha',
+      max_score: '1.000000',
+      correct_option_text: 'Alpha',
+    }])
+
+    await expect(database.query(`
+      UPDATE stage_attempt_item_snapshots SET prompt = 'tampered' WHERE attempt_id = $1
+    `, [ids.attemptOne])).rejects.toThrow(/immutable/)
+    await expect(database.query(`
+      INSERT INTO stage_attempt_item_snapshots
+        (attempt_id, source_item_id, item_ref, position, prompt, skill_ref, knowledge_point_ref, max_score)
+      VALUES ($1, $2, 'forged', 99, 'Forged prompt.', 'reading', 'forged', 1)
+    `, [ids.attemptOne, ids.itemOne])).rejects.toThrow(/snapshot trigger/)
+    await database.query("SELECT set_config('peraquest.stage_attempt_snapshot_write', 'on', true)")
+    await expect(database.query(`
+      INSERT INTO stage_attempt_item_snapshots
+        (attempt_id, source_item_id, item_ref, position, prompt, skill_ref, knowledge_point_ref, max_score)
+      VALUES ($1, $2, 'forged-guc', 100, 'Forged prompt.', 'reading', 'forged', 1)
+    `, [ids.attemptOne, ids.itemOne])).rejects.toThrow(/snapshot trigger/)
+    await expect(database.query(`
+      UPDATE stage_attempts SET snapshot_hash = repeat('0', 64) WHERE id = $1
+    `, [ids.attemptOne])).rejects.toThrow()
+  })
+
+  it('keeps old attempt snapshots independent from later published exam versions', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+    await startAttempt(database, ids.attemptTwo, ids.versionTwo)
+
+    const rows = await database.query<{ attempt_id: string; prompt: string; snapshot_hash: string }>(`
+      SELECT a.id AS attempt_id, s.prompt, a.snapshot_hash
+      FROM stage_attempts a
+      JOIN stage_attempt_item_snapshots s ON s.attempt_id = a.id
+      ORDER BY a.id
+    `)
+    expect(rows.rows).toEqual([
+      { attempt_id: ids.attemptOne, prompt: 'Choose Alpha.', snapshot_hash: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      { attempt_id: ids.attemptTwo, prompt: 'Choose Gamma.', snapshot_hash: expect.stringMatching(/^[0-9a-f]{64}$/) },
+    ])
+    expect(rows.rows[0]?.snapshot_hash).not.toBe(rows.rows[1]?.snapshot_hash)
+  })
+
+  it('enforces formal start idempotency uniqueness without hardcoding response payloads', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+    await database.query(`
+      INSERT INTO idempotency_records
+        (id, student_id, operation_scope, idempotency_key, request_hash, expires_at)
+      VALUES ($1, $2, 'stage_attempt.start:v1:${ids.exam}', 'start-key-1',
+              decode(repeat('ab', 32), 'hex'), CURRENT_TIMESTAMP + interval '1 day')
+    `, [ids.idempotency, ids.student])
+
+    await database.query(`
+      INSERT INTO stage_attempt_start_idempotency
+        (student_id, exam_id, operation_scope, idempotency_key, attempt_id)
+      VALUES ($1, '${ids.exam}', 'stage_attempt.start:v1:${ids.exam}', 'start-key-1', $2)
+    `, [ids.student, ids.attemptOne])
+    await expect(database.query(`
+      INSERT INTO stage_attempt_start_idempotency
+        (student_id, exam_id, operation_scope, idempotency_key, attempt_id)
+      VALUES ($1, '${ids.exam}', 'stage_attempt.start:v1:${ids.exam}', 'start-key-1', $2)
+    `, [ids.student, ids.attemptOne])).rejects.toThrow()
+  })
+
+  it('rejects guardian attempts, cross-item options, and duplicate answers', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await expect(startAttempt(database, ids.attemptOne, ids.versionOne, ids.guardian)).rejects.toThrow(/active student/)
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+
+    const snapshot = await database.query<{ item_snapshot_id: string; option_snapshot_id: string }>(`
+      SELECT s.id AS item_snapshot_id, os.id AS option_snapshot_id
+      FROM stage_attempt_item_snapshots s
+      JOIN stage_attempt_item_option_snapshots os ON os.item_snapshot_id = s.id
+      WHERE s.attempt_id = $1 AND os.option_ref = 'a'
+    `, [ids.attemptOne])
+    const { item_snapshot_id, option_snapshot_id } = snapshot.rows[0]!
+
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'answer-1')
+    `, [ids.attemptOne, item_snapshot_id, option_snapshot_id])
+    await expect(database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'skipped', NULL, 'answer-2')
+    `, [ids.attemptOne, item_snapshot_id])).rejects.toThrow()
+  })
+
+  it('keeps Trial writes out of formal attempt, answer, snapshot, and audit tables', async () => {
+    const database = await createDatabase()
+    await database.query(`
+      INSERT INTO users (id, role, is_minor) VALUES ($1, 'student', true)
+    `, [ids.student])
+    const before = await database.query<{ count: number }>(`
+      SELECT
+        (SELECT count(*)::int FROM stage_attempts) +
+        (SELECT count(*)::int FROM stage_attempt_item_snapshots) +
+        (SELECT count(*)::int FROM stage_attempt_answers) +
+        (SELECT count(*)::int FROM knowledge_evidence) +
+        (SELECT count(*)::int FROM student_knowledge) +
+        (SELECT count(*)::int FROM student_knowledge_applied_evidence) +
+        (SELECT count(*)::int FROM learning_audit_events) AS count
+    `)
+    await database.query('INSERT INTO trial_redemptions (student_id) VALUES ($1)', [ids.student])
+    await database.query(`
+      INSERT INTO trial_attempts (id, student_id, expires_at)
+      VALUES ('00000000-0000-0000-0000-000000003901', $1, now() + interval '10 minutes')
+    `, [ids.student])
+    const after = await database.query<{ count: number }>(`
+      SELECT
+        (SELECT count(*)::int FROM stage_attempts) +
+        (SELECT count(*)::int FROM stage_attempt_item_snapshots) +
+        (SELECT count(*)::int FROM stage_attempt_answers) +
+        (SELECT count(*)::int FROM knowledge_evidence) +
+        (SELECT count(*)::int FROM student_knowledge) +
+        (SELECT count(*)::int FROM student_knowledge_applied_evidence) +
+        (SELECT count(*)::int FROM learning_audit_events) AS count
+    `)
+    expect(after.rows).toEqual(before.rows)
+  })
+
+  it('scores answers from snapshots and rejects forged terminal scores', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+
+    const snapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string; wrong_option_snapshot_id: string }>(`
+      SELECT s.id AS item_snapshot_id,
+             max(os.id::text) FILTER (WHERE os.option_ref = 'a') AS correct_option_snapshot_id,
+             max(os.id::text) FILTER (WHERE os.option_ref = 'b') AS wrong_option_snapshot_id
+      FROM stage_attempt_item_snapshots s
+      JOIN stage_attempt_item_option_snapshots os ON os.item_snapshot_id = s.id
+      WHERE s.attempt_id = $1
+      GROUP BY s.id
+    `, [ids.attemptOne])
+    const row = snapshot.rows[0]!
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'submit-1')
+    `, [ids.attemptOne, row.item_snapshot_id, row.correct_option_snapshot_id])
+    await expect(database.query(`
+      UPDATE stage_attempts
+      SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0, passed = false,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptOne])).rejects.toThrow(/score must match/)
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1, passed = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptOne])
+
+    const result = await database.query<{ status: string; score: string; passed: boolean; outcome: string; earned_score: string }>(`
+      SELECT a.status, a.score::text, a.passed, ans.outcome, ans.earned_score::text
+      FROM stage_attempts a
+      JOIN stage_attempt_answers ans ON ans.attempt_id = a.id
+      WHERE a.id = $1
+    `, [ids.attemptOne])
+    expect(result.rows).toHaveLength(1)
+    expect(result.rows[0]).toMatchObject({ status: 'passed', passed: true, outcome: 'correct', earned_score: '1.000000' })
+    expect(Number(result.rows[0]!.score)).toBe(1)
+
+    await startAttempt(database, ids.attemptTwo, ids.versionOne)
+    const secondSnapshot = await database.query<{ item_snapshot_id: string }>(`
+      SELECT id AS item_snapshot_id FROM stage_attempt_item_snapshots WHERE attempt_id = $1
+    `, [ids.attemptTwo])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'skipped', NULL, 'submit-1')
+    `, [ids.attemptTwo, secondSnapshot.rows[0]!.item_snapshot_id])
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0, passed = false,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptTwo])
+    const skipped = await database.query<{ outcome: string; earned_score: string }>(`
+      SELECT outcome, earned_score::text FROM stage_attempt_answers WHERE attempt_id = $1
+    `, [ids.attemptTwo])
+    expect(skipped.rows).toEqual([{ outcome: 'skipped', earned_score: '0.000000' }])
+
+    await startAttempt(database, ids.attemptThree, ids.versionTwo)
+    const thirdSnapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string }>(`
+      SELECT item.id AS item_snapshot_id, keys.correct_option_snapshot_id
+      FROM stage_attempt_item_snapshots item
+      JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+      WHERE item.attempt_id = $1
+    `, [ids.attemptThree])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'submit-1')
+    `, [ids.attemptThree, thirdSnapshot.rows[0]!.item_snapshot_id, thirdSnapshot.rows[0]!.correct_option_snapshot_id])
+    await database.query('ALTER TABLE stage_attempts DISABLE TRIGGER stage_attempt_transition_trg')
+    await database.query(`
+      UPDATE stage_attempts
+      SET started_at = CURRENT_TIMESTAMP - interval '2 hours',
+          expires_at = CURRENT_TIMESTAMP - interval '1 hour'
+      WHERE id = $1
+    `, [ids.attemptThree])
+    await database.query('ALTER TABLE stage_attempts ENABLE TRIGGER stage_attempt_transition_trg')
+    await expect(database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1, passed = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptThree])).rejects.toThrow(/expired stage attempts cannot be submitted/)
+  })
+
+  it('creates one immutable knowledge evidence row per scored answer from snapshots', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+
+    const snapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string }>(`
+      SELECT item.id AS item_snapshot_id, keys.correct_option_snapshot_id
+      FROM stage_attempt_item_snapshots item
+      JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+      WHERE item.attempt_id = $1
+    `, [ids.attemptOne])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'submit-1')
+    `, [ids.attemptOne, snapshot.rows[0]!.item_snapshot_id, snapshot.rows[0]!.correct_option_snapshot_id])
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1, passed = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptOne])
+    await database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptOne, ids.student])
+    await database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptOne, ids.student])
+    await expect(database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptOne, ids.guardian]))
+      .rejects.toThrow(/exactly one evidence/)
+    await database.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [ids.attemptOne, ids.student])
+    await database.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [ids.attemptOne, ids.student])
+    await expect(database.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [ids.attemptOne, ids.guardian]))
+      .rejects.toThrow(/requires knowledge evidence/)
+
+    const evidence = await database.query<{
+      skill_ref: string
+      knowledge_point_ref: string
+      outcome: string
+      earned_score: string
+      max_score: string
+      time_matches: boolean
+      count: number
+    }>(`
+      SELECT ev.skill_ref, ev.knowledge_point_ref, ev.outcome,
+             ev.earned_score::text, ev.max_score::text,
+             ev.occurred_at = attempts.submitted_at AS time_matches,
+             count(*) OVER ()::int AS count
+      FROM knowledge_evidence ev
+      JOIN stage_attempts attempts ON attempts.id = ev.attempt_id
+      WHERE ev.attempt_id = $1
+    `, [ids.attemptOne])
+    expect(evidence.rows).toEqual([{
+      skill_ref: 'reading',
+      knowledge_point_ref: 'vocab-alpha',
+      outcome: 'correct',
+      earned_score: '1.000000',
+      max_score: '1.000000',
+      time_matches: true,
+      count: 1,
+    }])
+    const mastered = await database.query<{
+      raw_correct_total: string
+      raw_attempt_total: string
+      mastery_score: string
+      state: string
+      due_matches: boolean
+      applied_count: number
+    }>(`
+      SELECT sk.raw_correct_total::text, sk.raw_attempt_total::text, sk.mastery_score::text,
+             sk.state, sk.due_at = sk.last_occurred_at + interval '14 days' AS due_matches,
+             (SELECT count(*)::int FROM student_knowledge_applied_evidence WHERE student_id = sk.student_id) AS applied_count
+      FROM student_knowledge sk
+      WHERE sk.student_id = $1 AND sk.knowledge_point_ref = 'vocab-alpha'
+    `, [ids.student])
+    expect(mastered.rows).toEqual([{
+      raw_correct_total: '1.000000',
+      raw_attempt_total: '1.000000',
+      mastery_score: '1.000000',
+      state: 'mastered',
+      due_matches: true,
+      applied_count: 1,
+    }])
+    await expect(database.query(`
+      UPDATE knowledge_evidence SET earned_score = 0 WHERE attempt_id = $1
+    `, [ids.attemptOne])).rejects.toThrow(/append-only/)
+    await expect(database.query(`
+      UPDATE student_knowledge SET mastery_score = 0 WHERE student_id = $1
+    `, [ids.student])).rejects.toThrow(/approved mastery/)
+
+    await startAttempt(database, ids.attemptTwo, ids.versionOne)
+    const secondSnapshot = await database.query<{ item_snapshot_id: string }>(`
+      SELECT id AS item_snapshot_id FROM stage_attempt_item_snapshots WHERE attempt_id = $1
+    `, [ids.attemptTwo])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'skipped', NULL, 'submit-1')
+    `, [ids.attemptTwo, secondSnapshot.rows[0]!.item_snapshot_id])
+    await expect(database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptTwo, ids.student]))
+      .rejects.toThrow(/submitted formal attempt|exactly one evidence/)
+
+    await startAttempt(database, ids.attemptThree, ids.versionTwo)
+    const thirdSnapshot = await database.query<{ item_snapshot_id: string; source_item_id: string }>(`
+      SELECT id AS item_snapshot_id, source_item_id
+      FROM stage_attempt_item_snapshots
+      WHERE attempt_id = $1
+    `, [ids.attemptThree])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'skipped', NULL, 'submit-1')
+    `, [ids.attemptThree, thirdSnapshot.rows[0]!.item_snapshot_id])
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'failed', submitted_at = CURRENT_TIMESTAMP, score = 0, passed = false,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptThree])
+    const thirdAnswer = await database.query<{ answer_id: string }>(`
+      SELECT id AS answer_id FROM stage_attempt_answers WHERE attempt_id = $1
+    `, [ids.attemptThree])
+    await expect(database.query(`
+      INSERT INTO knowledge_evidence
+        (student_id, attempt_id, exam_version_id, item_snapshot_id, answer_id,
+         source_item_id, skill_ref, knowledge_point_ref, outcome, earned_score, max_score, occurred_at)
+      SELECT $1, $2, $3, $4, $5, $6, 'reading', 'forged-knowledge',
+             'correct', 1, 1, submitted_at
+      FROM stage_attempts
+      WHERE id = $2
+    `, [
+      ids.student,
+      ids.attemptThree,
+      ids.versionTwo,
+      thirdSnapshot.rows[0]!.item_snapshot_id,
+      thirdAnswer.rows[0]!.answer_id,
+      thirdSnapshot.rows[0]!.source_item_id,
+    ])).rejects.toThrow(/must match/)
+    await database.query('SELECT create_stage_attempt_knowledge_evidence($1, $2)', [ids.attemptThree, ids.student])
+    await database.query('SELECT apply_stage_attempt_mastery_due($1, $2)', [ids.attemptThree, ids.student])
+    const learning = await database.query<{ mastery_score: string; state: string; due_matches: boolean }>(`
+      SELECT mastery_score::text, state, due_at = last_occurred_at + interval '1 day' AS due_matches
+      FROM student_knowledge
+      WHERE student_id = $1 AND knowledge_point_ref = 'vocab-gamma'
+    `, [ids.student])
+    expect(learning.rows).toEqual([{ mastery_score: '0.000000', state: 'learning', due_matches: true }])
+  })
+
+  it('keeps mastery threshold, partial score, rounding, and due rules deterministic', async () => {
+    const database = await createDatabase()
+    const rules = await database.query<{
+      learning_score: string
+      learning_state: string
+      learning_due_matches: boolean
+      review_score: string
+      review_state: string
+      review_due_matches: boolean
+      mastered_score: string
+      mastered_state: string
+      mastered_due_matches: boolean
+      rounded_score: string
+    }>(`
+      SELECT
+        calculate_student_knowledge_mastery(1, 2)::numeric(7,6)::text AS learning_score,
+        calculate_student_knowledge_state(0.500000) AS learning_state,
+        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 0.500000)
+          = TIMESTAMPTZ '2026-08-28 00:00:00+00' AS learning_due_matches,
+        calculate_student_knowledge_mastery(3, 5)::numeric(7,6)::text AS review_score,
+        calculate_student_knowledge_state(0.600000) AS review_state,
+        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 0.600000)
+          = TIMESTAMPTZ '2026-08-30 00:00:00+00' AS review_due_matches,
+        calculate_student_knowledge_mastery(4, 5)::numeric(7,6)::text AS mastered_score,
+        calculate_student_knowledge_state(0.800000) AS mastered_state,
+        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 0.800000)
+          = TIMESTAMPTZ '2026-09-10 00:00:00+00' AS mastered_due_matches,
+        calculate_student_knowledge_mastery(2, 3)::numeric(7,6)::text AS rounded_score
+    `)
+
+    expect(rules.rows).toEqual([{
+      learning_score: '0.500000',
+      learning_state: 'learning',
+      learning_due_matches: true,
+      review_score: '0.600000',
+      review_state: 'review',
+      review_due_matches: true,
+      mastered_score: '0.800000',
+      mastered_state: 'mastered',
+      mastered_due_matches: true,
+      rounded_score: '0.666667',
+    }])
+  })
+
+  it('lists materialized mastery projections for only the requested student by due date', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await database.query(`
+      INSERT INTO student_knowledge
+        (student_id, knowledge_point_ref, raw_correct_total, raw_attempt_total,
+         mastery_score, state, last_occurred_at, due_at)
+      VALUES
+        ($1, 'vocab-late', 1, 1, 1.000000, 'mastered',
+         TIMESTAMPTZ '2026-08-27 00:00:00+00', TIMESTAMPTZ '2026-09-10 00:00:00+00'),
+        ($1, 'vocab-early', 3, 5, 0.600000, 'review',
+         TIMESTAMPTZ '2026-08-27 00:00:00+00', TIMESTAMPTZ '2026-08-30 00:00:00+00'),
+        ($2, 'other-student', 1, 2, 0.500000, 'learning',
+         TIMESTAMPTZ '2026-08-27 00:00:00+00', TIMESTAMPTZ '2026-08-28 00:00:00+00')
+    `, [ids.student, ids.guardian])
+    const repository = new PostgresStudentRepository(database as unknown as ConstructorParameters<typeof PostgresStudentRepository>[0])
+
+    const projections = await repository.listStudentKnowledgeProjections(ids.student)
+
+    expect(projections).toEqual([
+      {
+        studentId: ids.student,
+        knowledgePointRef: 'vocab-early',
+        rawCorrectTotal: 3,
+        rawAttemptTotal: 5,
+        masteryScore: 0.6,
+        state: 'review',
+        lastOccurredAt: '2026-08-27T00:00:00.000Z',
+        dueAt: '2026-08-30T00:00:00.000Z',
+        updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      },
+      {
+        studentId: ids.student,
+        knowledgePointRef: 'vocab-late',
+        rawCorrectTotal: 1,
+        rawAttemptTotal: 1,
+        masteryScore: 1,
+        state: 'mastered',
+        lastOccurredAt: '2026-08-27T00:00:00.000Z',
+        dueAt: '2026-09-10T00:00:00.000Z',
+        updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      },
+    ])
+  })
+
+  it('accepts terminal audit events only when they match authoritative attempt terminal times', async () => {
+    const database = await createDatabase()
+    await seedPublishedExam(database)
+    await database.query(`
+      INSERT INTO auth_identities (id, user_id, provider, provider_subject)
+      VALUES ('00000000-0000-0000-0000-000000003601', $1, 'email_magic_link', 'student-audit-sub')
+    `, [ids.student])
+    await startAttempt(database, ids.attemptOne, ids.versionOne)
+
+    await expect(database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      VALUES ('00000000-0000-0000-0000-000000003701', 'attempt_submitted', $1, 'student',
+              'email_magic_link', 'student-audit-sub', 'self', $1, $2,
+              'request-terminal-1', 'forged submit', CURRENT_TIMESTAMP)
+    `, [ids.student, ids.attemptOne])).rejects.toThrow(/attempt_submitted must match/)
+
+    const snapshot = await database.query<{ item_snapshot_id: string; correct_option_snapshot_id: string }>(`
+      SELECT item.id AS item_snapshot_id, keys.correct_option_snapshot_id
+      FROM stage_attempt_item_snapshots item
+      JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+      WHERE item.attempt_id = $1
+    `, [ids.attemptOne])
+    await database.query(`
+      INSERT INTO stage_attempt_answers
+        (attempt_id, item_snapshot_id, answer_status, selected_option_snapshot_id, idempotency_key)
+      VALUES ($1, $2, 'answered', $3, 'submit-1')
+    `, [ids.attemptOne, snapshot.rows[0]!.item_snapshot_id, snapshot.rows[0]!.correct_option_snapshot_id])
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'passed', submitted_at = CURRENT_TIMESTAMP, score = 1, passed = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptOne])
+
+    await expect(database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      SELECT '00000000-0000-0000-0000-000000003702', 'attempt_submitted', student_id, 'student',
+             'email_magic_link', 'student-audit-sub', 'self', student_id, id,
+             'request-terminal-2', 'forged submit time', submitted_at + interval '1 second'
+      FROM stage_attempts WHERE id = $1
+    `, [ids.attemptOne])).rejects.toThrow(/authoritative submitted_at/)
+    await database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      SELECT '00000000-0000-0000-0000-000000003703', 'attempt_submitted', student_id, 'student',
+             'email_magic_link', 'student-audit-sub', 'self', student_id, id,
+             'request-terminal-3', 'stage_attempt_submitted', submitted_at
+      FROM stage_attempts WHERE id = $1
+    `, [ids.attemptOne])
+
+    await startAttempt(database, ids.attemptTwo, ids.versionOne)
+    await database.query('ALTER TABLE stage_attempts DISABLE TRIGGER stage_attempt_transition_trg')
+    await database.query(`
+      UPDATE stage_attempts
+      SET started_at = CURRENT_TIMESTAMP - interval '2 hours',
+          expires_at = CURRENT_TIMESTAMP - interval '1 hour'
+      WHERE id = $1
+    `, [ids.attemptTwo])
+    await database.query('ALTER TABLE stage_attempts ENABLE TRIGGER stage_attempt_transition_trg')
+    await database.query(`
+      UPDATE stage_attempts
+      SET status = 'expired', expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [ids.attemptTwo])
+    await database.query(`
+      INSERT INTO learning_audit_events
+        (event_id, event_type, actor_id, actor_role, actor_auth_provider, actor_provider_subject,
+         actor_relationship, student_id, attempt_id, request_id, reason, occurred_at)
+      SELECT '00000000-0000-0000-0000-000000003704', 'attempt_expired', student_id, 'student',
+             'email_magic_link', 'student-audit-sub', 'self', student_id, id,
+             'request-terminal-4', 'stage_attempt_expired', expired_at
+      FROM stage_attempts WHERE id = $1
+    `, [ids.attemptTwo])
+
+    const audits = await database.query<{ event_type: string; count: number }>(`
+      SELECT event_type, count(*)::int AS count
+      FROM learning_audit_events
+      WHERE attempt_id IN ($1, $2)
+      GROUP BY event_type
+      ORDER BY event_type
+    `, [ids.attemptOne, ids.attemptTwo])
+    expect(audits.rows).toEqual([
+      { event_type: 'attempt_submitted', count: 1 },
+      { event_type: 'attempt_expired', count: 1 },
+    ])
+  })
+})

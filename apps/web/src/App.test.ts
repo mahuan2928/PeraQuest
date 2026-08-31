@@ -231,7 +231,9 @@ describe('minor onboarding vertical slice', () => {
     await wrapper.get('[data-testid="open-api-demo"]').trigger('click')
 
     expect(wrapper.get('#api-demo-title').text()).toContain('学生、家长、支付、学习到游戏化复习的全流程 Demo')
-    expect(wrapper.text()).toContain('一键跑完整闭环')
+    expect(wrapper.text()).toContain('Student App')
+    expect(wrapper.text()).toContain('Guardian App')
+    expect(wrapper.text()).toContain('自动体验完整 Demo')
     expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(false)
   })
 

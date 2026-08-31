@@ -474,15 +474,104 @@ function resetDemo() {
 
     <section
       v-if="activeStep"
-      class="api-demo-current"
-      aria-label="Current demo step"
+      class="api-demo-experience"
+      aria-label="User-facing demo experience"
     >
-      <span class="api-demo-current__actor">{{ activeStep.actor }}</span>
-      <div>
-        <h2>{{ hasRun ? '闭环 Demo 已完成' : activeStep.title }}</h2>
-        <p>{{ hasRun ? '学生完成选课，家长完成确认和 mock 支付，系统开通权益，学生完成测试、学习、语音练习、复习和游戏奖励，家长看到日报后可撤回授权。' : activeStep.story }}</p>
-        <code>{{ activeStep.endpoint }}</code>
-      </div>
+      <article class="demo-device demo-device--student">
+        <header>
+          <span>Student App</span>
+          <strong>PeraQuest</strong>
+        </header>
+
+        <div v-if="activeStep.id === 'student-entry'" class="demo-screen">
+          <p class="demo-kicker">Welcome</p>
+          <h2>今日の冒険をはじめよう</h2>
+          <p>英検3級に向けた学習体験を開始します。未成年アカウントなので、購入と音声機能は家長確認後に開きます。</p>
+        </div>
+        <div v-else-if="activeStep.id === 'plan-selected'" class="demo-screen">
+          <p class="demo-kicker">Plan</p>
+          <h2>EIKEN Grade 3 Monthly</h2>
+          <p>毎日の診断、レッスン、復習、音声練習、ゲーム報酬をまとめて体験できます。</p>
+          <strong class="demo-price">¥1,980 / month</strong>
+        </div>
+        <div v-else-if="activeStep.id === 'invitation'" class="demo-screen">
+          <p class="demo-kicker">Guardian Invite</p>
+          <h2>家長に確認をお願いしよう</h2>
+          <p>招待コードを発行して、家長 App に送ります。</p>
+          <span class="demo-code">{{ maskedInviteCode }}</span>
+        </div>
+        <div v-else-if="activeStep.id === 'diagnostic-test'" class="demo-screen demo-quiz">
+          <p class="demo-kicker">Placement Test</p>
+          <h2>Choose the best answer</h2>
+          <p>Yesterday, I ___ my homework before dinner.</p>
+          <button type="button">finish</button>
+          <button type="button" class="selected">finished</button>
+          <button type="button">finishing</button>
+        </div>
+        <div v-else-if="activeStep.id === 'lesson-session'" class="demo-screen">
+          <p class="demo-kicker">Lesson</p>
+          <h2>Past tense mini lesson</h2>
+          <p>弱点だった過去形を、例文カードと即時フィードバックで復習します。</p>
+          <div class="demo-meter"><span style="width: 76%" /></div>
+          <small>Mastery 62% → 76%</small>
+        </div>
+        <div v-else-if="activeStep.id === 'signed-upload'" class="demo-screen">
+          <p class="demo-kicker">Speaking Practice</p>
+          <h2>Read aloud challenge</h2>
+          <p>音声処理の同意があるので、発音練習を提出できます。</p>
+          <div class="demo-wave"><span /><span /><span /><span /></div>
+        </div>
+        <div v-else-if="activeStep.id === 'review-session'" class="demo-screen">
+          <p class="demo-kicker">Review</p>
+          <h2>今日の復習 3 件</h2>
+          <p>past tense、word choice、speaking fluency を明日の復習キューに入れます。</p>
+        </div>
+        <div v-else-if="activeStep.id === 'game-reward'" class="demo-screen demo-reward">
+          <p class="demo-kicker">Reward</p>
+          <h2>Forest Gate unlocked</h2>
+          <p>120 XP、45 coins、Bronze Compass を獲得しました。</p>
+        </div>
+        <div v-else class="demo-screen">
+          <p class="demo-kicker">{{ activeStep.actor }}</p>
+          <h2>{{ hasRun ? '今日の冒険が完了しました' : activeStep.title }}</h2>
+          <p>{{ hasRun ? '学習、復習、ゲーム報酬、家長レポートまで完了しています。' : activeStep.story }}</p>
+        </div>
+      </article>
+
+      <article class="demo-device demo-device--guardian">
+        <header>
+          <span>Guardian App</span>
+          <strong>Parent View</strong>
+        </header>
+        <div v-if="['verification', 'consent-granted', 'payment-approved'].includes(activeStep.id)" class="demo-screen">
+          <p class="demo-kicker">Approval</p>
+          <h2>{{ activeStep.title }}</h2>
+          <p>{{ activeStep.story }}</p>
+          <strong>{{ selectedPlan }}</strong>
+        </div>
+        <div v-else-if="activeStep.id === 'entitlement-activated'" class="demo-screen">
+          <p class="demo-kicker">Subscription</p>
+          <h2>Premium practice is active</h2>
+          <p>支払い完了後、学生の診断テストと学習タスクが解放されました。</p>
+        </div>
+        <div v-else-if="activeStep.id === 'guardian-report'" class="demo-screen">
+          <p class="demo-kicker">Daily Report</p>
+          <h2>今日の学習レポート</h2>
+          <p>診断 {{ learningSummary.score }}、掌握度 {{ learningSummary.mastery }}、報酬 {{ gameSummary.xp }} XP。</p>
+          <small>明日は past tense を復習しましょう。</small>
+        </div>
+        <div v-else-if="activeStep.id === 'withdrawal'" class="demo-screen">
+          <p class="demo-kicker">Privacy</p>
+          <h2>音声処理同意を撤回</h2>
+          <p>撤回後、学生の音声アップロードは閉じられ、削除ジョブが作成されます。</p>
+        </div>
+        <div v-else class="demo-screen">
+          <p class="demo-kicker">Waiting</p>
+          <h2>家長確認待ち</h2>
+          <p>学生が選んだプラン、招待、学習状況がここに表示されます。</p>
+          <small>Status: {{ guardianStatus }} / {{ paymentStatus }}</small>
+        </div>
+      </article>
     </section>
 
     <div class="api-demo-actions">
@@ -493,7 +582,7 @@ function resetDemo() {
         data-testid="run-next-api-demo-step"
         @click="runNextStep"
       >
-        {{ running ? '处理中...' : hasRun ? '闭环已完成' : activeStep?.cta }}
+        {{ running ? '处理中...' : hasRun ? '今日体验已完成' : activeStep?.cta }}
       </button>
       <button
         class="api-demo-secondary"
@@ -502,7 +591,7 @@ function resetDemo() {
         data-testid="run-api-demo-flow"
         @click="runDemo"
       >
-        一键跑完整闭环
+        自动体验完整 Demo
       </button>
       <button
         class="api-demo-reset"
@@ -511,7 +600,7 @@ function resetDemo() {
         data-testid="reset-api-demo-flow"
         @click="resetDemo"
       >
-        Reset
+        重新体验
       </button>
     </div>
 
@@ -559,27 +648,30 @@ function resetDemo() {
       </article>
     </section>
 
-    <ol class="api-demo-timeline">
-      <li
-        v-for="(step, index) in demoSteps"
-        :key="step.id"
-        class="api-demo-step"
-        :class="{ 'api-demo-step--done': index < completedCount, 'api-demo-step--active': index === completedCount && !hasRun }"
-      >
-        <span class="api-demo-step__number">{{ index + 1 }}</span>
-        <div class="api-demo-step__body">
-          <div class="api-demo-step__heading">
-            <h2>{{ step.title }}</h2>
-            <span class="api-demo-step__actor">{{ step.actor }}</span>
+    <details class="api-demo-events">
+      <summary>开发者事件流</summary>
+      <ol class="api-demo-timeline">
+        <li
+          v-for="(step, index) in demoSteps"
+          :key="step.id"
+          class="api-demo-step"
+          :class="{ 'api-demo-step--done': index < completedCount, 'api-demo-step--active': index === completedCount && !hasRun }"
+        >
+          <span class="api-demo-step__number">{{ index + 1 }}</span>
+          <div class="api-demo-step__body">
+            <div class="api-demo-step__heading">
+              <h2>{{ step.title }}</h2>
+              <span class="api-demo-step__actor">{{ step.actor }}</span>
+            </div>
+            <div class="api-demo-step__heading api-demo-step__heading--endpoint">
+              <code>{{ step.endpoint }}</code>
+            </div>
+            <p>{{ step.story }}</p>
+            <strong>{{ index < completedCount ? step.complete : step.result }}</strong>
           </div>
-          <div class="api-demo-step__heading api-demo-step__heading--endpoint">
-            <code>{{ step.endpoint }}</code>
-          </div>
-          <p>{{ step.story }}</p>
-          <strong>{{ index < completedCount ? step.complete : step.result }}</strong>
-        </div>
-      </li>
-    </ol>
+        </li>
+      </ol>
+    </details>
 
     <aside
       class="api-demo-boundary"
@@ -624,6 +716,28 @@ function resetDemo() {
 .api-demo-persona span, .api-demo-current__actor, .api-demo-step__actor { color: var(--green); font-size: .72rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .api-demo-persona strong { font-size: 1.25rem; }
 .api-demo-persona small { color: #65706c; font-weight: 800; overflow-wrap: anywhere; }
+.api-demo-experience { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr); gap: 18px; margin-bottom: 18px; }
+.demo-device { display: grid; gap: 18px; min-height: 360px; padding: 18px; border: 3px solid var(--ink); border-radius: 28px; background: #f7f2df; box-shadow: 7px 7px 0 var(--ink); }
+.demo-device--guardian { background: #fff0e9; }
+.demo-device header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 2px solid var(--ink); }
+.demo-device header span, .demo-kicker { color: var(--green); font-size: .72rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.demo-device header strong { font-size: 1.15rem; }
+.demo-screen { display: grid; align-content: center; gap: 14px; min-height: 260px; padding: 22px; border: 2px solid var(--ink); border-radius: 20px; background: var(--paper); }
+.demo-screen h2 { margin: 0; font-size: clamp(1.55rem, 4vw, 2.6rem); line-height: 1.05; }
+.demo-screen p { margin: 0; color: #53615c; line-height: 1.65; }
+.demo-screen small { color: #65706c; font-weight: 800; }
+.demo-price, .demo-code { display: inline-block; width: fit-content; padding: 8px 12px; border: 2px solid var(--ink); background: var(--lime); box-shadow: 3px 3px 0 var(--ink); }
+.demo-quiz button { min-height: 42px; border: 2px solid var(--line); background: #fff; color: var(--ink); font-weight: 900; text-align: left; }
+.demo-quiz .selected { border-color: var(--green); background: var(--lime); }
+.demo-meter { height: 14px; border: 2px solid var(--ink); background: #eef0e5; }
+.demo-meter span { display: block; height: 100%; background: var(--green); }
+.demo-wave { display: flex; align-items: end; gap: 8px; height: 74px; }
+.demo-wave span { width: 18px; border: 2px solid var(--ink); background: var(--lime); box-shadow: 2px 2px 0 var(--ink); }
+.demo-wave span:nth-child(1) { height: 34px; }
+.demo-wave span:nth-child(2) { height: 62px; }
+.demo-wave span:nth-child(3) { height: 46px; }
+.demo-wave span:nth-child(4) { height: 70px; }
+.demo-reward { background: linear-gradient(135deg, var(--paper), var(--lime)); }
 .api-demo-current { display: grid; grid-template-columns: 96px 1fr; gap: 18px; margin-bottom: 18px; padding: 20px; border: 2px solid var(--ink); background: var(--lime); box-shadow: 5px 5px 0 var(--ink); }
 .api-demo-current h2 { margin: 0 0 8px; font-size: 1.35rem; }
 .api-demo-current p { margin: 0 0 12px; color: #36423d; line-height: 1.6; }
@@ -639,6 +753,8 @@ function resetDemo() {
 .api-demo-product span { color: var(--green); font-size: .72rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .api-demo-product strong { font-size: 1.35rem; }
 .api-demo-product p { margin: 0; color: #65706c; font-size: .85rem; line-height: 1.5; }
+.api-demo-events { margin-bottom: 18px; }
+.api-demo-events summary { min-height: 44px; font-weight: 900; cursor: pointer; }
 .api-demo-timeline { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; counter-reset: demo-step; }
 .api-demo-step { display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 18px; border: 2px solid var(--line); background: rgb(255 253 246 / 72%); opacity: .68; }
 .api-demo-step--done { border-color: var(--ink); background: var(--paper); opacity: 1; box-shadow: 5px 5px 0 var(--ink); }
@@ -662,7 +778,7 @@ function resetDemo() {
 @media (max-width: 680px) {
   .api-demo-hero { align-items: start; flex-direction: column; }
   .api-demo-scorecard { align-self: end; }
-  .api-demo-personas, .api-demo-current, .api-demo-product { grid-template-columns: 1fr; }
+  .api-demo-personas, .api-demo-current, .api-demo-product, .api-demo-experience { grid-template-columns: 1fr; }
   .api-demo-actions { display: grid; }
   .api-demo-run, .api-demo-secondary, .api-demo-reset { width: 100%; }
   .api-demo-step { grid-template-columns: 1fr; }

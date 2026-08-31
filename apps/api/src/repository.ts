@@ -374,9 +374,37 @@ export class PostgresStudentRepository implements StudentRepository {
   }
 
   async setVoiceConsent(studentId: string, guardianId: string | null, status: Exclude<ConsentStatus, 'missing' | 'outdated'>, version: string): Promise<ConsentRecord> {
-    await this.pool.query(`INSERT INTO consent_records (id, student_id, guardian_id, consent_type, status, version, granted_at, withdrawn_at)
-      VALUES (gen_random_uuid(), $1, $2, 'voice_processing', $3, $4, CASE WHEN $3::consent_status = 'granted' THEN now() END, CASE WHEN $3::consent_status = 'withdrawn' THEN now() END)`, [studentId, guardianId, status, version])
-    return { status, version }
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const consent = await client.query<{ id: string }>(`INSERT INTO consent_records (id, student_id, guardian_id, consent_type, status, version, granted_at, withdrawn_at)
+        VALUES (gen_random_uuid(), $1, $2, 'voice_processing', $3, $4, CASE WHEN $3::consent_status = 'granted' THEN now() END, CASE WHEN $3::consent_status = 'withdrawn' THEN now() END)
+        RETURNING id`, [studentId, guardianId, status, version])
+      const consentId = consent.rows[0]?.id
+      if (!consentId) throw new Error('voice consent insert did not return an id')
+      await client.query(`
+        INSERT INTO voice_consent_audit_events
+          (id, consent_record_id, student_id, guardian_id, status, version, event_type)
+        VALUES
+          (gen_random_uuid(), $1, $2, $3, $4, $5, 'voice_consent_recorded')
+      `, [consentId, studentId, guardianId, status, version])
+      if (status === 'withdrawn') {
+        await client.query(`
+          INSERT INTO voice_data_deletion_jobs
+            (id, student_id, guardian_id, source_consent_record_id, reason, status)
+          VALUES
+            (gen_random_uuid(), $1, $2, $3, 'voice_consent_withdrawn', 'pending')
+          ON CONFLICT (source_consent_record_id) DO NOTHING
+        `, [studentId, guardianId, consentId])
+      }
+      await client.query('COMMIT')
+      return { status, version }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]> {
@@ -811,6 +839,8 @@ export class MemoryStudentRepository implements StudentRepository {
   private readonly stageAttempts = new Map<string, StartStageAttemptResponse>()
   private readonly currentDevices = new Map<string, CurrentDeviceRegistrationResponse>()
   private readonly guardianInviteStudentIds = new Map<string, { studentId: string; expiresAt: Date }>()
+  private readonly voiceConsentAuditEvents: Array<{ studentId: string; guardianId: string | null; status: Exclude<ConsentStatus, 'missing' | 'outdated'>; version: string }> = []
+  private readonly voiceDataDeletionJobs: Array<{ studentId: string; guardianId: string | null; reason: 'voice_consent_withdrawn'; status: 'pending' }> = []
 
   async create(student: StudentRecord): Promise<void> {
     this.students.set(student.id, student)
@@ -847,7 +877,17 @@ export class MemoryStudentRepository implements StudentRepository {
   async setVoiceConsent(studentId: string, guardianId: string | null, status: Exclude<ConsentStatus, 'missing' | 'outdated'>, version: string): Promise<ConsentRecord> {
     const consent = { status, version }
     this.consents.set(studentId, consent)
+    this.voiceConsentAuditEvents.push({ studentId, guardianId, status, version })
+    if (status === 'withdrawn') this.voiceDataDeletionJobs.push({ studentId, guardianId, reason: 'voice_consent_withdrawn', status: 'pending' })
     return consent
+  }
+
+  getVoiceConsentAuditEventsForTest() {
+    return [...this.voiceConsentAuditEvents]
+  }
+
+  getVoiceDataDeletionJobsForTest() {
+    return [...this.voiceDataDeletionJobs]
   }
 
   async listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]> {

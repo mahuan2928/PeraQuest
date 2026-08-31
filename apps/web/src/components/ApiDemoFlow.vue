@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { runLiveApiDemo, type ApiDemoCheckpoint } from '../api/demoFlow'
 
 interface DemoStep {
   id: string
@@ -62,15 +63,42 @@ const demoSteps: DemoStep[] = [
 ]
 
 const completedCount = ref(0)
+const checkpoints = ref<ApiDemoCheckpoint[]>([])
+const running = ref(false)
+const error = ref('')
+const liveMode = import.meta.env.VITE_API_DEMO_MODE === 'live'
 const hasRun = computed(() => completedCount.value === demoSteps.length)
 const visibleSteps = computed(() => demoSteps.slice(0, completedCount.value))
+const checkpointOutput = computed(() => checkpoints.value.length > 0
+  ? checkpoints.value
+  : visibleSteps.value.map((step) => ({ endpoint: step.endpoint, result: step.result })))
 
-function runDemo() {
-  completedCount.value = demoSteps.length
+async function runDemo() {
+  if (running.value) return
+  completedCount.value = 0
+  checkpoints.value = []
+  error.value = ''
+  if (!liveMode) {
+    completedCount.value = demoSteps.length
+    return
+  }
+  running.value = true
+  try {
+    await runLiveApiDemo((checkpoint) => {
+      checkpoints.value.push(checkpoint)
+      completedCount.value = checkpoints.value.length
+    })
+  } catch {
+    error.value = 'Live API demo could not complete. Confirm the API server has DEMO_API_ENABLED=true and demo storage settings.'
+  } finally {
+    running.value = false
+  }
 }
 
 function resetDemo() {
   completedCount.value = 0
+  checkpoints.value = []
+  error.value = ''
 }
 </script>
 
@@ -104,15 +132,16 @@ function resetDemo() {
       <button
         class="primary-action api-demo-run"
         type="button"
+        :disabled="running"
         data-testid="run-api-demo-flow"
         @click="runDemo"
       >
-        Run Demo Flow
+        {{ liveMode ? 'Run Live API Demo' : 'Run Demo Flow' }}
       </button>
       <button
         class="api-demo-reset"
         type="button"
-        :disabled="completedCount === 0"
+        :disabled="running || completedCount === 0"
         data-testid="reset-api-demo-flow"
         @click="resetDemo"
       >
@@ -126,7 +155,15 @@ function resetDemo() {
       aria-live="polite"
       data-testid="api-demo-status"
     >
-      {{ hasRun ? 'Demo flow completed. Backend API contract is ready for presentation.' : 'Ready to replay the backend API flow.' }}
+      {{ running ? 'Running live API calls...' : hasRun ? 'Demo flow completed. Backend API contract is ready for presentation.' : liveMode ? 'Live mode enabled. Ready to call the demo API.' : 'Ready to replay the backend API flow.' }}
+    </p>
+    <p
+      v-if="error"
+      class="api-demo-error"
+      role="alert"
+      data-testid="api-demo-error"
+    >
+      {{ error }}
     </p>
 
     <ol class="api-demo-timeline">
@@ -164,7 +201,7 @@ function resetDemo() {
 
     <details class="api-demo-output">
       <summary>Completed API checkpoints</summary>
-      <pre data-testid="api-demo-checkpoints">{{ JSON.stringify(visibleSteps.map((step) => ({ endpoint: step.endpoint, result: step.result })), null, 2) }}</pre>
+      <pre data-testid="api-demo-checkpoints">{{ JSON.stringify(checkpointOutput, null, 2) }}</pre>
     </details>
   </section>
 </template>
@@ -181,6 +218,7 @@ function resetDemo() {
 .api-demo-run { width: auto; min-width: 210px; margin-top: 0; }
 .api-demo-reset { min-height: 54px; padding: 12px 18px; border: 2px solid var(--ink); color: var(--ink); background: var(--paper); font-weight: 900; box-shadow: 4px 4px 0 var(--ink); }
 .api-demo-status { margin: 0 0 24px; color: var(--green); font-size: .84rem; font-weight: 900; }
+.api-demo-error { margin: -8px 0 24px; color: #a72a13; font-size: .84rem; font-weight: 900; }
 .api-demo-timeline { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; counter-reset: demo-step; }
 .api-demo-step { display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 18px; border: 2px solid var(--line); background: rgb(255 253 246 / 72%); opacity: .68; }
 .api-demo-step--done { border-color: var(--ink); background: var(--paper); opacity: 1; box-shadow: 5px 5px 0 var(--ink); }

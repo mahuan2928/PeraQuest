@@ -135,6 +135,25 @@ export interface CapabilityResponse {
   entitlements: string[]
 }
 
+export interface VoiceUploadTicketRequest {
+  contentType: 'audio/webm' | 'audio/mpeg' | 'audio/mp4' | 'audio/wav' | 'audio/x-m4a'
+  contentLengthBytes: number
+  durationSeconds: number
+  checksumSha256: string
+}
+
+export interface VoiceUploadTicketResponse {
+  uploadUrl: string
+  method: 'POST'
+  fields: Record<string, string>
+  objectKey: string
+  bucket: string
+  region: string
+  expiresAt: string
+  maxBytes: number
+  maxDurationSeconds: number
+}
+
 export const stageExamVersionStatuses = ['draft', 'published'] as const
 export type StageExamVersionStatus = (typeof stageExamVersionStatuses)[number]
 

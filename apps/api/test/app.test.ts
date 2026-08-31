@@ -274,4 +274,23 @@ describe('identity, consent, and capabilities slice', () => {
     const response = await app.inject({ method: 'GET', url: '/v1/me/capabilities', headers: { 'x-student-id': 'adult-1', 'x-client-platform': 'pc' } })
     expect(response.json()).toMatchObject({ canUploadVoice: true, voiceUploadMode: 'signed_upload', voiceConsentStatus: 'granted' })
   })
+
+  it('keeps signed voice upload ticket disabled when storage signing is not configured', async () => {
+    vi.stubEnv('VOICE_FEATURE_PUBLIC_ENABLED', 'true')
+    vi.stubEnv('AI_VENDOR_APPROVED', 'true')
+    vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
+    await repository.setVoiceConsent('adult-1', null, 'granted', 'v1')
+    const app = buildApp({ repository })
+    apps.push(app)
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/me/voice-upload-ticket',
+      headers: { 'x-student-id': 'adult-1' },
+      payload: { contentType: 'audio/webm', contentLengthBytes: 1024, durationSeconds: 10, checksumSha256: 'd'.repeat(64) },
+    })
+    expect(response.statusCode).toBe(501)
+    expect(response.json()).toEqual({ code: 'SIGNED_UPLOAD_NOT_CONFIGURED' })
+  })
 })

@@ -205,7 +205,7 @@ async function onDemoChanged() {
         v-if="step === 'onboarding'"
         :submitting="onboardingPending"
         :demo-submitting="demoPending"
-        :submit-error="onboardingError"
+        :submit-error="onboardingError || demoError"
         @submit="finishOnboarding"
         @start-demo="startProductDemo"
       />

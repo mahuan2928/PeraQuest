@@ -41,6 +41,8 @@ describe('database migrations', () => {
       '0008_learning_p1_3_4_terminal_audit.sql',
       '0009_learning_p1_3_5_knowledge_evidence.sql',
       '0010_learning_p1_3_6_mastery_due.sql',
+      '0011_guardian_invitation.sql',
+      '0012_student_knowledge_concurrent_timestamp.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -208,6 +210,69 @@ describe('database migrations', () => {
       last_seen_at: new Date('2026-08-31T00:00:00.000Z'),
     }])
     expect(JSON.stringify(devices.rows)).not.toContain('device-1')
+  })
+
+  it('stores guardian invitation hashes and verifies pending guardian links', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const student = '00000000-0000-0000-0000-000000000084'
+    const guardian = '00000000-0000-0000-0000-000000000085'
+    await database.query(`
+      INSERT INTO users (id, role, birth_month, is_minor) VALUES
+        ($1, 'student', '2012-01-01', true),
+        ($2, 'guardian', NULL, false)
+    `, [student, guardian])
+    await database.query("INSERT INTO guardian_links (id, student_id, status) VALUES ('00000000-0000-0000-0000-000000000086', $1, 'pending')", [student])
+    const repository = new PostgresStudentRepository({ query: database.query.bind(database) } as unknown as Pool)
+
+    await expect(repository.createGuardianInvite({
+      studentId: student,
+      inviteCode: 'rawInviteCode_123',
+      inviteCodeHash: 'hashed-invite-code',
+      expiresAt: new Date('2026-08-31T00:00:00.000Z'),
+      createdAt: new Date('2026-08-30T00:00:00.000Z'),
+    })).resolves.toEqual({ inviteCode: 'rawInviteCode_123', expiresAt: '2026-08-31T00:00:00.000Z' })
+
+    const pending = await database.query<{ invitation_code_hash: string; invitation_expires_at: Date; invitation_created_at: Date }>(`
+      SELECT invitation_code_hash, invitation_expires_at, invitation_created_at
+      FROM guardian_links
+      WHERE student_id = $1
+    `, [student])
+    expect(pending.rows).toEqual([{
+      invitation_code_hash: 'hashed-invite-code',
+      invitation_expires_at: new Date('2026-08-31T00:00:00.000Z'),
+      invitation_created_at: new Date('2026-08-30T00:00:00.000Z'),
+    }])
+    expect(JSON.stringify(pending.rows)).not.toContain('rawInviteCode_123')
+
+    await expect(repository.verifyGuardianInvite({
+      guardianId: guardian,
+      inviteCodeHash: 'hashed-invite-code',
+      verifiedAt: new Date('2026-08-30T01:00:00.000Z'),
+    })).resolves.toEqual({
+      studentId: student,
+      status: 'verified',
+      purchaseAllowed: true,
+      verifiedAt: '2026-08-30T01:00:00.000Z',
+    })
+
+    const verified = await database.query<{ guardian_id: string; status: string; purchase_allowed: boolean; verified_at: Date }>(`
+      SELECT guardian_id, status, purchase_allowed, verified_at
+      FROM guardian_links
+      WHERE student_id = $1
+    `, [student])
+    expect(verified.rows).toEqual([{
+      guardian_id: guardian,
+      status: 'verified',
+      purchase_allowed: true,
+      verified_at: new Date('2026-08-30T01:00:00.000Z'),
+    }])
+    await expect(repository.verifyGuardianInvite({
+      guardianId: guardian,
+      inviteCodeHash: 'hashed-invite-code',
+      verifiedAt: new Date('2026-08-30T02:00:00.000Z'),
+    })).resolves.toBeNull()
   })
 
   it('disables current device push and clears any stored token envelope', async () => {

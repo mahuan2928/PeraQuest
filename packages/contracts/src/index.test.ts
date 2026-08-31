@@ -20,6 +20,9 @@ import {
   type CurrentDeviceRegistrationRequest,
   type CurrentDeviceRegistrationResponse,
   type ErrorResponse,
+  type GuardianInvitationResponse,
+  type GuardianLinkVerificationRequest,
+  type GuardianLinkVerificationResponse,
   type KnowledgeEvidenceDto,
   type PublicStageExamItemDto,
   type RemediationTaskDto,
@@ -79,6 +82,19 @@ const deviceRegistrationResponse = {
 } satisfies CurrentDeviceRegistrationResponse
 const devicePushDisable = deviceRegistration satisfies CurrentDevicePushDisableRequest
 const devicePushDisableResponse = deviceRegistrationResponse satisfies CurrentDevicePushDisableResponse
+const guardianInvitation = {
+  inviteCode: 'guardianInviteCode_123',
+  expiresAt: '2026-08-31T00:00:00.000Z',
+} satisfies GuardianInvitationResponse
+const guardianVerificationRequest = {
+  inviteCode: guardianInvitation.inviteCode,
+} satisfies GuardianLinkVerificationRequest
+const guardianVerificationResponse = {
+  studentId: evidence.studentId,
+  status: 'verified',
+  purchaseAllowed: true,
+  verifiedAt: '2026-08-30T00:00:00.000Z',
+} satisfies GuardianLinkVerificationResponse
 
 const unlock = {
   studentId: evidence.studentId,
@@ -132,6 +148,12 @@ describe('shared security contracts', () => {
     expect(deviceRegistration).not.toHaveProperty('pushToken')
     expect(devicePushDisableResponse.pushEnabled).toBe(false)
     expect(devicePushDisable).not.toHaveProperty('pushToken')
+  })
+
+  it('exposes guardian invite and verification contracts', () => {
+    expect(guardianInvitation).toMatchObject({ inviteCode: guardianVerificationRequest.inviteCode })
+    expect(guardianVerificationResponse).toMatchObject({ status: 'verified', purchaseAllowed: true })
+    expect(guardianVerificationResponse.studentId).toBe(evidence.studentId)
   })
 })
 

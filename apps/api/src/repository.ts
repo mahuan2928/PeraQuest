@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GuardianLinkStatus, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
+import type { AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -89,9 +89,25 @@ export interface UpsertCurrentDeviceInput {
   lastSeenAt: Date
 }
 
+export interface CreateGuardianInviteInput {
+  studentId: string
+  inviteCode: string
+  inviteCodeHash: string
+  expiresAt: Date
+  createdAt: Date
+}
+
+export interface VerifyGuardianInviteInput {
+  guardianId: string
+  inviteCodeHash: string
+  verifiedAt: Date
+}
+
 export interface StudentRepository {
   create(student: StudentRecord): Promise<void>
   findById(id: string): Promise<StudentRecord | null>
+  createGuardianInvite(input: CreateGuardianInviteInput): Promise<GuardianInvitationResponse | null>
+  verifyGuardianInvite(input: VerifyGuardianInviteInput): Promise<GuardianLinkVerificationResponse | null>
   getVoiceConsent(studentId: string, requiredVersion: string): Promise<ConsentRecord>
   setVoiceConsent(studentId: string, guardianId: string | null, status: Exclude<ConsentStatus, 'missing' | 'outdated'>, version: string): Promise<ConsentRecord>
   startTrial(studentId: string, attemptId: string, expiresAt: Date): Promise<TrialStartResult>
@@ -317,6 +333,36 @@ export class PostgresStudentRepository implements StudentRepository {
     if (!row) return null
     const birthMonth = typeof row.birth_month === 'string' ? row.birth_month.slice(0, 7) : row.birth_month.toISOString().slice(0, 7)
     return { id: row.id, birthMonth, isMinor: row.is_minor, guardianLinkStatus: row.status ?? 'not_required', guardianId: row.guardian_id }
+  }
+
+  async createGuardianInvite(input: CreateGuardianInviteInput): Promise<GuardianInvitationResponse | null> {
+    const result = await this.pool.query<{ invitation_expires_at: Date }>(`
+      UPDATE guardian_links
+      SET invitation_code_hash = $2,
+          invitation_expires_at = $3,
+          invitation_created_at = $4
+      WHERE student_id = $1
+        AND status = 'pending'
+      RETURNING invitation_expires_at
+    `, [input.studentId, input.inviteCodeHash, input.expiresAt, input.createdAt])
+    const row = result.rows[0]
+    return row ? { inviteCode: input.inviteCode, expiresAt: toIso(row.invitation_expires_at) } : null
+  }
+
+  async verifyGuardianInvite(input: VerifyGuardianInviteInput): Promise<GuardianLinkVerificationResponse | null> {
+    const result = await this.pool.query<{ student_id: string; verified_at: Date }>(`
+      UPDATE guardian_links
+      SET guardian_id = $1,
+          status = 'verified',
+          purchase_allowed = true,
+          verified_at = $3
+      WHERE invitation_code_hash = $2
+        AND invitation_expires_at > $3
+        AND status = 'pending'
+      RETURNING student_id, verified_at
+    `, [input.guardianId, input.inviteCodeHash, input.verifiedAt])
+    const row = result.rows[0]
+    return row ? { studentId: row.student_id, status: 'verified', purchaseAllowed: true, verifiedAt: toIso(row.verified_at) } : null
   }
 
   async getVoiceConsent(studentId: string, requiredVersion: string): Promise<ConsentRecord> {
@@ -764,6 +810,7 @@ export class MemoryStudentRepository implements StudentRepository {
   private readonly trialAttempts = new Map<string, TrialAttemptRecord>()
   private readonly stageAttempts = new Map<string, StartStageAttemptResponse>()
   private readonly currentDevices = new Map<string, CurrentDeviceRegistrationResponse>()
+  private readonly guardianInviteStudentIds = new Map<string, { studentId: string; expiresAt: Date }>()
 
   async create(student: StudentRecord): Promise<void> {
     this.students.set(student.id, student)
@@ -771,6 +818,23 @@ export class MemoryStudentRepository implements StudentRepository {
 
   async findById(id: string): Promise<StudentRecord | null> {
     return this.students.get(id) ?? null
+  }
+
+  async createGuardianInvite(input: CreateGuardianInviteInput): Promise<GuardianInvitationResponse | null> {
+    const student = this.students.get(input.studentId)
+    if (!student || student.guardianLinkStatus !== 'pending') return null
+    this.guardianInviteStudentIds.set(input.inviteCodeHash, { studentId: input.studentId, expiresAt: input.expiresAt })
+    return { inviteCode: input.inviteCode, expiresAt: input.expiresAt.toISOString() }
+  }
+
+  async verifyGuardianInvite(input: VerifyGuardianInviteInput): Promise<GuardianLinkVerificationResponse | null> {
+    const invite = this.guardianInviteStudentIds.get(input.inviteCodeHash)
+    if (!invite || invite.expiresAt <= input.verifiedAt) return null
+    const student = this.students.get(invite.studentId)
+    if (!student || student.guardianLinkStatus !== 'pending') return null
+    this.guardianInviteStudentIds.delete(input.inviteCodeHash)
+    this.students.set(invite.studentId, { ...student, guardianLinkStatus: 'verified', guardianId: input.guardianId })
+    return { studentId: invite.studentId, status: 'verified', purchaseAllowed: true, verifiedAt: input.verifiedAt.toISOString() }
   }
 
   async getVoiceConsent(studentId: string, requiredVersion: string): Promise<ConsentRecord> {

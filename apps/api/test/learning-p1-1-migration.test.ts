@@ -136,6 +136,8 @@ describe('learning P1.1 migration', () => {
       '0008_learning_p1_3_4_terminal_audit.sql',
       '0009_learning_p1_3_5_knowledge_evidence.sql',
       '0010_learning_p1_3_6_mastery_due.sql',
+      '0011_guardian_invitation.sql',
+      '0012_student_knowledge_concurrent_timestamp.sql',
     ])
     const rows = await database.query<{ id: string }>('SELECT id FROM trial_attempts ORDER BY id')
     expect(rows.rows).toEqual([{ id: '00000000-0000-0000-0000-000000000121' }])

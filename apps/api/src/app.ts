@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { sanitizeErrorDetails } from '@peraquest/contracts'
@@ -8,7 +8,9 @@ import type {
   ConsentResponse,
   CurrentDevicePushDisableResponse,
   CurrentDeviceRegistrationResponse,
+  GuardianInvitationResponse,
   GuardianLinkResponse,
+  GuardianLinkVerificationResponse,
   NotificationChannel,
   PaymentChannel,
   StudentOnboardingResponse,
@@ -48,6 +50,8 @@ const currentDeviceSchema = z.object({
 const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
 const idempotencyKeySchema = z.string().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/)
+const guardianInviteCodeSchema = z.string().min(16).max(128).regex(/^[A-Za-z0-9_-]+$/)
+const guardianLinkVerificationSchema = z.object({ inviteCode: guardianInviteCodeSchema }).strict()
 const submitStageAttemptSchema = z.object({
   answers: z.array(z.object({
     itemId: uuidSchema,
@@ -79,6 +83,13 @@ const hashDeviceId = (studentId: string, deviceId: string): string => createHash
   .update(':')
   .update(deviceId)
   .digest('hex')
+
+const hashGuardianInviteCode = (inviteCode: string): string => createHash('sha256')
+  .update('peraquest:guardian-invite:v1:')
+  .update(inviteCode)
+  .digest('hex')
+
+const createGuardianInviteCode = (): string => randomBytes(24).toString('base64url')
 
 export interface BuildAppOptions {
   repository?: StudentRepository
@@ -162,7 +173,23 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
   }
 
-  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/v1/me/devices/current')
+  const formalGuardianActor = (request: FastifyRequest, reply: FastifyReply): { id: string; providerSubject: string } | null => {
+    if (request.authActor.method !== 'bearer') {
+      sendError(reply, 401, 'LEGACY_AUTH_NOT_ALLOWED')
+      return null
+    }
+    if (request.authActor.role !== 'guardian') {
+      sendError(reply, 403, 'AUTH_FORBIDDEN')
+      return null
+    }
+    if (!request.authActor.providerSubject) {
+      sendError(reply, 401, 'AUTH_INVALID')
+      return null
+    }
+    return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
+  }
+
+  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification')
   const protectedPath = (url: string): boolean => formalProtectedPath(url) || url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return
@@ -209,6 +236,40 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const student = await repository.findById(studentId)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     return { status: student.guardianLinkStatus, purchaseAllowed: student.guardianLinkStatus === 'verified', verifiedAt: null }
+  })
+
+  app.post('/v1/me/guardian-link/invitations', async (request, reply): Promise<GuardianInvitationResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const student = await repository.findById(actor.id)
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    if (!student.isMinor || student.guardianLinkStatus !== 'pending') return sendError(reply, 409, 'REVISION_CONFLICT')
+    const inviteCode = createGuardianInviteCode()
+    const createdAt = now()
+    const expiresAt = new Date(createdAt.getTime() + 1000 * 60 * 60 * 24)
+    const invite = await repository.createGuardianInvite({
+      studentId: actor.id,
+      inviteCode,
+      inviteCodeHash: hashGuardianInviteCode(inviteCode),
+      expiresAt,
+      createdAt,
+    })
+    if (!invite) return sendError(reply, 409, 'REVISION_CONFLICT')
+    return reply.code(201).send(invite)
+  })
+
+  app.put('/v1/guardian-links/verification', async (request, reply): Promise<GuardianLinkVerificationResponse | void> => {
+    const actor = formalGuardianActor(request, reply)
+    if (!actor) return
+    const parsed = guardianLinkVerificationSchema.safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'guardian_link', reason: 'invalid' })
+    const verified = await repository.verifyGuardianInvite({
+      guardianId: actor.id,
+      inviteCodeHash: hashGuardianInviteCode(parsed.data.inviteCode),
+      verifiedAt: now(),
+    })
+    if (!verified) return sendError(reply, 404, 'NOT_FOUND')
+    return verified
   })
 
   app.put('/v1/me/consents/voice-processing', async (request, reply): Promise<ConsentResponse | void> => {

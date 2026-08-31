@@ -158,6 +158,98 @@
         }
       }
     },
+    "/v1/me/guardian-link/invitations": {
+      "post": {
+        "operationId": "createGuardianInvitation",
+        "summary": "Create a short-lived guardian invitation code for the current minor student.",
+        "description": "Bearer student only. The raw invite code is returned once to the student client; only a server-side hash is stored.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Guardian invitation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianInvitationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/v1/guardian-links/verification": {
+      "put": {
+        "operationId": "verifyGuardianInvitation",
+        "summary": "Verify a guardian invitation code and bind the Bearer guardian to the student.",
+        "description": "Bearer guardian only. Accepts the one-time invite code, hashes it server-side, and verifies the pending guardian link if the invite has not expired.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardianLinkVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guardian link verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianLinkVerificationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/v1/me/consents/voice-processing": {
       "put": {
         "operationId": "putVoiceConsent",
@@ -1167,6 +1259,67 @@
           }
         },
         "required": [
+          "status",
+          "purchaseAllowed",
+          "verifiedAt"
+        ]
+      },
+      "GuardianInvitationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inviteCode": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "inviteCode",
+          "expiresAt"
+        ]
+      },
+      "GuardianLinkVerificationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inviteCode": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "inviteCode"
+        ]
+      },
+      "GuardianLinkVerificationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "verified"
+          },
+          "purchaseAllowed": {
+            "type": "boolean"
+          },
+          "verifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "studentId",
           "status",
           "purchaseAllowed",
           "verifiedAt"

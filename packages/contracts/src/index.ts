@@ -81,6 +81,13 @@ export interface ConsentResponse {
   version: string | null
 }
 
+export interface GuardianVoiceConsentWriteRequest {
+  status: Exclude<ConsentStatus, 'missing' | 'outdated'>
+  version: string
+}
+
+export type GuardianVoiceConsentWriteResponse = ConsentResponse
+
 export interface TrialQuestion {
   id: string
   ability: 'vocabulary' | 'grammar'

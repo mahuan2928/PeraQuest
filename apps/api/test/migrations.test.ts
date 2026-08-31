@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
 import { PostgresAuthUserResolver, PostgresStudentRepository } from '../src/repository.js'
 import { buildApp } from '../src/app.js'
+import { loadConfig } from '../src/config.js'
 
 const databases: PGlite[] = []
 
@@ -338,7 +339,31 @@ describe('database migrations', () => {
       ('00000000-0000-0000-0000-000000000031', '${studentA}', '${guardianA}', 'verified'),
       ('00000000-0000-0000-0000-000000000032', '${studentB}', '${guardianB}', 'verified')`)
     const pool = { query: database.query.bind(database), connect: async () => ({ query: database.query.bind(database), release: () => undefined }) } as unknown as Pool
-    const app = buildApp({ repository: new PostgresStudentRepository(pool) })
+    const app = buildApp({
+      repository: new PostgresStudentRepository(pool),
+      config: loadConfig({
+        NODE_ENV: 'test',
+        ALLOW_LEGACY_TEST_HEADERS: 'true',
+        CONSENT_VERSION_REQUIRED: 'v1',
+        AUTH_PROVIDER: 'email_magic_link',
+        AUTH_ISSUER: 'https://issuer.test',
+        AUTH_AUDIENCE: 'peraquest-api',
+        AUTH_JWKS_URL: 'http://127.0.0.1/jwks',
+      }),
+      tokenVerifier: {
+        verify: async (token, config) => {
+          const issuedAt = Math.floor(Date.now() / 1000)
+          return { iss: config.issuer, aud: config.audience, sub: token, iat: issuedAt, exp: issuedAt + 300 }
+        },
+      },
+      authUserResolver: {
+        resolve: async (_issuer, subject) => {
+          if (subject === 'guardian-a-sub') return { id: guardianA, role: 'guardian' }
+          if (subject === 'guardian-b-sub') return { id: guardianB, role: 'guardian' }
+          return null
+        },
+      },
+    })
     const rejected = await app.inject({ method: 'PUT', url: '/v1/me/consents/voice-processing', headers: { 'x-student-id': studentB, 'x-guardian-id': guardianA }, payload: { status: 'granted', version: 'v1' } })
     expect(rejected.statusCode).toBe(403)
     expect(rejected.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
@@ -349,6 +374,17 @@ describe('database migrations', () => {
     expect(records.rows).toEqual([{ guardian_id: guardianA, student_id: studentA }])
     const rejectedRecords = await database.query('SELECT 1 FROM consent_records WHERE student_id = $1', [studentB])
     expect(rejectedRecords.rows).toEqual([])
+    const bearerAccepted = await app.inject({
+      method: 'PUT',
+      url: `/v1/guardian-links/${studentB}/consents/voice-processing`,
+      headers: { authorization: 'Bearer guardian-b-sub' },
+      payload: { status: 'granted', version: 'v1' },
+    })
+    expect(bearerAccepted.statusCode).toBe(200)
+    expect(bearerAccepted.json()).toEqual({ type: 'voice_processing', status: 'granted', version: 'v1' })
+    const bearerRecords = await database.query<{ guardian_id: string; student_id: string }>
+      ('SELECT guardian_id, student_id FROM consent_records WHERE student_id = $1', [studentB])
+    expect(bearerRecords.rows).toEqual([{ guardian_id: guardianB, student_id: studentB }])
     await app.close()
   })
 

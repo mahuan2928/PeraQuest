@@ -240,6 +240,7 @@ async function onDemoChanged() {
           :knowledge-items="demoKnowledgeItems"
           @verified="onDemoChanged"
           @consent-changed="onDemoChanged"
+          @knowledge-updated="demoKnowledgeItems = $event"
         />
         <p
           v-if="demoError"

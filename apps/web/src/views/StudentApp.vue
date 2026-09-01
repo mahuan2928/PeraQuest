@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   createDemoGuardianInvitation,
   createDemoVoiceUploadTicket,
@@ -186,6 +186,13 @@ async function registerDevice() {
 onMounted(() => {
   void refreshGameState()
 })
+
+watch(
+  () => [props.capabilities?.guardianLinkStatus, props.capabilities?.voiceConsentStatus],
+  () => {
+    void refreshGameState()
+  },
+)
 </script>
 
 <template>

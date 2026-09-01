@@ -266,7 +266,7 @@ function stateLabel(state: string) {
 
     <section class="future-card">
       <h2>近日公開</h2>
-      <p>決済、ゲーム報酬、保護者向けレポートは正式な機能として準備中です。</p>
+      <p>決済、Quest Map の拡張、保護者向けレポートは正式な機能として準備中です。</p>
     </section>
 
     <p

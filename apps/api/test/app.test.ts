@@ -246,6 +246,140 @@ describe('identity, consent, and capabilities slice', () => {
     expect(capabilities.json()).toMatchObject({ entitlements: [] })
   })
 
+  it('returns a stable service error when the web checkout webhook secret is not configured', async () => {
+    const app = buildApp()
+    apps.push(app)
+    const payload = {
+      eventId: 'evt-not-configured',
+      eventType: 'subscription.active',
+      studentId: '00000000-0000-0000-0000-00000000c021',
+      purchaserGuardianId: '00000000-0000-0000-0000-00000000c022',
+      externalSubscriptionId: 'sub-not-configured',
+      entitlementCode: 'premium_practice',
+    }
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/web-checkout/webhook',
+      headers: { 'x-peraquest-webhook-signature': signWebhookPayload(payload, 'unused-secret') },
+      payload,
+    })
+
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toEqual({ code: 'PAYMENT_WEBHOOK_NOT_CONFIGURED' })
+  })
+
+  it('rejects unsupported web checkout events before writing entitlements', async () => {
+    vi.stubEnv('WEB_CHECKOUT_WEBHOOK_SECRET', 'test-webhook-secret')
+    const repository = new MemoryStudentRepository()
+    const studentId = '00000000-0000-0000-0000-00000000c031'
+    const guardianId = '00000000-0000-0000-0000-00000000c032'
+    await repository.create({ id: studentId, birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId })
+    const app = buildApp({ repository, now: () => new Date('2026-08-30T00:00:00.000Z') })
+    apps.push(app)
+    const payload = {
+      eventId: 'evt-unsupported',
+      eventType: 'invoice.created',
+      studentId,
+      purchaserGuardianId: guardianId,
+      externalSubscriptionId: 'sub-unsupported',
+      entitlementCode: 'premium_practice',
+    }
+
+    const webhook = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/web-checkout/webhook',
+      headers: { 'x-peraquest-webhook-signature': signWebhookPayload(payload, 'test-webhook-secret') },
+      payload,
+    })
+    const capabilities = await app.inject({
+      method: 'GET',
+      url: '/v1/me/capabilities',
+      headers: { 'x-student-id': studentId, 'x-client-platform': 'pc' },
+    })
+
+    expect(webhook.statusCode).toBe(422)
+    expect(webhook.json()).toEqual({ code: 'PAYMENT_WEBHOOK_UNSUPPORTED_EVENT' })
+    expect(capabilities.json()).toMatchObject({ entitlements: [] })
+  })
+
+  it('rejects web checkout entitlement projection without a verified guardian link', async () => {
+    vi.stubEnv('WEB_CHECKOUT_WEBHOOK_SECRET', 'test-webhook-secret')
+    const repository = new MemoryStudentRepository()
+    const studentId = '00000000-0000-0000-0000-00000000c041'
+    await repository.create({ id: studentId, birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'pending', guardianId: null })
+    const app = buildApp({ repository, now: () => new Date('2026-08-30T00:00:00.000Z') })
+    apps.push(app)
+    const payload = {
+      eventId: 'evt-guardian-mismatch',
+      eventType: 'subscription.active',
+      studentId,
+      purchaserGuardianId: '00000000-0000-0000-0000-00000000c042',
+      externalSubscriptionId: 'sub-guardian-mismatch',
+      entitlementCode: 'premium_practice',
+    }
+
+    const webhook = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/web-checkout/webhook',
+      headers: { 'x-peraquest-webhook-signature': signWebhookPayload(payload, 'test-webhook-secret') },
+      payload,
+    })
+    const capabilities = await app.inject({
+      method: 'GET',
+      url: '/v1/me/capabilities',
+      headers: { 'x-student-id': studentId, 'x-client-platform': 'pc' },
+    })
+
+    expect(webhook.statusCode).toBe(409)
+    expect(webhook.json()).toEqual({ code: 'GUARDIAN_VERIFICATION_REQUIRED' })
+    expect(capabilities.json()).toMatchObject({ canPurchase: false, entitlements: [] })
+  })
+
+  it('projects active and grace web checkout statuses while hiding expired or revoked entitlements', async () => {
+    vi.stubEnv('WEB_CHECKOUT_WEBHOOK_SECRET', 'test-webhook-secret')
+    const repository = new MemoryStudentRepository()
+    const studentId = '00000000-0000-0000-0000-00000000c051'
+    const guardianId = '00000000-0000-0000-0000-00000000c052'
+    await repository.create({ id: studentId, birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId })
+    const app = buildApp({ repository, now: () => new Date('2026-08-30T00:00:00.000Z') })
+    apps.push(app)
+    const sendWebhook = async (eventId: string, eventType: string, entitlementCode: string, validUntil: string | null = null) => {
+      const payload = {
+        eventId,
+        eventType,
+        studentId,
+        purchaserGuardianId: guardianId,
+        externalSubscriptionId: `sub-${entitlementCode}`,
+        entitlementCode,
+        validUntil,
+      }
+      return app.inject({
+        method: 'POST',
+        url: '/v1/payments/web-checkout/webhook',
+        headers: { 'x-peraquest-webhook-signature': signWebhookPayload(payload, 'test-webhook-secret') },
+        payload,
+      })
+    }
+
+    const active = await sendWebhook('evt-active-status', 'subscription.active', 'premium_practice', '2026-09-30T00:00:00.000Z')
+    const grace = await sendWebhook('evt-grace-status', 'subscription.grace_period', 'premium_review', '2026-09-02T00:00:00.000Z')
+    const expired = await sendWebhook('evt-expired-status', 'subscription.expired', 'premium_expired', '2026-09-30T00:00:00.000Z')
+    const revoked = await sendWebhook('evt-revoked-status', 'subscription.revoked', 'premium_revoked', '2026-09-30T00:00:00.000Z')
+    const pastGrace = await sendWebhook('evt-past-grace-status', 'subscription.grace_period', 'premium_past_grace', '2026-08-29T00:00:00.000Z')
+    const capabilities = await app.inject({
+      method: 'GET',
+      url: '/v1/me/capabilities',
+      headers: { 'x-student-id': studentId, 'x-client-platform': 'pc' },
+    })
+
+    expect([active.statusCode, grace.statusCode, expired.statusCode, revoked.statusCode, pastGrace.statusCode]).toEqual([200, 200, 200, 200, 200])
+    expect(capabilities.json()).toMatchObject({
+      canPurchase: true,
+      entitlements: ['premium_practice', 'premium_review'],
+    })
+  })
+
   it('rejects capabilities requests without an explicit client platform', async () => {
     const repository = new MemoryStudentRepository()
     await repository.create({ id: 'adult-1', birthMonth: '2000-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })

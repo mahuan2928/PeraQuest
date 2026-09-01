@@ -298,6 +298,58 @@ describe('identity, consent, and capabilities slice', () => {
     await expect(repository.getVoiceConsent('minor-b', 'v1')).resolves.toEqual({ status: 'missing', version: null })
   })
 
+  it('allows only the verified guardian to read a child knowledge summary', async () => {
+    const repository = new MemoryStudentRepository()
+    await repository.create({ id: '00000000-0000-0000-0000-00000000d001', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId: 'guardian-ok' })
+    repository.listStudentKnowledgeProjections = async (studentId) => studentId === '00000000-0000-0000-0000-00000000d001'
+      ? [{
+          studentId,
+          knowledgePointRef: 'vocabulary.context',
+          rawCorrectTotal: 3,
+          rawAttemptTotal: 4,
+          masteryScore: 0.72,
+          state: 'learning',
+          lastOccurredAt: '2026-08-31T00:00:00.000Z',
+          dueAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-08-31T00:00:00.000Z',
+        }]
+      : []
+    const verifier: TokenVerifier = {
+      verify: async (token) => ({
+        iss: 'https://issuer.example.test',
+        aud: 'peraquest-api',
+        sub: token,
+        iat: 1_788_134_400,
+        exp: 1_788_138_000,
+      }),
+    }
+    const authUserResolver = {
+      resolve: async (_issuer: string, providerSubject: string) => (
+        providerSubject === 'guardian-sub'
+          ? { id: 'guardian-ok', role: 'guardian' as const }
+          : { id: 'guardian-other', role: 'guardian' as const }
+      ),
+    }
+    const app = buildApp({ repository, tokenVerifier: verifier, authUserResolver, now: () => new Date('2026-08-31T00:00:00Z') })
+    apps.push(app)
+
+    const allowed = await app.inject({
+      method: 'GET',
+      url: '/v1/guardian-links/00000000-0000-0000-0000-00000000d001/student-knowledge',
+      headers: { authorization: 'Bearer guardian-sub' },
+    })
+    const denied = await app.inject({
+      method: 'GET',
+      url: '/v1/guardian-links/00000000-0000-0000-0000-00000000d001/student-knowledge',
+      headers: { authorization: 'Bearer guardian-other-sub' },
+    })
+
+    expect(allowed.statusCode).toBe(200)
+    expect(allowed.json()).toMatchObject({ items: [{ knowledgePointRef: 'vocabulary.context', masteryScore: 0.72 }] })
+    expect(denied.statusCode).toBe(403)
+    expect(denied.json()).toEqual({ code: 'GUARDIAN_AUTH_REQUIRED' })
+  })
+
   it('returns only allowlisted, redacted details for validation errors', async () => {
     vi.stubEnv('CONSENT_VERSION_REQUIRED', 'v1')
     const repository = new MemoryStudentRepository()

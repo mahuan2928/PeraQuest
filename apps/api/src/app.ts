@@ -493,6 +493,18 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return { type: 'voice_processing', ...consent }
   })
 
+  app.get<{ Params: { studentId: string } }>('/v1/guardian-links/:studentId/student-knowledge', async (request, reply): Promise<StudentKnowledgeProjectionListResponse | void> => {
+    const actor = formalGuardianActor(request, reply)
+    if (!actor) return
+    const params = z.object({ studentId: uuidSchema }).safeParse(request.params)
+    if (!params.success) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    const student = await repository.findById(params.data.studentId)
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    if (student.guardianLinkStatus !== 'verified' || student.guardianId !== actor.id) return sendError(reply, 403, 'GUARDIAN_AUTH_REQUIRED')
+    const items = await repository.listStudentKnowledgeProjections(params.data.studentId)
+    return { items }
+  })
+
   app.put('/v1/me/consents/voice-processing', async (request, reply): Promise<ConsentResponse | void> => {
     let studentId: string | null
     let guardianId: string | null = null

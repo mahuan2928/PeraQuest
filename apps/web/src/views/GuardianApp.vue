@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import {
+  fetchDemoGuardianStudentKnowledge,
   setDemoVoiceConsent,
   verifyDemoGuardian,
   type DemoSessionResponse,
@@ -29,6 +30,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   verified: []
   consentChanged: []
+  knowledgeUpdated: [items: KnowledgeItem[]]
 }>()
 
 const inputCode = ref('')
@@ -36,16 +38,23 @@ const busy = ref(false)
 const message = ref('')
 const error = ref('')
 const pendingConsent = ref(false)
+const pendingKnowledge = ref(false)
+const guardianKnowledgeItems = ref<KnowledgeItem[]>([])
 
 const verified = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const voiceAllowed = computed(() => props.capabilities?.voiceConsentStatus === 'granted' && props.capabilities?.canUploadVoice === true)
+const displayKnowledgeItems = computed(() => guardianKnowledgeItems.value.length ? guardianKnowledgeItems.value : props.knowledgeItems)
 const masteryAverage = computed(() => {
-  if (!props.knowledgeItems.length) return 0
-  return Math.round((props.knowledgeItems.reduce((sum, item) => sum + item.masteryScore, 0) / props.knowledgeItems.length) * 100)
+  if (!displayKnowledgeItems.value.length) return 0
+  return Math.round((displayKnowledgeItems.value.reduce((sum, item) => sum + item.masteryScore, 0) / displayKnowledgeItems.value.length) * 100)
 })
 
 watch(() => props.invitationCode, (value) => {
   if (value && !inputCode.value) inputCode.value = value
+}, { immediate: true })
+
+watch(verified, (value) => {
+  if (value) void refreshKnowledge()
 }, { immediate: true })
 
 function friendlyError() {
@@ -64,12 +73,34 @@ async function confirmInvitation() {
       return
     }
     message.value = 'お子さまとの連携が完了しました。'
+    await refreshKnowledge()
     emit('verified')
   } catch (caught) {
     console.error(caught)
     error.value = friendlyError()
   } finally {
     busy.value = false
+  }
+}
+
+async function refreshKnowledge() {
+  if (!verified.value || pendingKnowledge.value) return
+  pendingKnowledge.value = true
+  try {
+    const response = await fetchDemoGuardianStudentKnowledge(props.session.guardianToken, props.session.studentId)
+    console.info('guardian student knowledge result', response)
+    if (!response.ok) {
+      error.value = '学習状況を更新できませんでした。'
+      return
+    }
+    const body = response.body as { items?: KnowledgeItem[] }
+    guardianKnowledgeItems.value = body.items ?? []
+    emit('knowledgeUpdated', guardianKnowledgeItems.value)
+  } catch (caught) {
+    console.error(caught)
+    error.value = '学習状況を更新できませんでした。'
+  } finally {
+    pendingKnowledge.value = false
   }
 }
 
@@ -180,12 +211,20 @@ function stateLabel(state: string) {
           </p>
           <h2>お子さまの学習状況</h2>
         </div>
+        <button
+          class="secondary-action"
+          type="button"
+          :disabled="!verified || pendingKnowledge"
+          @click="refreshKnowledge"
+        >
+          {{ pendingKnowledge ? '更新しています…' : '最新の状況を表示します' }}
+        </button>
         <div class="mini-mastery">
           <strong>{{ masteryAverage }}%</strong>
           <span>平均習熟度</span>
         </div>
       </div>
-      <p v-if="!knowledgeItems.length">
+      <p v-if="!displayKnowledgeItems.length">
         レベルチェックが終わると、復習が必要な項目がここに表示されます。
       </p>
       <ul
@@ -193,7 +232,7 @@ function stateLabel(state: string) {
         class="knowledge-list"
       >
         <li
-          v-for="item in knowledgeItems"
+          v-for="item in displayKnowledgeItems"
           :key="item.knowledgePointRef"
           class="knowledge-item"
         >

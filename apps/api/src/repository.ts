@@ -46,7 +46,7 @@ export interface TrialAttemptRecord {
 export type TrialStartResult = { status: 'created'; attempt: TrialAttemptRecord } | { status: 'redeemed' }
 export type CreateStudentWithAuthIdentityResult = { status: 'created' } | { status: 'identity_conflict' }
 export type SubscriptionEntitlementStatus = 'active' | 'grace_period' | 'expired' | 'revoked'
-export type PaymentWebhookProcessResult = { status: 'processed' } | { status: 'duplicate' } | { status: 'invalid_guardian_link' }
+export type PaymentWebhookProcessResult = { status: 'processed' } | { status: 'duplicate' } | { status: 'payload_mismatch' } | { status: 'invalid_guardian_link' }
 export type StageAttemptStartResult =
   | { status: 'created' | 'replayed'; httpStatus: number; attempt: StartStageAttemptResponse }
   | { status: 'exam_not_available' | 'already_open' | 'request_in_progress' | 'key_reused' }
@@ -490,6 +490,16 @@ export class PostgresStudentRepository implements StudentRepository {
         RETURNING id
       `, [input.provider, input.externalEventId, input.eventType, input.payloadHash, input.receivedAt])
       if (event.rowCount === 0) {
+        const existing = await client.query<{ payload_hash: string }>(`
+          SELECT payload_hash
+          FROM payment_webhook_events
+          WHERE provider = $1 AND external_event_id = $2
+          LIMIT 1
+        `, [input.provider, input.externalEventId])
+        if (existing.rows[0]?.payload_hash !== input.payloadHash) {
+          await client.query('COMMIT')
+          return { status: 'payload_mismatch' }
+        }
         await client.query('COMMIT')
         return { status: 'duplicate' }
       }
@@ -963,7 +973,7 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
   private readonly trialAttempts = new Map<string, TrialAttemptRecord>()
   private readonly stageAttempts = new Map<string, StartStageAttemptResponse>()
   private readonly currentDevices = new Map<string, CurrentDeviceRegistrationResponse>()
-  private readonly paymentWebhookEvents = new Set<string>()
+  private readonly paymentWebhookEvents = new Map<string, string>()
   private readonly entitlements = new Map<string, { studentId: string; entitlementCode: string; status: SubscriptionEntitlementStatus; validUntil: Date | null }>()
   private readonly guardianInviteStudentIds = new Map<string, { studentId: string; expiresAt: Date }>()
   private readonly voiceConsentAuditEvents: Array<{ studentId: string; guardianId: string | null; status: Exclude<ConsentStatus, 'missing' | 'outdated'>; version: string }> = []
@@ -1050,8 +1060,9 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
 
   async processPaymentWebhook(input: ProcessPaymentWebhookInput): Promise<PaymentWebhookProcessResult> {
     const eventKey = `${input.provider}:${input.externalEventId}`
-    if (this.paymentWebhookEvents.has(eventKey)) return { status: 'duplicate' }
-    this.paymentWebhookEvents.add(eventKey)
+    const existingHash = this.paymentWebhookEvents.get(eventKey)
+    if (existingHash !== undefined) return existingHash === input.payloadHash ? { status: 'duplicate' } : { status: 'payload_mismatch' }
+    this.paymentWebhookEvents.set(eventKey, input.payloadHash)
     const student = this.students.get(input.studentId)
     if (!student || student.guardianId !== input.purchaserGuardianId || student.guardianLinkStatus !== 'verified') return { status: 'invalid_guardian_link' }
     const entitlementKey = `web_checkout:${input.externalSubscriptionId}:${input.entitlementCode}`

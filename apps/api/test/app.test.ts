@@ -212,6 +212,48 @@ describe('identity, consent, and capabilities slice', () => {
     expect(capabilities.json()).toMatchObject({ canPurchase: true, entitlements: ['premium_practice'] })
   })
 
+  it('rejects a reused web checkout event id when the signed payload changes', async () => {
+    vi.stubEnv('WEB_CHECKOUT_WEBHOOK_SECRET', 'test-webhook-secret')
+    const repository = new MemoryStudentRepository()
+    const studentId = '00000000-0000-0000-0000-00000000c061'
+    const guardianId = '00000000-0000-0000-0000-00000000c062'
+    await repository.create({ id: studentId, birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId })
+    const app = buildApp({ repository, now: () => new Date('2026-08-30T00:00:00.000Z') })
+    apps.push(app)
+    const payload = {
+      eventId: 'evt-reused-changed',
+      eventType: 'subscription.active',
+      studentId,
+      purchaserGuardianId: guardianId,
+      externalSubscriptionId: 'sub-reused',
+      entitlementCode: 'premium_practice',
+    }
+    const changedPayload = { ...payload, entitlementCode: 'premium_extra' }
+
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/web-checkout/webhook',
+      headers: { 'x-peraquest-webhook-signature': signWebhookPayload(payload, 'test-webhook-secret') },
+      payload,
+    })
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/web-checkout/webhook',
+      headers: { 'x-peraquest-webhook-signature': signWebhookPayload(changedPayload, 'test-webhook-secret') },
+      payload: changedPayload,
+    })
+    const capabilities = await app.inject({
+      method: 'GET',
+      url: '/v1/me/capabilities',
+      headers: { 'x-student-id': studentId, 'x-client-platform': 'pc' },
+    })
+
+    expect(accepted.statusCode).toBe(200)
+    expect(rejected.statusCode).toBe(409)
+    expect(rejected.json()).toEqual({ code: 'IDEMPOTENCY_KEY_REUSED', details: { resource: 'payment_webhook', reason: 'conflict' } })
+    expect(capabilities.json()).toMatchObject({ entitlements: ['premium_practice'] })
+  })
+
   it('rejects unsigned web checkout webhooks before writing entitlements', async () => {
     vi.stubEnv('WEB_CHECKOUT_WEBHOOK_SECRET', 'test-webhook-secret')
     const repository = new MemoryStudentRepository()

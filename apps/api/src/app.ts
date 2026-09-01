@@ -587,6 +587,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       receivedAt: now(),
     })
     if (processed.status === 'invalid_guardian_link') return sendError(reply, 409, 'GUARDIAN_VERIFICATION_REQUIRED')
+    if (processed.status === 'payload_mismatch') return sendError(reply, 409, 'IDEMPOTENCY_KEY_REUSED', { resource: 'payment_webhook', reason: 'conflict' })
     return { received: true, duplicate: processed.status === 'duplicate' }
   })
 

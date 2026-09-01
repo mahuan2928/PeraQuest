@@ -251,9 +251,23 @@ describe('database migrations', () => {
       validUntil: new Date('2026-09-30T00:00:00Z'),
       receivedAt: new Date('2026-08-31T00:00:00Z'),
     })
+    const payloadMismatch = await repository.processPaymentWebhook({
+      provider: 'web_checkout',
+      externalEventId: 'evt-payment-1',
+      eventType: 'subscription.active',
+      payloadHash: 'hash-2',
+      studentId,
+      purchaserGuardianId: guardianId,
+      externalSubscriptionId: 'sub-payment-1',
+      entitlementCode: 'premium_extra',
+      status: 'active',
+      validUntil: new Date('2026-09-30T00:00:00Z'),
+      receivedAt: new Date('2026-08-31T00:00:00Z'),
+    })
 
     expect(processed).toEqual({ status: 'processed' })
     expect(duplicate).toEqual({ status: 'duplicate' })
+    expect(payloadMismatch).toEqual({ status: 'payload_mismatch' })
     await expect(repository.listActiveEntitlements(studentId, new Date('2026-08-31T00:00:00Z'))).resolves.toEqual(['premium_practice'])
   })
 

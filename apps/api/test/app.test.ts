@@ -598,7 +598,7 @@ describe('identity, consent, and capabilities slice', () => {
           },
           {
             studentId,
-            knowledgePointRef: 'grammar.comparative',
+            knowledgePointRef: 'comparatives',
             rawCorrectTotal: 1,
             rawAttemptTotal: 3,
             masteryScore: 0.42,

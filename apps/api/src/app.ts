@@ -134,6 +134,12 @@ const knowledgePointLabels: Record<string, string> = {
   'grammar.comparative': '比較表現',
   'listening.time': '時刻を聞き取る力',
   'writing.word_order': '自然な語順',
+  'past-tense': '過去形',
+  'daily-vocabulary': '日常語彙',
+  'main-idea': '文章の要点をつかむ力',
+  comparatives: '比較表現',
+  'short-dialogue': '短い会話を聞き取る力',
+  'sentence-order': '自然な語順',
 }
 
 const knowledgeLabel = (knowledgePointRef: string): string => knowledgePointLabels[knowledgePointRef] ?? knowledgePointRef

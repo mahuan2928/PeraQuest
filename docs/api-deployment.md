@@ -2,7 +2,7 @@
 
 PR20 wires the web client to a separately deployed Node API while keeping the Cloudflare Worker read-only and static-only.
 
-There is currently **no real Dev API address**. Any `https://api-dev.example.invalid` value below is documentation-only and must not be treated as a deployed endpoint. No API deployment is being fabricated, and Prod is not changed by PR20.
+The Dev API is deployed separately from the static web client. The current Dev service is `https://peraquest-api-dev.onrender.com`; production is not changed by this document.
 
 ## Local development
 
@@ -24,8 +24,34 @@ npm run dev:web                 # http://localhost:5173
 
 ## Node API placeholder
 
-`apps/api/Dockerfile` is a provider-neutral placeholder. A future Dev deployment must supply `DATABASE_URL`, `CORS_ORIGIN`, `AUTH_PROVIDER`, `AUTH_ISSUER`, `AUTH_AUDIENCE`, `AUTH_JWKS_URL`, and `NODE_ENV=production` through its provider, expose port `3000`, and run migrations through the provider's release job before starting the container. Production configuration is not changed by PR20.
+The Render Web Service should build from `main` and run the API workspace.
+
+Required settings:
+
+```sh
+npm install
+npm run build -w @peraquest/api
+```
+
+Pre-deploy command:
+
+```sh
+npm run migrate -w @peraquest/api && npm run seed:demo -w @peraquest/api
+```
+
+Start command:
+
+```sh
+npm run start -w @peraquest/api
+```
+
+For the shared Dev/demo API, use `NODE_ENV=development` so demo endpoints remain available. A production API must use `NODE_ENV=production` and provide real `AUTH_PROVIDER`, `AUTH_ISSUER`, `AUTH_AUDIENCE`, and `AUTH_JWKS_URL`; production always disables demo endpoints.
 
 ## Identity provisioning limitation
 
-`POST /v1/students/onboarding` currently creates `users` and guardian-link state only; it does **not** insert an `auth_identities` row. Until a trusted provisioning flow atomically binds the verified provider `sub` to the new user, newly onboarded students cannot authenticate through the real Bearer path. Do not create this mapping from an unverified client-supplied subject.
+`POST /v1/students/onboarding` supports two modes:
+
+- When called with `Authorization: Bearer <provider-token>`, the API verifies issuer, audience, expiry, and `sub`, then atomically creates `users`, `auth_identities`, and any required guardian-link state in one transaction.
+- When called without Authorization, the API preserves the local legacy onboarding path used by development tests and the current static web registration flow.
+
+The API never accepts a client-supplied provider subject. The subject always comes from the verified Bearer token.

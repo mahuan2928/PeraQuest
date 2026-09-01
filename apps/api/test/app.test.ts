@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { MemoryStudentRepository } from '../src/repository.js'
+import type { TokenVerifier } from '../src/auth.js'
 
 describe('identity, consent, and capabilities slice', () => {
   const apps: ReturnType<typeof buildApp>[] = []
@@ -55,6 +56,74 @@ describe('identity, consent, and capabilities slice', () => {
     })
     expect(response.statusCode).toBe(201)
     expect(response.json()).toMatchObject({ isMinor: true, guardianLinkStatus: 'pending', onboardingStatus: 'pending_guardian' })
+  })
+
+  it('binds a verified provider subject during onboarding so bearer calls resolve to the new student', async () => {
+    const now = () => new Date('2026-08-19T00:00:00Z')
+    const repository = new MemoryStudentRepository()
+    const verifier: TokenVerifier = {
+      verify: async () => ({
+        iss: 'https://issuer.example.test',
+        aud: 'peraquest-api',
+        sub: 'subject-new-student',
+        iat: 1_787_097_600,
+        exp: 1_787_101_200,
+      }),
+    }
+    const app = buildApp({ repository, authUserResolver: repository, tokenVerifier: verifier, now })
+    apps.push(app)
+
+    const onboarded = await app.inject({
+      method: 'POST',
+      url: '/v1/students/onboarding',
+      headers: { authorization: 'Bearer provider-token' },
+      payload: {
+        birthMonth: '2012-04',
+        targetExam: 'eiken_grade_3',
+        authProvider: 'email_magic_link',
+        client: { platform: 'pc' },
+      },
+    })
+    expect(onboarded.statusCode).toBe(201)
+    const studentId = onboarded.json().studentId
+
+    const guardianLink = await app.inject({
+      method: 'GET',
+      url: '/v1/me/guardian-link',
+      headers: { authorization: 'Bearer provider-token' },
+    })
+
+    expect(guardianLink.statusCode).toBe(200)
+    expect(guardianLink.json()).toMatchObject({ status: 'pending' })
+    await expect(repository.findById(studentId)).resolves.toMatchObject({ id: studentId })
+  })
+
+  it('rejects onboarding when the provider subject is already bound', async () => {
+    const now = () => new Date('2026-08-19T00:00:00Z')
+    const repository = new MemoryStudentRepository()
+    const verifier: TokenVerifier = {
+      verify: async () => ({
+        iss: 'https://issuer.example.test',
+        aud: 'peraquest-api',
+        sub: 'subject-duplicate',
+        iat: 1_787_097_600,
+        exp: 1_787_101_200,
+      }),
+    }
+    const app = buildApp({ repository, authUserResolver: repository, tokenVerifier: verifier, now })
+    apps.push(app)
+    const payload = {
+      birthMonth: '2012-04',
+      targetExam: 'eiken_grade_3',
+      authProvider: 'email_magic_link',
+      client: { platform: 'pc' },
+    }
+
+    expect((await app.inject({ method: 'POST', url: '/v1/students/onboarding', headers: { authorization: 'Bearer provider-token' }, payload })).statusCode).toBe(201)
+    const duplicate = await app.inject({ method: 'POST', url: '/v1/students/onboarding', headers: { authorization: 'Bearer provider-token' }, payload })
+
+    expect(duplicate.statusCode).toBe(409)
+    expect(duplicate.json()).toEqual({ code: 'REVISION_CONFLICT' })
   })
 
   it.each([

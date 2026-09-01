@@ -37,7 +37,6 @@ const guardianReportRefreshKey = ref(0)
 async function refreshDemoState() {
   if (!demoSession.value) return
   const capabilities = await fetchDemoCapabilities(demoSession.value.studentToken)
-  console.info('demo capabilities result', capabilities)
   if (!capabilities.ok) throw new Error('demo capabilities failed')
   demoCapabilities.value = capabilities.body as Record<string, unknown>
 }
@@ -45,7 +44,6 @@ async function refreshDemoState() {
 async function refreshDemoKnowledge() {
   if (!demoSession.value) return
   const knowledge = await fetchDemoStudentKnowledge(demoSession.value.studentToken)
-  console.info('demo knowledge result', knowledge)
   if (!knowledge.ok) return
   demoKnowledgeItems.value = ((knowledge.body as { items?: typeof demoKnowledgeItems.value }).items ?? [])
 }
@@ -55,7 +53,6 @@ async function startProductDemo() {
   demoError.value = ''
   try {
     const session = await createDemoSession()
-    console.info('demo session started', { ok: session.ok, status: session.status })
     if (!session.ok) throw new Error('demo session failed')
     demoSession.value = session.body
     demoInvitationCode.value = ''

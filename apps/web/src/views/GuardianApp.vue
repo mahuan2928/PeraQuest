@@ -103,7 +103,6 @@ async function confirmInvitation() {
   error.value = ''
   try {
     const response = await verifyDemoGuardian(props.session.guardianToken, inputCode.value)
-    console.info('guardian verification result', response)
     if (!response.ok) {
       error.value = friendlyError()
       return
@@ -123,7 +122,6 @@ async function refreshKnowledge() {
   pendingKnowledge.value = true
   try {
     const response = await fetchDemoGuardianStudentKnowledge(props.session.guardianToken, props.session.studentId)
-    console.info('guardian student knowledge result', response)
     if (!response.ok) {
       error.value = '学習状況を更新できませんでした。'
       return
@@ -144,7 +142,6 @@ async function refreshLearningSummary() {
   pendingSummary.value = true
   try {
     const response = await fetchDemoGuardianLearningSummary(props.session.guardianToken, props.session.studentId)
-    console.info('guardian learning summary result', response)
     if (!response.ok) {
       error.value = '学習レポートを更新できませんでした。'
       return
@@ -171,7 +168,6 @@ async function toggleConsent() {
   try {
     const nextStatus = voiceAllowed.value ? 'withdrawn' : 'granted'
     const response = await setDemoVoiceConsent(props.session.guardianToken, props.session.studentId, nextStatus)
-    console.info('voice consent result', response)
     if (!response.ok) {
       error.value = verified.value ? '音声練習の設定を更新できませんでした。' : '保護者確認が完了すると、音声練習を許可できます。'
       return

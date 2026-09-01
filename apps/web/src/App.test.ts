@@ -242,7 +242,8 @@ describe('minor onboarding vertical slice', () => {
 
     expect(wrapper.text()).toContain('生徒として体験')
     expect(wrapper.text()).toContain('保護者として体験')
-    expect(wrapper.text()).toContain('Quest 進捗')
+    expect(wrapper.text()).toContain('Quest Map')
+    expect(wrapper.text()).toContain('はじまりの港')
     expect(wrapper.text()).not.toContain('HTTP')
     expect(wrapper.text()).not.toContain('token')
 

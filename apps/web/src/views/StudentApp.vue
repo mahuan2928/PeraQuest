@@ -56,6 +56,14 @@ type GameState = {
   badges: string[]
 }
 
+type QuestMapNode = {
+  id: string
+  title: string
+  description: string
+  reward: string
+  status: 'done' | 'current' | 'locked'
+}
+
 const props = defineProps<{
   session: DemoSessionResponse
   capabilities: CapabilityState | null
@@ -88,12 +96,59 @@ const masteryAverage = computed(() => {
   if (!props.knowledgeItems.length) return 0
   return Math.round((props.knowledgeItems.reduce((sum, item) => sum + item.masteryScore, 0) / props.knowledgeItems.length) * 100)
 })
-const questProgress = computed(() => Math.min(100, Math.round(((gameState.value?.questStep ?? 0) / 5) * 100)))
+const questStep = computed(() => {
+  const rawStep = gameState.value?.questStep ?? 0
+  const badges = new Set(gameState.value?.badges ?? [])
+  const earnedStep = badges.has('level_check_cleared') || badges.has('level_check_challenger') || props.knowledgeItems.length > 0
+    ? 3
+    : badges.has('guardian_shield') || (gameState.value?.totalXp ?? 0) >= 20
+      ? 2
+      : 0
+  return Math.max(rawStep, earnedStep)
+})
+const questProgress = computed(() => Math.min(100, Math.round((questStep.value / questMapNodes.value.length) * 100)))
 const badgeLabels: Record<string, string> = {
   guardian_shield: 'ガーディアンシールド',
   level_check_cleared: 'レベルチェッククリア',
   level_check_challenger: 'Quest チャレンジャー',
 }
+const questBlueprint = [
+  {
+    id: 'start',
+    title: 'はじまりの港',
+    description: '英検3級の冒険を始めます。',
+    reward: 'スタート',
+  },
+  {
+    id: 'guardian',
+    title: '家族の門',
+    description: '保護者確認で安全に学習を解放します。',
+    reward: '盾バッジ',
+  },
+  {
+    id: 'level-check',
+    title: '力だめしの丘',
+    description: 'レベルチェックで今の得意と復習を見つけます。',
+    reward: 'XP + コイン',
+  },
+  {
+    id: 'review',
+    title: '復習の森',
+    description: '苦手な単元を短く復習します。',
+    reward: '復習ルート',
+  },
+  {
+    id: 'next-island',
+    title: '次の島',
+    description: '次のステージへ進む準備をします。',
+    reward: '近日公開',
+  },
+] satisfies Array<Omit<QuestMapNode, 'status'>>
+const questMapNodes = computed<QuestMapNode[]>(() => questBlueprint.map((node, index) => {
+  const stepNumber = index + 1
+  const status = questStep.value >= stepNumber ? 'done' : questStep.value === index ? 'current' : 'locked'
+  return { ...node, status }
+}))
 
 function toUserMessage() {
   return '接続を確認して、もう一度お試しください。'
@@ -115,14 +170,12 @@ async function runAction(action: () => Promise<void>) {
 
 async function refreshGameState() {
   const response = await fetchDemoGameState(props.session.studentToken)
-  console.info('student game state result', response)
   if (response.ok) gameState.value = response.body as GameState
 }
 
 async function createInvitation() {
   await runAction(async () => {
     const response = await createDemoGuardianInvitation(props.session.studentToken)
-    console.info('guardian invitation result', response)
     if (!response.ok) throw new Error('invitation failed')
     emit('invitationCreated', response.body.inviteCode)
     message.value = '保護者に確認依頼を送りました。'
@@ -132,7 +185,6 @@ async function createInvitation() {
 async function startLevelCheck() {
   await runAction(async () => {
     const response = await startDemoStageAttempt(props.session.studentToken, demoStageExamId, `student-start-${props.session.studentId}`)
-    console.info('stage attempt start result', response)
     if (!response.ok) throw new Error('stage attempt start failed')
     attempt.value = response.body as StageAttempt
     selected.value = {}
@@ -149,14 +201,11 @@ async function submitLevelCheck() {
       selectedOptionId: selected.value[item.itemId] ?? null,
     }))
     const submitted = await submitDemoStageAttempt(props.session.studentToken, attempt.value!.attemptId, answers, `student-submit-${props.session.studentId}`)
-    console.info('stage attempt submit result', submitted)
     if (!submitted.ok) throw new Error('stage attempt submit failed')
     const result = await fetchDemoStageAttemptResult(props.session.studentToken, attempt.value!.attemptId)
-    console.info('stage attempt result', result)
     if (!result.ok) throw new Error('stage attempt result failed')
     resultSummary.value = result.body as { passed?: boolean; score?: number; maxScore?: number; rewards?: GameReward }
     const knowledge = await fetchDemoStudentKnowledge(props.session.studentToken)
-    console.info('student knowledge result', knowledge)
     if (knowledge.ok) emit('knowledgeUpdated', ((knowledge.body as { items?: KnowledgeItem[] }).items ?? []))
     await refreshGameState()
     message.value = 'レベルチェックの結果を保存しました。Quest 進捗と復習予定を更新しました。'
@@ -166,7 +215,6 @@ async function submitLevelCheck() {
 async function prepareVoicePractice() {
   await runAction(async () => {
     const response = await createDemoVoiceUploadTicket(props.session.studentToken)
-    console.info('voice upload preparation result', response)
     if (!response.ok) throw new Error('voice upload failed')
     voiceReady.value = true
     message.value = '音声練習を提出できる状態になりました。'
@@ -176,7 +224,6 @@ async function prepareVoicePractice() {
 async function registerDevice() {
   await runAction(async () => {
     const response = await registerDemoDevice(props.session.studentToken)
-    console.info('device registration result', response)
     if (!response.ok) throw new Error('device registration failed')
     deviceReady.value = true
     message.value = 'この端末で体験を続けられるようにしました。'
@@ -241,21 +288,36 @@ watch(
         <p class="card-kicker">
           Quest
         </p>
-        <h2>Quest 進捗</h2>
-        <p>学習の成果が、XP・コイン・冒険の進み具合に変わります。</p>
+        <h2>Quest Map</h2>
+        <p>学習の成果が、冒険マップの進み具合に変わります。</p>
         <div class="quest-stats">
           <span><strong>{{ gameState?.totalXp ?? 0 }}</strong> XP</span>
           <span><strong>{{ gameState?.activityCoins ?? 0 }}</strong> コイン</span>
           <span><strong>{{ gameState?.questChapter ?? 0 }}</strong> 章</span>
         </div>
-        <div
-          class="quest-progress"
-          aria-label="Quest progress"
+        <ol
+          class="quest-map"
+          aria-label="Quest Map"
         >
+          <li
+            v-for="(node, index) in questMapNodes"
+            :key="node.id"
+            class="quest-node"
+            :class="node.status"
+          >
+            <span class="quest-pin">{{ node.status === 'done' ? '✓' : index + 1 }}</span>
+            <div>
+              <strong>{{ node.title }}</strong>
+              <small>{{ node.description }}</small>
+              <em>{{ node.reward }}</em>
+            </div>
+          </li>
+        </ol>
+        <div class="quest-trail">
           <span :style="{ width: `${questProgress}%` }" />
         </div>
         <p class="quest-step">
-          {{ gameState?.questStep ?? 0 }} / 5 ステップ
+          {{ questStep }} / {{ questMapNodes.length }} スポット
         </p>
         <div
           v-if="gameState?.badges.length"

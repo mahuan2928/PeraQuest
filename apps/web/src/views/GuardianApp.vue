@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import {
+  fetchDemoGuardianLearningSummary,
   fetchDemoGuardianStudentKnowledge,
   setDemoVoiceConsent,
   verifyDemoGuardian,
@@ -18,6 +19,34 @@ type KnowledgeItem = {
   masteryScore: number
   state: string
   dueAt: string | null
+}
+
+type SummaryItem = {
+  knowledgePointRef: string
+  label: string
+  masteryPercent: number
+  state: string
+}
+
+type LearningSummary = {
+  overview: {
+    headline: string
+    weeklyActivityLabel: string
+    averageMasteryPercent: number
+    reviewItemCount: number
+    masteredItemCount: number
+  }
+  strengths: SummaryItem[]
+  reviewFocus: SummaryItem[]
+  quest: {
+    totalXp: number
+    activityCoins: number
+    questChapter: number
+    questStep: number
+    badges: string[]
+    summary: string
+  }
+  nextRecommendation: string
 }
 
 const props = defineProps<{
@@ -39,7 +68,9 @@ const message = ref('')
 const error = ref('')
 const pendingConsent = ref(false)
 const pendingKnowledge = ref(false)
+const pendingSummary = ref(false)
 const guardianKnowledgeItems = ref<KnowledgeItem[]>([])
+const learningSummary = ref<LearningSummary | null>(null)
 
 const verified = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const voiceAllowed = computed(() => props.capabilities?.voiceConsentStatus === 'granted' && props.capabilities?.canUploadVoice === true)
@@ -54,7 +85,7 @@ watch(() => props.invitationCode, (value) => {
 }, { immediate: true })
 
 watch(verified, (value) => {
-  if (value) void refreshKnowledge()
+  if (value) void refreshGuardianReport()
 }, { immediate: true })
 
 function friendlyError() {
@@ -73,7 +104,6 @@ async function confirmInvitation() {
       return
     }
     message.value = 'お子さまとの連携が完了しました。'
-    await refreshKnowledge()
     emit('verified')
   } catch (caught) {
     console.error(caught)
@@ -104,6 +134,30 @@ async function refreshKnowledge() {
   }
 }
 
+async function refreshLearningSummary() {
+  if (!verified.value || pendingSummary.value) return
+  pendingSummary.value = true
+  try {
+    const response = await fetchDemoGuardianLearningSummary(props.session.guardianToken, props.session.studentId)
+    console.info('guardian learning summary result', response)
+    if (!response.ok) {
+      error.value = '学習レポートを更新できませんでした。'
+      return
+    }
+    learningSummary.value = response.body as LearningSummary
+  } catch (caught) {
+    console.error(caught)
+    error.value = '学習レポートを更新できませんでした。'
+  } finally {
+    pendingSummary.value = false
+  }
+}
+
+async function refreshGuardianReport() {
+  if (!verified.value) return
+  await Promise.all([refreshKnowledge(), refreshLearningSummary()])
+}
+
 async function toggleConsent() {
   if (busy.value) return
   busy.value = true
@@ -132,6 +186,13 @@ function stateLabel(state: string) {
   if (state === 'mastered') return '安定しています'
   if (state === 'learning') return '伸びています'
   return '復習しましょう'
+}
+
+function badgeLabel(badge: string) {
+  if (badge === 'guardian_shield') return 'ガーディアンシールド'
+  if (badge === 'level_check_cleared') return 'レベルチェッククリア'
+  if (badge === 'level_check_challenger') return 'Quest チャレンジャー'
+  return badge
 }
 </script>
 
@@ -207,66 +268,171 @@ function stateLabel(state: string) {
       <div class="mastery-heading">
         <div>
           <p class="eyebrow">
-            学習状況
+            学習レポート
           </p>
-          <h2>お子さまの学習状況</h2>
+          <h2>今週の学習まとめ</h2>
         </div>
         <button
           class="secondary-action"
           type="button"
-          :disabled="!verified || pendingKnowledge"
-          @click="refreshKnowledge"
+          :disabled="!verified || pendingKnowledge || pendingSummary"
+          @click="refreshGuardianReport"
         >
-          {{ pendingKnowledge ? '更新しています…' : '最新の状況を表示します' }}
+          {{ pendingKnowledge || pendingSummary ? '更新しています…' : '最新のレポートを表示します' }}
         </button>
         <div class="mini-mastery">
-          <strong>{{ masteryAverage }}%</strong>
+          <strong>{{ learningSummary?.overview.averageMasteryPercent ?? masteryAverage }}%</strong>
           <span>平均習熟度</span>
         </div>
       </div>
-      <p v-if="!displayKnowledgeItems.length">
+      <p v-if="!learningSummary && !displayKnowledgeItems.length">
         レベルチェックが終わると、復習が必要な項目がここに表示されます。
       </p>
-      <ul
+      <div
         v-else
-        class="knowledge-list"
+        class="guardian-report"
       >
-        <li
-          v-for="item in displayKnowledgeItems"
-          :key="item.knowledgePointRef"
-          class="knowledge-item"
+        <article class="report-highlight">
+          <h3>今週のまとめ</h3>
+          <p>{{ learningSummary?.overview.headline ?? '学習記録をもとに、得意なところと復習ポイントを整理しています。' }}</p>
+          <span>{{ learningSummary?.overview.weeklyActivityLabel ?? `${displayKnowledgeItems.length}項目の学習記録が更新されています。` }}</span>
+        </article>
+
+        <div
+          v-if="learningSummary"
+          class="report-stat-grid"
         >
-          <div class="knowledge-item__main">
-            <div class="knowledge-item__title-row">
-              <h3>{{ item.knowledgePointRef }}</h3>
-              <span
-                class="status-pill"
-                :class="item.state === 'mastered' ? 'status-pill--mastered' : item.state === 'learning' ? 'status-pill--in-progress' : 'status-pill--review'"
-              >
-                {{ stateLabel(item.state) }}
-              </span>
-            </div>
-            <div class="mastery-meter-row">
-              <div
-                class="mastery-meter"
-                role="progressbar"
-                :aria-label="`${item.knowledgePointRef}の習熟度`"
-                :aria-valuenow="Math.round(item.masteryScore * 100)"
-                aria-valuemin="0"
-                aria-valuemax="100"
-              >
-                <span :style="{ width: `${Math.round(item.masteryScore * 100)}%` }" />
-              </div>
-              <strong>{{ Math.round(item.masteryScore * 100) }}%</strong>
-            </div>
+          <div>
+            <strong>{{ learningSummary.overview.masteredItemCount }}</strong>
+            <span>安定している項目</span>
           </div>
-        </li>
-      </ul>
+          <div>
+            <strong>{{ learningSummary.overview.reviewItemCount }}</strong>
+            <span>復習したい項目</span>
+          </div>
+          <div>
+            <strong>{{ learningSummary.quest.totalXp }}</strong>
+            <span>獲得 XP</span>
+          </div>
+          <div>
+            <strong>{{ learningSummary.quest.activityCoins }}</strong>
+            <span>コイン</span>
+          </div>
+        </div>
+
+        <section
+          v-if="learningSummary"
+          class="report-section"
+        >
+          <h3>得意なところ</h3>
+          <p v-if="!learningSummary.strengths.length">
+            レベルチェック後に、得意な項目を表示します。
+          </p>
+          <ul
+            v-else
+            class="summary-list"
+          >
+            <li
+              v-for="item in learningSummary.strengths"
+              :key="`strength-${item.knowledgePointRef}`"
+            >
+              <span>{{ item.label }}</span>
+              <strong>{{ item.masteryPercent }}%</strong>
+            </li>
+          </ul>
+        </section>
+
+        <section
+          v-if="learningSummary"
+          class="report-section"
+        >
+          <h3>これから復習するところ</h3>
+          <p v-if="!learningSummary.reviewFocus.length">
+            すぐに復習が必要な項目はありません。
+          </p>
+          <ul
+            v-else
+            class="summary-list"
+          >
+            <li
+              v-for="item in learningSummary.reviewFocus"
+              :key="`review-${item.knowledgePointRef}`"
+            >
+              <span>{{ item.label }}</span>
+              <strong>{{ item.masteryPercent }}%</strong>
+            </li>
+          </ul>
+        </section>
+
+        <section
+          v-if="learningSummary"
+          class="report-section"
+        >
+          <h3>Quest の成長</h3>
+          <p>{{ learningSummary.quest.summary }}</p>
+          <div
+            v-if="learningSummary.quest.badges.length"
+            class="badge-row"
+          >
+            <span
+              v-for="badge in learningSummary.quest.badges"
+              :key="badge"
+              class="plan-badge"
+            >
+              {{ badgeLabel(badge) }}
+            </span>
+          </div>
+        </section>
+
+        <section
+          v-if="learningSummary"
+          class="report-section"
+        >
+          <h3>次におすすめすること</h3>
+          <p>{{ learningSummary.nextRecommendation }}</p>
+        </section>
+
+        <ul
+          v-if="!learningSummary"
+          class="knowledge-list"
+        >
+          <li
+            v-for="item in displayKnowledgeItems"
+            :key="item.knowledgePointRef"
+            class="knowledge-item"
+          >
+            <div class="knowledge-item__main">
+              <div class="knowledge-item__title-row">
+                <h3>{{ item.knowledgePointRef }}</h3>
+                <span
+                  class="status-pill"
+                  :class="item.state === 'mastered' ? 'status-pill--mastered' : item.state === 'learning' ? 'status-pill--in-progress' : 'status-pill--review'"
+                >
+                  {{ stateLabel(item.state) }}
+                </span>
+              </div>
+              <div class="mastery-meter-row">
+                <div
+                  class="mastery-meter"
+                  role="progressbar"
+                  :aria-label="`${item.knowledgePointRef}の習熟度`"
+                  :aria-valuenow="Math.round(item.masteryScore * 100)"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                >
+                  <span :style="{ width: `${Math.round(item.masteryScore * 100)}%` }" />
+                </div>
+                <strong>{{ Math.round(item.masteryScore * 100) }}%</strong>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </div>
     </section>
 
     <section class="future-card">
       <h2>近日公開</h2>
-      <p>決済、Quest Map の拡張、保護者向けレポートは正式な機能として準備中です。</p>
+      <p>正式なお支払い機能と Quest Map の拡張は準備中です。</p>
     </section>
 
     <p

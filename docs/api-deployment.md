@@ -56,6 +56,17 @@ For the shared Dev/demo API, use `NODE_ENV=development` so demo endpoints remain
 
 The API never accepts a client-supplied provider subject. The subject always comes from the verified Bearer token.
 
+## Guardian learning summary
+
+`GET /v1/guardian-links/{studentId}/learning-summary` returns a guardian-readable child report for a verified guardian link.
+
+The endpoint aggregates existing product state only:
+
+- `student_knowledge` mastery and due projections for average mastery, strengths, and review focus.
+- `student_game_state` plus `game_reward_ledger` projection for XP, coins, quest progress, and badges.
+
+It does not create learning data, payment data, or mock report rows. If the child has not completed a level check yet, the summary returns an empty-learning message and the current Quest state.
+
 ## Web checkout webhook
 
 `POST /v1/payments/web-checkout/webhook` is the server-to-server entry point for web checkout entitlement projection. Set `WEB_CHECKOUT_WEBHOOK_SECRET` in the API environment before enabling the route.

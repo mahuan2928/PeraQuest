@@ -103,6 +103,20 @@ h1 span { color: var(--green); }
 .mini-mastery { display: grid; gap: 3px; min-width: 112px; padding: 14px; border: 2px solid var(--ink); background: var(--lime); text-align: center; box-shadow: 4px 4px 0 var(--ink); }
 .mini-mastery strong { font-size: 2rem; line-height: 1; }
 .mini-mastery span { font-size: .7rem; font-weight: 900; }
+.guardian-report { display: grid; gap: 18px; }
+.report-highlight { padding: 18px; border: 2px solid var(--ink); background: #fff7d8; box-shadow: 4px 4px 0 var(--ink); }
+.report-highlight h3, .report-section h3 { margin: 0 0 8px; font-size: 1.1rem; }
+.report-highlight span { display: inline-flex; margin-top: 12px; color: var(--green); font-size: .78rem; font-weight: 900; }
+.report-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.report-stat-grid div { padding: 12px; border: 2px solid var(--ink); background: white; text-align: center; box-shadow: 3px 3px 0 var(--ink); }
+.report-stat-grid strong { display: block; color: var(--green); font-size: 1.6rem; line-height: 1; }
+.report-stat-grid span { font-size: .7rem; font-weight: 900; }
+.report-section { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.summary-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.summary-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); background: white; }
+.summary-list span { color: var(--ink); font-weight: 800; }
+.summary-list strong { color: var(--green); }
+.badge-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .future-card { margin-top: 24px; background: #fff0e9; }
 .lesson-panel { width: min(780px, 100%); margin: 0 auto; }
 .lesson-header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 12px; }
@@ -139,6 +153,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
   .role-tabs button { flex: 1; }
   .student-grid, .guardian-grid { grid-template-columns: 1fr; }
   .mastery-heading { align-items: start; flex-direction: column; }
+  .report-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .quest-mark { width: 84px; box-shadow: 7px 7px 0 var(--ink); }
   .trial-card { grid-template-columns: 1fr; }
   .trial-card .primary-action { margin-top: 4px; }

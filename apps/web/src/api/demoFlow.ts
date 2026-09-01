@@ -119,6 +119,12 @@ export async function fetchDemoGuardianStudentKnowledge(guardianToken: string, s
   })
 }
 
+export async function fetchDemoGuardianLearningSummary(guardianToken: string, studentId: string): Promise<DemoRequestResult> {
+  return requestJson(`/v1/guardian-links/${studentId}/learning-summary`, {
+    headers: bearerHeaders(guardianToken),
+  })
+}
+
 export async function createDemoVoiceUploadTicket(studentToken: string): Promise<DemoRequestResult> {
   return requestJson('/v1/me/voice-upload-ticket', {
     method: 'POST',

@@ -861,6 +861,50 @@
         }
       }
     },
+    "/v1/guardian-links/{studentId}/learning-summary": {
+      "get": {
+        "operationId": "getGuardianLearningSummary",
+        "summary": "Read a verified guardian's child learning summary.",
+        "description": "Bearer guardian only. Aggregates child mastery projections and Quest state into guardian-readable report copy.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guardian-readable child learning summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianLearningSummaryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/v1/stage-attempts/{stageAttemptId}": {
       "get": {
         "operationId": "getStageAttempt",
@@ -2667,6 +2711,148 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "GuardianLearningSummaryItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "knowledgePointRef",
+          "label",
+          "masteryPercent",
+          "state"
+        ],
+        "properties": {
+          "knowledgePointRef": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "masteryPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "state": {
+            "$ref": "#/components/schemas/StudentKnowledgeProjectionState"
+          }
+        }
+      },
+      "GuardianLearningSummaryResponse": {
+        "description": "Guardian-readable summary generated from child mastery projections and Quest state.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "studentId",
+          "generatedAt",
+          "overview",
+          "strengths",
+          "reviewFocus",
+          "quest",
+          "nextRecommendation"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "overview": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "headline",
+              "weeklyActivityLabel",
+              "averageMasteryPercent",
+              "reviewItemCount",
+              "masteredItemCount"
+            ],
+            "properties": {
+              "headline": {
+                "type": "string",
+                "minLength": 1
+              },
+              "weeklyActivityLabel": {
+                "type": "string",
+                "minLength": 1
+              },
+              "averageMasteryPercent": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "reviewItemCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "masteredItemCount": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "strengths": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GuardianLearningSummaryItem"
+            }
+          },
+          "reviewFocus": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GuardianLearningSummaryItem"
+            }
+          },
+          "quest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "totalXp",
+              "activityCoins",
+              "questChapter",
+              "questStep",
+              "badges",
+              "summary"
+            ],
+            "properties": {
+              "totalXp": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "activityCoins": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "questChapter": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "questStep": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "badges": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "nextRecommendation": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },

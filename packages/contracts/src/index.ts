@@ -238,6 +238,36 @@ export interface StudentGameStateResponse {
   updatedAt: string
 }
 
+export interface GuardianLearningSummaryItem {
+  knowledgePointRef: string
+  label: string
+  masteryPercent: number
+  state: StudentKnowledgeProjectionState
+}
+
+export interface GuardianLearningSummaryResponse {
+  studentId: string
+  generatedAt: string
+  overview: {
+    headline: string
+    weeklyActivityLabel: string
+    averageMasteryPercent: number
+    reviewItemCount: number
+    masteredItemCount: number
+  }
+  strengths: GuardianLearningSummaryItem[]
+  reviewFocus: GuardianLearningSummaryItem[]
+  quest: {
+    totalXp: number
+    activityCoins: number
+    questChapter: number
+    questStep: number
+    badges: string[]
+    summary: string
+  }
+  nextRecommendation: string
+}
+
 /** Contract-only knowledge-domain vocabulary. These DTOs do not imply runtime APIs or persistence. */
 export const knowledgeStates = ['new', 'learning', 'review', 'mastered', 'suspended'] as const
 export type KnowledgeState = (typeof knowledgeStates)[number]

@@ -24,6 +24,7 @@ describe('OpenAPI document', () => {
       '/v1/demo/session',
       '/v1/guardian-links/verification',
       '/v1/guardian-links/{studentId}/consents/voice-processing',
+      '/v1/guardian-links/{studentId}/learning-summary',
       '/v1/guardian-links/{studentId}/student-knowledge',
       '/v1/me/capabilities',
       '/v1/me/consents/voice-processing',
@@ -86,6 +87,8 @@ describe('OpenAPI document', () => {
     expect(document.components.schemas).toHaveProperty('StageAttemptResultResponse')
     expect(document.components.schemas).toHaveProperty('GameRewardGrant')
     expect(document.components.schemas).toHaveProperty('StudentGameStateResponse')
+    expect(document.components.schemas).toHaveProperty('GuardianLearningSummaryItem')
+    expect(document.components.schemas).toHaveProperty('GuardianLearningSummaryResponse')
     expect(document.components.schemas).toHaveProperty('StudentKnowledgeProjection')
     expect(document.components.schemas).toHaveProperty('StudentKnowledgeProjectionListResponse')
     expect(document.components.schemas).toHaveProperty('WebCheckoutWebhookRequest')
@@ -117,6 +120,7 @@ describe('OpenAPI document', () => {
     const putGuardianVerificationOperation = document.paths['/v1/guardian-links/verification']?.put
     const putGuardianVoiceConsentOperation = document.paths['/v1/guardian-links/{studentId}/consents/voice-processing']?.put
     const getGuardianStudentKnowledgeOperation = document.paths['/v1/guardian-links/{studentId}/student-knowledge']?.get
+    const getGuardianLearningSummaryOperation = document.paths['/v1/guardian-links/{studentId}/learning-summary']?.get
     const processWebCheckoutWebhookOperation = document.paths['/v1/payments/web-checkout/webhook']?.post
     const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
     const submitStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/submit']?.post
@@ -133,6 +137,7 @@ describe('OpenAPI document', () => {
     expect(putGuardianVerificationOperation).toBeDefined()
     expect(putGuardianVoiceConsentOperation).toBeDefined()
     expect(getGuardianStudentKnowledgeOperation).toBeDefined()
+    expect(getGuardianLearningSummaryOperation).toBeDefined()
     expect(processWebCheckoutWebhookOperation).toBeDefined()
     expect(getStageAttemptOperation).toBeDefined()
     expect(submitStageAttemptOperation).toBeDefined()
@@ -148,6 +153,7 @@ describe('OpenAPI document', () => {
     expect(putGuardianVerificationOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(putGuardianVoiceConsentOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(getGuardianStudentKnowledgeOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(getGuardianLearningSummaryOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(processWebCheckoutWebhookOperation!.security).toEqual([{ WebhookSignature: [] }])
     expect(startStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)

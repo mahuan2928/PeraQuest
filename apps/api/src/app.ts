@@ -9,6 +9,7 @@ import type {
   CurrentDevicePushDisableResponse,
   CurrentDeviceRegistrationResponse,
   GuardianInvitationResponse,
+  GuardianLearningSummaryResponse,
   GuardianLinkResponse,
   GuardianLinkVerificationResponse,
   GuardianVoiceConsentWriteResponse,
@@ -18,6 +19,7 @@ import type {
   StartStageAttemptResponse,
   StageAttemptResultResponse,
   StudentGameStateResponse,
+  StudentKnowledgeProjectionDto,
   StudentKnowledgeProjectionListResponse,
   SubmitStageAttemptRequest,
   TrialAnswerResponse,
@@ -123,6 +125,87 @@ const verifyWebhookSignature = (payload: unknown, signature: unknown, secret: st
   const actualBuffer = Buffer.from(signature, 'hex')
   const expectedBuffer = Buffer.from(expected, 'hex')
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer)
+}
+
+const knowledgePointLabels: Record<string, string> = {
+  'grammar.past_tense': '過去形',
+  'vocabulary.context': '文脈から語彙を選ぶ力',
+  'reading.reason': '理由を読み取る力',
+  'grammar.comparative': '比較表現',
+  'listening.time': '時刻を聞き取る力',
+  'writing.word_order': '自然な語順',
+}
+
+const knowledgeLabel = (knowledgePointRef: string): string => knowledgePointLabels[knowledgePointRef] ?? knowledgePointRef
+
+const toSummaryItem = (item: StudentKnowledgeProjectionDto): GuardianLearningSummaryResponse['strengths'][number] => ({
+  knowledgePointRef: item.knowledgePointRef,
+  label: knowledgeLabel(item.knowledgePointRef),
+  masteryPercent: Math.round(item.masteryScore * 100),
+  state: item.state,
+})
+
+const buildGuardianLearningSummary = (
+  studentId: string,
+  knowledgeItems: StudentKnowledgeProjectionDto[],
+  gameState: StudentGameStateResponse,
+  generatedAt: Date,
+): GuardianLearningSummaryResponse => {
+  const averageMasteryPercent = knowledgeItems.length
+    ? Math.round((knowledgeItems.reduce((sum, item) => sum + item.masteryScore, 0) / knowledgeItems.length) * 100)
+    : 0
+  const masteredItemCount = knowledgeItems.filter((item) => item.state === 'mastered').length
+  const reviewCandidates = knowledgeItems
+    .filter((item) => item.state === 'review' || item.masteryScore < 0.7)
+    .sort((left, right) => left.masteryScore - right.masteryScore)
+  const strengths = [...knowledgeItems]
+    .filter((item) => item.state === 'mastered' || item.masteryScore >= 0.7)
+    .sort((left, right) => right.masteryScore - left.masteryScore)
+    .slice(0, 3)
+    .map(toSummaryItem)
+  const reviewFocus = reviewCandidates.slice(0, 3).map(toSummaryItem)
+  const headline = knowledgeItems.length === 0
+    ? 'レベルチェック後に、お子さまの得意なところと復習ポイントをまとめます。'
+    : averageMasteryPercent >= 75
+      ? '基礎は順調に定着しています。次の学習でもこのペースを保てます。'
+      : averageMasteryPercent >= 50
+        ? 'できているところが増えています。復習を組み合わせると、さらに安定します。'
+        : 'まずは復習から始めると安心です。間違えた単元を短く確認しましょう。'
+  const firstReview = reviewFocus[0]
+  const nextRecommendation = firstReview
+    ? `次回は「${firstReview.label}」を短く復習することをおすすめします。`
+    : knowledgeItems.length
+      ? '次回は新しい問題に進みながら、今のペースを続けることをおすすめします。'
+      : 'まずはレベルチェックを完了すると、次に取り組む内容が表示されます。'
+  const weeklyActivityLabel = knowledgeItems.length
+    ? `${knowledgeItems.length}項目の学習記録が更新されています。`
+    : '今週の学習記録はまだありません。'
+  const questSummary = gameState.totalXp > 0
+    ? `学習により ${gameState.totalXp} XP と ${gameState.activityCoins} コインを獲得しています。`
+    : 'Quest の成長は、学習を始めると表示されます。'
+
+  return {
+    studentId,
+    generatedAt: generatedAt.toISOString(),
+    overview: {
+      headline,
+      weeklyActivityLabel,
+      averageMasteryPercent,
+      reviewItemCount: reviewFocus.length,
+      masteredItemCount,
+    },
+    strengths,
+    reviewFocus,
+    quest: {
+      totalXp: gameState.totalXp,
+      activityCoins: gameState.activityCoins,
+      questChapter: gameState.questChapter,
+      questStep: gameState.questStep,
+      badges: gameState.badges,
+      summary: questSummary,
+    },
+    nextRecommendation,
+  }
 }
 
 const createGuardianInviteCode = (): string => randomBytes(24).toString('base64url')
@@ -504,6 +587,21 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     if (student.guardianLinkStatus !== 'verified' || student.guardianId !== actor.id) return sendError(reply, 403, 'GUARDIAN_AUTH_REQUIRED')
     const items = await repository.listStudentKnowledgeProjections(params.data.studentId)
     return { items }
+  })
+
+  app.get<{ Params: { studentId: string } }>('/v1/guardian-links/:studentId/learning-summary', async (request, reply): Promise<GuardianLearningSummaryResponse | void> => {
+    const actor = formalGuardianActor(request, reply)
+    if (!actor) return
+    const params = z.object({ studentId: uuidSchema }).safeParse(request.params)
+    if (!params.success) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    const student = await repository.findById(params.data.studentId)
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    if (student.guardianLinkStatus !== 'verified' || student.guardianId !== actor.id) return sendError(reply, 403, 'GUARDIAN_AUTH_REQUIRED')
+    const [items, gameState] = await Promise.all([
+      repository.listStudentKnowledgeProjections(params.data.studentId),
+      repository.getStudentGameState(params.data.studentId),
+    ])
+    return buildGuardianLearningSummary(params.data.studentId, items, gameState, now())
   })
 
   app.put('/v1/me/consents/voice-processing', async (request, reply): Promise<ConsentResponse | void> => {

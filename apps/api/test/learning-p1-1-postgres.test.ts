@@ -145,6 +145,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0011_guardian_invitation.sql',
           '0012_student_knowledge_concurrent_timestamp.sql',
           '0013_voice_consent_withdrawal_jobs.sql',
+          '0014_payment_webhook_events.sql',
         ],
         [],
       ])
@@ -167,6 +168,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0011_guardian_invitation.sql', count: '1' },
         { name: '0012_student_knowledge_concurrent_timestamp.sql', count: '1' },
         { name: '0013_voice_consent_withdrawal_jobs.sql', count: '1' },
+        { name: '0014_payment_webhook_events.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])

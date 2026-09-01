@@ -47,7 +47,7 @@ npm run start -w @peraquest/api
 
 For the shared Dev/demo API, use `NODE_ENV=development` so demo endpoints remain available. A production API must use `NODE_ENV=production` and provide real `AUTH_PROVIDER`, `AUTH_ISSUER`, `AUTH_AUDIENCE`, and `AUTH_JWKS_URL`; production always disables demo endpoints.
 
-## Identity provisioning limitation
+## Identity provisioning
 
 `POST /v1/students/onboarding` supports two modes:
 
@@ -55,3 +55,19 @@ For the shared Dev/demo API, use `NODE_ENV=development` so demo endpoints remain
 - When called without Authorization, the API preserves the local legacy onboarding path used by development tests and the current static web registration flow.
 
 The API never accepts a client-supplied provider subject. The subject always comes from the verified Bearer token.
+
+## Web checkout webhook
+
+`POST /v1/payments/web-checkout/webhook` is the server-to-server entry point for web checkout entitlement projection. Set `WEB_CHECKOUT_WEBHOOK_SECRET` in the API environment before enabling the route.
+
+The sender must compute `X-PeraQuest-Webhook-Signature` as a lowercase hex HMAC-SHA256 over the canonical JSON payload using `WEB_CHECKOUT_WEBHOOK_SECRET`. The payload must include:
+
+- `eventId`
+- `eventType`: `subscription.active`, `subscription.grace_period`, `subscription.expired`, or `subscription.revoked`
+- `studentId`
+- `purchaserGuardianId`
+- `externalSubscriptionId`
+- `entitlementCode`
+- `validUntil` when the entitlement has a known expiry
+
+The API records each `eventId` in `payment_webhook_events` and updates `subscription_entitlements` only when the purchaser is the verified guardian for the student. Duplicate events return success without issuing duplicate entitlements.

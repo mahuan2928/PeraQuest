@@ -45,6 +45,7 @@ describe('database migrations', () => {
       '0011_guardian_invitation.sql',
       '0012_student_knowledge_concurrent_timestamp.sql',
       '0013_voice_consent_withdrawal_jobs.sql',
+      '0014_payment_webhook_events.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -62,6 +63,7 @@ describe('database migrations', () => {
       'knowledge_evidence',
       'learning_audit_events',
       'line_links',
+      'payment_webhook_events',
       'schema_migrations',
       'stage_attempt_answer_key_snapshots',
       'stage_attempt_answers',
@@ -201,6 +203,58 @@ describe('database migrations', () => {
       'exam_grade_3_full',
       'premium_lesson_pack',
     ])
+  })
+
+  it('processes payment webhook events idempotently into subscription entitlements', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const client = { query: database.query.bind(database), release: () => undefined }
+    const pool = { query: database.query.bind(database), connect: async () => client } as unknown as Pool
+    const repository = new PostgresStudentRepository(pool)
+    const studentId = '00000000-0000-0000-0000-0000000000b1'
+    const guardianId = '00000000-0000-0000-0000-0000000000b2'
+    await database.query(`
+      INSERT INTO users (id, role, birth_month, is_minor)
+      VALUES
+        ($1, 'student', '2012-04-01', true),
+        ($2, 'guardian', NULL, false)
+    `, [studentId, guardianId])
+    await database.query(`
+      INSERT INTO guardian_links (id, student_id, guardian_id, status, verified_at)
+      VALUES ('00000000-0000-0000-0000-0000000000b3', $1, $2, 'verified', CURRENT_TIMESTAMP)
+    `, [studentId, guardianId])
+
+    const processed = await repository.processPaymentWebhook({
+      provider: 'web_checkout',
+      externalEventId: 'evt-payment-1',
+      eventType: 'subscription.active',
+      payloadHash: 'hash-1',
+      studentId,
+      purchaserGuardianId: guardianId,
+      externalSubscriptionId: 'sub-payment-1',
+      entitlementCode: 'premium_practice',
+      status: 'active',
+      validUntil: new Date('2026-09-30T00:00:00Z'),
+      receivedAt: new Date('2026-08-31T00:00:00Z'),
+    })
+    const duplicate = await repository.processPaymentWebhook({
+      provider: 'web_checkout',
+      externalEventId: 'evt-payment-1',
+      eventType: 'subscription.active',
+      payloadHash: 'hash-1',
+      studentId,
+      purchaserGuardianId: guardianId,
+      externalSubscriptionId: 'sub-payment-1',
+      entitlementCode: 'premium_practice',
+      status: 'active',
+      validUntil: new Date('2026-09-30T00:00:00Z'),
+      receivedAt: new Date('2026-08-31T00:00:00Z'),
+    })
+
+    expect(processed).toEqual({ status: 'processed' })
+    expect(duplicate).toEqual({ status: 'duplicate' })
+    await expect(repository.listActiveEntitlements(studentId, new Date('2026-08-31T00:00:00Z'))).resolves.toEqual(['premium_practice'])
   })
 
   it('upserts current device metadata without storing raw device ids', async () => {

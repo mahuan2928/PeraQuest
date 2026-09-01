@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { sanitizeErrorDetails } from '@peraquest/contracts'
@@ -67,6 +67,15 @@ const submitStageAttemptSchema = z.object({
     selectedOptionId: uuidSchema.nullable(),
   }).strict()).min(1).max(200),
 }).strict()
+const webCheckoutWebhookSchema = z.object({
+  eventId: z.string().min(1).max(200),
+  eventType: z.string().min(1).max(100),
+  studentId: uuidSchema,
+  purchaserGuardianId: uuidSchema,
+  externalSubscriptionId: z.string().min(1).max(200),
+  entitlementCode: z.string().min(1).max(100),
+  validUntil: z.string().datetime().nullable().optional(),
+}).strict()
 
 const sendError = (reply: FastifyReply, statusCode: number, code: StableErrorCode, details?: unknown) => {
   const safeDetails = sanitizeErrorDetails(details)
@@ -97,6 +106,23 @@ const hashGuardianInviteCode = (inviteCode: string): string => createHash('sha25
   .update('peraquest:guardian-invite:v1:')
   .update(inviteCode)
   .digest('hex')
+
+const stableStringify = (value: unknown): string => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`
+  return `{${Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${stableStringify(nested)}`)
+    .join(',')}}`
+}
+
+const verifyWebhookSignature = (payload: unknown, signature: unknown, secret: string): boolean => {
+  if (typeof signature !== 'string' || !/^[a-f0-9]{64}$/i.test(signature)) return false
+  const expected = createHmac('sha256', secret).update(stableStringify(payload)).digest('hex')
+  const actualBuffer = Buffer.from(signature, 'hex')
+  const expectedBuffer = Buffer.from(expected, 'hex')
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer)
+}
 
 const createGuardianInviteCode = (): string => randomBytes(24).toString('base64url')
 const encodeDemoTokenPart = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url')
@@ -508,7 +534,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       canLearn: guardianSatisfied,
       canUploadVoice,
       voiceUploadMode: canUploadVoice ? 'signed_upload' : 'disabled',
-      canPurchase: false,
+      canPurchase: guardianSatisfied,
       guardianLinkStatus: student.guardianLinkStatus,
       voiceConsentStatus: voiceConsent.status,
       consentVersionRequired: config.CONSENT_VERSION_REQUIRED,
@@ -517,6 +543,39 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       lineReturnTargets: parsedPlatform.data === 'pc' ? ['web_https'] : ['app_deep_link', 'web_https'],
       entitlements,
     }
+  })
+
+  app.post('/v1/payments/web-checkout/webhook', async (request, reply) => {
+    if (!config.WEB_CHECKOUT_WEBHOOK_SECRET) return sendError(reply, 503, 'PAYMENT_WEBHOOK_NOT_CONFIGURED')
+    const parsed = webCheckoutWebhookSchema.safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'payment_webhook', reason: 'invalid' })
+    if (!verifyWebhookSignature(parsed.data, request.headers['x-peraquest-webhook-signature'], config.WEB_CHECKOUT_WEBHOOK_SECRET)) {
+      return sendError(reply, 401, 'PAYMENT_WEBHOOK_SIGNATURE_INVALID')
+    }
+    const statusByEventType = {
+      'subscription.active': 'active',
+      'subscription.grace_period': 'grace_period',
+      'subscription.expired': 'expired',
+      'subscription.revoked': 'revoked',
+    } as const
+    const entitlementStatus = statusByEventType[parsed.data.eventType as keyof typeof statusByEventType]
+    if (!entitlementStatus) return sendError(reply, 422, 'PAYMENT_WEBHOOK_UNSUPPORTED_EVENT')
+    const validUntil = parsed.data.validUntil ? new Date(parsed.data.validUntil) : null
+    const processed = await repository.processPaymentWebhook({
+      provider: 'web_checkout',
+      externalEventId: parsed.data.eventId,
+      eventType: parsed.data.eventType,
+      payloadHash: createHash('sha256').update(stableStringify(parsed.data)).digest('hex'),
+      studentId: parsed.data.studentId,
+      purchaserGuardianId: parsed.data.purchaserGuardianId,
+      externalSubscriptionId: parsed.data.externalSubscriptionId,
+      entitlementCode: parsed.data.entitlementCode,
+      status: entitlementStatus,
+      validUntil,
+      receivedAt: now(),
+    })
+    if (processed.status === 'invalid_guardian_link') return sendError(reply, 409, 'GUARDIAN_VERIFICATION_REQUIRED')
+    return { received: true, duplicate: processed.status === 'duplicate' }
   })
 
   app.put('/v1/me/devices/current', async (request, reply): Promise<CurrentDeviceRegistrationResponse | void> => {

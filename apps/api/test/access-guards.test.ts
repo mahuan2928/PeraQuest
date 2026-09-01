@@ -123,7 +123,7 @@ describe('P0 access guards', () => {
     },
   )
 
-  it.each(platforms)('never grants direct purchase capability to a student on %s', async (platform) => {
+  it.each(platforms)('grants purchase capability to adult students on %s', async (platform) => {
     const repository = new MemoryStudentRepository()
     await repository.create({
       id: 'student-no-purchase',
@@ -145,7 +145,7 @@ describe('P0 access guards', () => {
     })
 
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toMatchObject({ platform, canPurchase: false })
+    expect(response.json()).toMatchObject({ platform, canPurchase: true })
     expect(response.json().paymentChannels).not.toHaveLength(0)
   })
 })

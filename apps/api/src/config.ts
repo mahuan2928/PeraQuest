@@ -29,6 +29,7 @@ const schema = z.object({
   VOICE_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().max(50 * 1024 * 1024).default(10 * 1024 * 1024),
   VOICE_UPLOAD_MAX_DURATION_SECONDS: z.coerce.number().int().positive().max(30 * 60).default(5 * 60),
   VOICE_UPLOAD_TICKET_TTL_SECONDS: z.coerce.number().int().positive().max(15 * 60).default(5 * 60),
+  WEB_CHECKOUT_WEBHOOK_SECRET: z.string().min(16).optional(),
   DEMO_API_ENABLED: booleanFlag.default(false),
   DEMO_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().max(15 * 60).default(10 * 60),
   DEMO_SESSION_SECRET: z.string().min(16).optional(),

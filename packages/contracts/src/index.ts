@@ -374,6 +374,9 @@ export const stableErrorCodes = [
   'TRIAL_ANSWER_ALREADY_SUBMITTED',
   'VOICE_CONSENT_REQUIRED',
   'SIGNED_UPLOAD_NOT_CONFIGURED',
+  'PAYMENT_WEBHOOK_NOT_CONFIGURED',
+  'PAYMENT_WEBHOOK_SIGNATURE_INVALID',
+  'PAYMENT_WEBHOOK_UNSUPPORTED_EVENT',
   'LEGACY_AUTH_NOT_ALLOWED',
   'IDEMPOTENCY_KEY_REQUIRED',
   // Deprecated compatibility-only value retained for existing consumers; P1.1 must not emit it.

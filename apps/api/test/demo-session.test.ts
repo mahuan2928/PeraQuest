@@ -80,7 +80,7 @@ describe('live API demo session', () => {
       headers: { authorization: `Bearer ${body.studentToken}`, 'x-client-platform': 'pc' },
     })
     expect(afterVerification.statusCode).toBe(200)
-    expect(afterVerification.json()).toMatchObject({ canLearn: true, canPurchase: false, guardianLinkStatus: 'verified', entitlements: [] })
+    expect(afterVerification.json()).toMatchObject({ canLearn: true, canPurchase: true, guardianLinkStatus: 'verified', entitlements: [] })
 
     const granted = await app.inject({
       method: 'PUT',

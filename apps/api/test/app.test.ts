@@ -1,7 +1,19 @@
+import { createHmac } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { MemoryStudentRepository } from '../src/repository.js'
 import type { TokenVerifier } from '../src/auth.js'
+
+const stableStringify = (value: unknown): string => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`
+  return `{${Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${stableStringify(nested)}`)
+    .join(',')}}`
+}
+
+const signWebhookPayload = (payload: unknown, secret: string): string => createHmac('sha256', secret).update(stableStringify(payload)).digest('hex')
 
 describe('identity, consent, and capabilities slice', () => {
   const apps: ReturnType<typeof buildApp>[] = []
@@ -151,10 +163,87 @@ describe('identity, consent, and capabilities slice', () => {
 
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({
-      canPurchase: false,
+      canPurchase: true,
       entitlements: ['exam_grade_3_full', 'premium_lesson_pack'],
       paymentChannels: ['web_checkout'],
     })
+  })
+
+  it('processes signed web checkout webhooks idempotently and exposes active entitlements', async () => {
+    vi.stubEnv('WEB_CHECKOUT_WEBHOOK_SECRET', 'test-webhook-secret')
+    const repository = new MemoryStudentRepository()
+    const studentId = '00000000-0000-0000-0000-00000000c001'
+    const guardianId = '00000000-0000-0000-0000-00000000c002'
+    await repository.create({ id: studentId, birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId })
+    const app = buildApp({ repository, now: () => new Date('2026-08-30T00:00:00.000Z') })
+    apps.push(app)
+    const payload = {
+      eventId: 'evt-paid-1',
+      eventType: 'subscription.active',
+      studentId,
+      purchaserGuardianId: guardianId,
+      externalSubscriptionId: 'sub-paid-1',
+      entitlementCode: 'premium_practice',
+      validUntil: '2026-09-30T00:00:00.000Z',
+    }
+
+    const webhook = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/web-checkout/webhook',
+      headers: { 'x-peraquest-webhook-signature': signWebhookPayload(payload, 'test-webhook-secret') },
+      payload,
+    })
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/web-checkout/webhook',
+      headers: { 'x-peraquest-webhook-signature': signWebhookPayload(payload, 'test-webhook-secret') },
+      payload,
+    })
+    const capabilities = await app.inject({
+      method: 'GET',
+      url: '/v1/me/capabilities',
+      headers: { 'x-student-id': studentId, 'x-client-platform': 'pc' },
+    })
+
+    expect(webhook.statusCode).toBe(200)
+    expect(webhook.json()).toEqual({ received: true, duplicate: false })
+    expect(duplicate.statusCode).toBe(200)
+    expect(duplicate.json()).toEqual({ received: true, duplicate: true })
+    expect(capabilities.json()).toMatchObject({ canPurchase: true, entitlements: ['premium_practice'] })
+  })
+
+  it('rejects unsigned web checkout webhooks before writing entitlements', async () => {
+    vi.stubEnv('WEB_CHECKOUT_WEBHOOK_SECRET', 'test-webhook-secret')
+    const repository = new MemoryStudentRepository()
+    const studentId = '00000000-0000-0000-0000-00000000c011'
+    const guardianId = '00000000-0000-0000-0000-00000000c012'
+    await repository.create({ id: studentId, birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'verified', guardianId })
+    const app = buildApp({ repository, now: () => new Date('2026-08-30T00:00:00.000Z') })
+    apps.push(app)
+    const payload = {
+      eventId: 'evt-bad-signature',
+      eventType: 'subscription.active',
+      studentId,
+      purchaserGuardianId: guardianId,
+      externalSubscriptionId: 'sub-unpaid',
+      entitlementCode: 'premium_practice',
+    }
+
+    const webhook = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/web-checkout/webhook',
+      headers: { 'x-peraquest-webhook-signature': '0'.repeat(64) },
+      payload,
+    })
+    const capabilities = await app.inject({
+      method: 'GET',
+      url: '/v1/me/capabilities',
+      headers: { 'x-student-id': studentId, 'x-client-platform': 'pc' },
+    })
+
+    expect(webhook.statusCode).toBe(401)
+    expect(webhook.json()).toEqual({ code: 'PAYMENT_WEBHOOK_SIGNATURE_INVALID' })
+    expect(capabilities.json()).toMatchObject({ entitlements: [] })
   })
 
   it('rejects capabilities requests without an explicit client platform', async () => {

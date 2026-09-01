@@ -45,6 +45,8 @@ export interface TrialAttemptRecord {
 
 export type TrialStartResult = { status: 'created'; attempt: TrialAttemptRecord } | { status: 'redeemed' }
 export type CreateStudentWithAuthIdentityResult = { status: 'created' } | { status: 'identity_conflict' }
+export type SubscriptionEntitlementStatus = 'active' | 'grace_period' | 'expired' | 'revoked'
+export type PaymentWebhookProcessResult = { status: 'processed' } | { status: 'duplicate' } | { status: 'invalid_guardian_link' }
 export type StageAttemptStartResult =
   | { status: 'created' | 'replayed'; httpStatus: number; attempt: StartStageAttemptResponse }
   | { status: 'exam_not_available' | 'already_open' | 'request_in_progress' | 'key_reused' }
@@ -104,6 +106,20 @@ export interface VerifyGuardianInviteInput {
   verifiedAt: Date
 }
 
+export interface ProcessPaymentWebhookInput {
+  provider: 'web_checkout'
+  externalEventId: string
+  eventType: string
+  payloadHash: string
+  studentId: string
+  purchaserGuardianId: string
+  externalSubscriptionId: string
+  entitlementCode: string
+  status: SubscriptionEntitlementStatus
+  validUntil: Date | null
+  receivedAt: Date
+}
+
 export interface StudentRepository {
   create(student: StudentRecord): Promise<void>
   createWithAuthIdentity(student: StudentRecord, provider: AuthProvider, providerSubject: string): Promise<CreateStudentWithAuthIdentityResult>
@@ -124,6 +140,7 @@ export interface StudentRepository {
   findStageAttemptResult(studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null>
   listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
   listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
+  processPaymentWebhook(input: ProcessPaymentWebhookInput): Promise<PaymentWebhookProcessResult>
   upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse>
   disableCurrentDevicePush(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse | null>
 }
@@ -458,6 +475,71 @@ export class PostgresStudentRepository implements StudentRepository {
       ORDER BY entitlement_code ASC
     `, [studentId, asOf])
     return result.rows.map((row) => row.entitlement_code)
+  }
+
+  async processPaymentWebhook(input: ProcessPaymentWebhookInput): Promise<PaymentWebhookProcessResult> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const event = await client.query(`
+        INSERT INTO payment_webhook_events
+          (id, provider, external_event_id, event_type, payment_channel, payload_hash, processing_status, received_at)
+        VALUES
+          (gen_random_uuid(), $1, $2, $3, 'web_checkout', $4, 'processing', $5)
+        ON CONFLICT (provider, external_event_id) DO NOTHING
+        RETURNING id
+      `, [input.provider, input.externalEventId, input.eventType, input.payloadHash, input.receivedAt])
+      if (event.rowCount === 0) {
+        await client.query('COMMIT')
+        return { status: 'duplicate' }
+      }
+
+      const guardianLink = await client.query<{ id: string }>(`
+        SELECT id
+        FROM guardian_links
+        WHERE student_id = $1
+          AND guardian_id = $2
+          AND status = 'verified'
+        LIMIT 1
+      `, [input.studentId, input.purchaserGuardianId])
+      if (guardianLink.rowCount === 0) {
+        await client.query(`
+          UPDATE payment_webhook_events
+          SET processing_status = 'failed',
+              error_code = 'GUARDIAN_VERIFICATION_REQUIRED',
+              processed_at = CURRENT_TIMESTAMP
+          WHERE provider = $1 AND external_event_id = $2
+        `, [input.provider, input.externalEventId])
+        await client.query('COMMIT')
+        return { status: 'invalid_guardian_link' }
+      }
+
+      await client.query(`
+        INSERT INTO subscription_entitlements
+          (id, student_id, purchaser_guardian_id, payment_channel, external_subscription_id, entitlement_code, status, valid_until)
+        VALUES
+          (gen_random_uuid(), $1, $2, 'web_checkout', $3, $4, $5, $6)
+        ON CONFLICT (payment_channel, external_subscription_id, entitlement_code) DO UPDATE
+        SET student_id = EXCLUDED.student_id,
+            purchaser_guardian_id = EXCLUDED.purchaser_guardian_id,
+            status = EXCLUDED.status,
+            valid_until = EXCLUDED.valid_until,
+            updated_at = CURRENT_TIMESTAMP
+      `, [input.studentId, input.purchaserGuardianId, input.externalSubscriptionId, input.entitlementCode, input.status, input.validUntil])
+      await client.query(`
+        UPDATE payment_webhook_events
+        SET processing_status = 'processed',
+            processed_at = CURRENT_TIMESTAMP
+        WHERE provider = $1 AND external_event_id = $2
+      `, [input.provider, input.externalEventId])
+      await client.query('COMMIT')
+      return { status: 'processed' }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse> {
@@ -881,6 +963,8 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
   private readonly trialAttempts = new Map<string, TrialAttemptRecord>()
   private readonly stageAttempts = new Map<string, StartStageAttemptResponse>()
   private readonly currentDevices = new Map<string, CurrentDeviceRegistrationResponse>()
+  private readonly paymentWebhookEvents = new Set<string>()
+  private readonly entitlements = new Map<string, { studentId: string; entitlementCode: string; status: SubscriptionEntitlementStatus; validUntil: Date | null }>()
   private readonly guardianInviteStudentIds = new Map<string, { studentId: string; expiresAt: Date }>()
   private readonly voiceConsentAuditEvents: Array<{ studentId: string; guardianId: string | null; status: Exclude<ConsentStatus, 'missing' | 'outdated'>; version: string }> = []
   private readonly voiceDataDeletionJobs: Array<{ studentId: string; guardianId: string | null; reason: 'voice_consent_withdrawn'; status: 'pending' }> = []
@@ -956,9 +1040,28 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
   }
 
   async listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]> {
-    void studentId
-    void asOf
-    return []
+    return [...this.entitlements.values()]
+      .filter((entitlement) => entitlement.studentId === studentId)
+      .filter((entitlement) => entitlement.status === 'active' || entitlement.status === 'grace_period')
+      .filter((entitlement) => entitlement.validUntil === null || entitlement.validUntil > asOf)
+      .map((entitlement) => entitlement.entitlementCode)
+      .sort()
+  }
+
+  async processPaymentWebhook(input: ProcessPaymentWebhookInput): Promise<PaymentWebhookProcessResult> {
+    const eventKey = `${input.provider}:${input.externalEventId}`
+    if (this.paymentWebhookEvents.has(eventKey)) return { status: 'duplicate' }
+    this.paymentWebhookEvents.add(eventKey)
+    const student = this.students.get(input.studentId)
+    if (!student || student.guardianId !== input.purchaserGuardianId || student.guardianLinkStatus !== 'verified') return { status: 'invalid_guardian_link' }
+    const entitlementKey = `web_checkout:${input.externalSubscriptionId}:${input.entitlementCode}`
+    this.entitlements.set(entitlementKey, {
+      studentId: input.studentId,
+      entitlementCode: input.entitlementCode,
+      status: input.status,
+      validUntil: input.validUntil,
+    })
+    return { status: 'processed' }
   }
 
   async upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse> {

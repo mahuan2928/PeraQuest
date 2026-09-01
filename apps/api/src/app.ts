@@ -348,10 +348,11 @@ export const buildApp = (options: BuildAppOptions = {}) => {
       if (config.DEMO_API_ENABLED && issuer === config.AUTH_ISSUER && providerSubject.startsWith('demo:')) {
         const [, sessionId, role] = providerSubject.split(':')
         const session = sessionId ? demoSessions.get(sessionId) : undefined
-        if (!session || session.expiresAt <= now()) return null
-        if (role === 'student') return { id: session.studentId, role: 'student' }
-        if (role === 'guardian') return { id: session.guardianId, role: 'guardian' }
-        return null
+        if (session && session.expiresAt > now()) {
+          if (role === 'student') return { id: session.studentId, role: 'student' }
+          if (role === 'guardian') return { id: session.guardianId, role: 'guardian' }
+        }
+        return authUserResolver.resolve(issuer, providerSubject)
       }
       return authUserResolver.resolve(issuer, providerSubject)
     },

@@ -108,6 +108,34 @@ describe('database migrations', () => {
     await expect(resolver.resolve('https://issuer.test', 'other-provider-sub')).resolves.toBeNull()
   })
 
+  it('creates a student and auth identity atomically through the PostgreSQL repository', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    const client = { query: database.query.bind(database), release: () => undefined }
+    const pool = { query: database.query.bind(database), connect: async () => client } as unknown as Pool
+    const repository = new PostgresStudentRepository(pool)
+    const resolver = new PostgresAuthUserResolver(pool, 'email_magic_link')
+
+    const created = await repository.createWithAuthIdentity(
+      { id: '00000000-0000-0000-0000-0000000000a1', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'pending', guardianId: null },
+      'email_magic_link',
+      'new-student-sub',
+    )
+
+    expect(created).toEqual({ status: 'created' })
+    await expect(resolver.resolve('https://issuer.test', 'new-student-sub')).resolves.toEqual({ id: '00000000-0000-0000-0000-0000000000a1', role: 'student' })
+    await expect(repository.findById('00000000-0000-0000-0000-0000000000a1')).resolves.toMatchObject({ guardianLinkStatus: 'pending' })
+
+    const duplicate = await repository.createWithAuthIdentity(
+      { id: '00000000-0000-0000-0000-0000000000a2', birthMonth: '2012-05', isMinor: true, guardianLinkStatus: 'pending', guardianId: null },
+      'email_magic_link',
+      'new-student-sub',
+    )
+    expect(duplicate).toEqual({ status: 'identity_conflict' })
+    await expect(repository.findById('00000000-0000-0000-0000-0000000000a2')).resolves.toBeNull()
+  })
+
   it('stores only minimal redemption and short-lived trial state, not durable answers or scores', async () => {
     const database = new PGlite()
     databases.push(database)

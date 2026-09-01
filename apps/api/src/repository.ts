@@ -44,6 +44,7 @@ export interface TrialAttemptRecord {
 }
 
 export type TrialStartResult = { status: 'created'; attempt: TrialAttemptRecord } | { status: 'redeemed' }
+export type CreateStudentWithAuthIdentityResult = { status: 'created' } | { status: 'identity_conflict' }
 export type StageAttemptStartResult =
   | { status: 'created' | 'replayed'; httpStatus: number; attempt: StartStageAttemptResponse }
   | { status: 'exam_not_available' | 'already_open' | 'request_in_progress' | 'key_reused' }
@@ -105,6 +106,7 @@ export interface VerifyGuardianInviteInput {
 
 export interface StudentRepository {
   create(student: StudentRecord): Promise<void>
+  createWithAuthIdentity(student: StudentRecord, provider: AuthProvider, providerSubject: string): Promise<CreateStudentWithAuthIdentityResult>
   createDemoGuardian?(guardianId: string): Promise<void>
   createDemoAuthIdentity?(userId: string, provider: AuthProvider, providerSubject: string): Promise<void>
   findById(id: string): Promise<StudentRecord | null>
@@ -317,6 +319,27 @@ export class PostgresStudentRepository implements StudentRepository {
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async createWithAuthIdentity(student: StudentRecord, provider: AuthProvider, providerSubject: string): Promise<CreateStudentWithAuthIdentityResult> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('INSERT INTO users (id, role, birth_month, is_minor) VALUES ($1, $2, $3, $4)', [student.id, 'student', `${student.birthMonth}-01`, student.isMinor])
+      await client.query(`
+        INSERT INTO auth_identities (id, user_id, provider, provider_subject)
+        VALUES (gen_random_uuid(), $1, $2, $3)
+      `, [student.id, provider, providerSubject])
+      if (student.guardianLinkStatus === 'pending') await client.query('INSERT INTO guardian_links (id, student_id, status) VALUES (gen_random_uuid(), $1, $2)', [student.id, 'pending'])
+      await client.query('COMMIT')
+      return { status: 'created' }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') return { status: 'identity_conflict' }
       throw error
     } finally {
       client.release()
@@ -849,8 +872,10 @@ export class PostgresStudentRepository implements StudentRepository {
   }
 }
 
-export class MemoryStudentRepository implements StudentRepository {
+export class MemoryStudentRepository implements StudentRepository, AuthUserResolver {
   private readonly students = new Map<string, StudentRecord>()
+  private readonly authIdentities = new Map<string, AuthUser>()
+  private readonly guardianIds = new Set<string>()
   private readonly consents = new Map<string, ConsentRecord>()
   private readonly trialRedemptions = new Set<string>()
   private readonly trialAttempts = new Map<string, TrialAttemptRecord>()
@@ -864,14 +889,26 @@ export class MemoryStudentRepository implements StudentRepository {
     this.students.set(student.id, student)
   }
 
+  async createWithAuthIdentity(student: StudentRecord, provider: AuthProvider, providerSubject: string): Promise<CreateStudentWithAuthIdentityResult> {
+    const key = `${provider}:${providerSubject}`
+    if (this.authIdentities.has(key)) return { status: 'identity_conflict' }
+    this.students.set(student.id, student)
+    this.authIdentities.set(key, { id: student.id, role: 'student' })
+    return { status: 'created' }
+  }
+
   async createDemoGuardian(guardianId: string): Promise<void> {
+    this.guardianIds.add(guardianId)
     this.students.set(guardianId, { id: guardianId, birthMonth: '1970-01', isMinor: false, guardianLinkStatus: 'not_required', guardianId: null })
   }
 
   async createDemoAuthIdentity(userId: string, provider: AuthProvider, providerSubject: string): Promise<void> {
-    void userId
-    void provider
-    void providerSubject
+    const role = this.guardianIds.has(userId) ? 'guardian' : 'student'
+    this.authIdentities.set(`${provider}:${providerSubject}`, { id: userId, role })
+  }
+
+  async resolve(_issuer: string, providerSubject: string): Promise<AuthUser | null> {
+    return this.authIdentities.get(`email_magic_link:${providerSubject}`) ?? null
   }
 
   async findById(id: string): Promise<StudentRecord | null> {

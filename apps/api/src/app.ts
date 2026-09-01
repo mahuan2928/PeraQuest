@@ -26,8 +26,8 @@ import type {
   VoiceUploadTicketResponse,
 } from '@peraquest/contracts'
 import { loadConfig, type RuntimeConfig } from './config.js'
-import { AuthFailure, createAuthActor, createJwksTokenVerifier, legacyActor, parseBearerToken, type AuthConfig, type AuthUserResolver, type TokenVerifier } from './auth.js'
-import { MemoryStudentRepository, type StudentRepository } from './repository.js'
+import { AuthFailure, createAuthActor, createJwksTokenVerifier, legacyActor, parseBearerToken, verifyClaims, type AuthConfig, type AuthUserResolver, type TokenVerifier, type VerifiedTokenClaims } from './auth.js'
+import { MemoryStudentRepository, type StudentRecord, type StudentRepository } from './repository.js'
 import { publicTrialQuestion, trialQuestions } from './trial.js'
 
 const platformSchema = z.enum(['ios', 'android', 'pc'])
@@ -381,12 +381,29 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   app.post('/v1/students/onboarding', async (request, reply): Promise<StudentOnboardingResponse | void> => {
     const parsed = onboardingSchema.safeParse(request.body)
     if (!parsed.success) return sendError(reply, 400, 'INVALID_ONBOARDING', { reason: 'invalid', resource: 'request' })
+    let registrationClaims: VerifiedTokenClaims | null = null
+    if (request.headers.authorization !== undefined) {
+      if (parsed.data.authProvider !== config.AUTH_PROVIDER) return sendError(reply, 401, 'AUTH_INVALID')
+      try {
+        const token = parseBearerToken(request.headers.authorization)
+        registrationClaims = await activeTokenVerifier.verify(token, authConfig)
+        verifyClaims(registrationClaims, authConfig, now().getTime())
+      } catch {
+        return sendError(reply, 401, 'AUTH_INVALID')
+      }
+    }
     const id = randomUUID()
     const isMinor = isMinorAt(parsed.data.birthMonth, now())
     const birthMonthDate = new Date(`${parsed.data.birthMonth}-01T00:00:00Z`)
     if (birthMonthDate > now() || birthMonthDate.getUTCFullYear() < 1900) return sendError(reply, 400, 'INVALID_BIRTH_MONTH')
     const guardianLinkStatus = isMinor ? 'pending' : 'not_required'
-    await repository.create({ id, birthMonth: parsed.data.birthMonth, isMinor, guardianLinkStatus, guardianId: null })
+    const student: StudentRecord = { id, birthMonth: parsed.data.birthMonth, isMinor, guardianLinkStatus, guardianId: null }
+    if (registrationClaims) {
+      const created = await repository.createWithAuthIdentity(student, config.AUTH_PROVIDER, registrationClaims.sub)
+      if (created.status === 'identity_conflict') return sendError(reply, 409, 'REVISION_CONFLICT')
+    } else {
+      await repository.create(student)
+    }
     return reply.code(201).send({ studentId: id, isMinor, guardianLinkStatus, onboardingStatus: isMinor ? 'pending_guardian' : 'active' })
   })
 

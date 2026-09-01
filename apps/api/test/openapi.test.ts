@@ -23,6 +23,7 @@ describe('OpenAPI document', () => {
       '/v1/demo/session',
       '/v1/guardian-links/verification',
       '/v1/guardian-links/{studentId}/consents/voice-processing',
+      '/v1/guardian-links/{studentId}/student-knowledge',
       '/v1/me/capabilities',
       '/v1/me/consents/voice-processing',
       '/v1/me/devices/current',
@@ -30,6 +31,7 @@ describe('OpenAPI document', () => {
       '/v1/me/guardian-link',
       '/v1/me/guardian-link/invitations',
       '/v1/me/voice-upload-ticket',
+      '/v1/payments/web-checkout/webhook',
       '/v1/students/onboarding',
       '/v1/trial-attempts',
       '/v1/trial-attempts/{attemptId}/answers',
@@ -83,8 +85,11 @@ describe('OpenAPI document', () => {
     expect(document.components.schemas).toHaveProperty('StageAttemptResultResponse')
     expect(document.components.schemas).toHaveProperty('StudentKnowledgeProjection')
     expect(document.components.schemas).toHaveProperty('StudentKnowledgeProjectionListResponse')
+    expect(document.components.schemas).toHaveProperty('WebCheckoutWebhookRequest')
+    expect(document.components.schemas).toHaveProperty('WebCheckoutWebhookResponse')
     expect(document.components.schemas.StudentKnowledgeProjection?.properties).not.toHaveProperty('stabilityDays')
     expect(document.components.schemas.StudentKnowledgeProjection?.properties).not.toHaveProperty('attemptCount')
+    expect(document.components.schemas.SafeErrorDetails?.properties).toMatchObject({ resource: { enum: expect.arrayContaining(['payment_webhook']) } })
     expect((document.components.schemas.SubmitStageAttemptRequest?.properties as { answers?: { minItems?: number; maxItems?: number } }).answers).toMatchObject({ minItems: 1, maxItems: 200 })
     expect(document.components.schemas.PublicStageExamItem?.properties).not.toHaveProperty('correctOptionId')
     expect(document.components.schemas).not.toHaveProperty('MasteryUpdate')
@@ -97,7 +102,7 @@ describe('OpenAPI document', () => {
       .flatMap((item) => Object.entries(item)
         .filter(([method]) => ['post', 'put', 'patch', 'delete'].includes(method))
         .map(([, operation]) => operation as { operationId?: string; parameters?: Array<{ $ref?: string }>; security?: unknown }))
-      .filter((operation) => operation.operationId !== 'createDemoSession')
+      .filter((operation) => !['createDemoSession', 'processWebCheckoutWebhook'].includes(operation.operationId ?? ''))
     expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey' || parameter.$ref === '#/components/parameters/FormalIdempotencyKey'))).toBe(true)
     const createDemoSessionOperation = document.paths['/v1/demo/session']?.post
     const startStageAttemptOperation = document.paths['/api/v1/stage-exams/{stageExamId}/attempts']?.post
@@ -108,6 +113,8 @@ describe('OpenAPI document', () => {
     const postVoiceUploadTicketOperation = document.paths['/v1/me/voice-upload-ticket']?.post
     const putGuardianVerificationOperation = document.paths['/v1/guardian-links/verification']?.put
     const putGuardianVoiceConsentOperation = document.paths['/v1/guardian-links/{studentId}/consents/voice-processing']?.put
+    const getGuardianStudentKnowledgeOperation = document.paths['/v1/guardian-links/{studentId}/student-knowledge']?.get
+    const processWebCheckoutWebhookOperation = document.paths['/v1/payments/web-checkout/webhook']?.post
     const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
     const submitStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/submit']?.post
     const getStageAttemptResultOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/result']?.get
@@ -121,6 +128,8 @@ describe('OpenAPI document', () => {
     expect(postVoiceUploadTicketOperation).toBeDefined()
     expect(putGuardianVerificationOperation).toBeDefined()
     expect(putGuardianVoiceConsentOperation).toBeDefined()
+    expect(getGuardianStudentKnowledgeOperation).toBeDefined()
+    expect(processWebCheckoutWebhookOperation).toBeDefined()
     expect(getStageAttemptOperation).toBeDefined()
     expect(submitStageAttemptOperation).toBeDefined()
     expect(getStageAttemptResultOperation).toBeDefined()
@@ -133,6 +142,8 @@ describe('OpenAPI document', () => {
     expect(postVoiceUploadTicketOperation!.security).toContainEqual({ BearerAuth: [] })
     expect(putGuardianVerificationOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(putGuardianVoiceConsentOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(getGuardianStudentKnowledgeOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(processWebCheckoutWebhookOperation!.security).toEqual([{ WebhookSignature: [] }])
     expect(startStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(startStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
     expect(getStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
@@ -140,6 +151,7 @@ describe('OpenAPI document', () => {
     expect(submitStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
     expect(getStageAttemptResultOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(listStudentKnowledgeOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(document.components.securitySchemes).toHaveProperty('WebhookSignature')
     expect(document.components.securitySchemes.BearerAuth).toMatchObject({ description: expect.stringContaining('Required for formal stage-attempt runtime') })
     expect(document['x-runtime-contract-status']).toMatchObject({
       authentication: expect.stringContaining('BearerAuth is implemented for formal stage-attempt runtime'),

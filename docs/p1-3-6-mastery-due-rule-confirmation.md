@@ -139,11 +139,11 @@ P1.3-6 只允许 Student 读取自己的 mastery/due。
 - 真实 PostgreSQL 回归测试覆盖同一学生同一知识点并发 apply 无 lost update。
 - Trial 流程不写入 `knowledge_evidence`、`student_knowledge` 或 applied ledger。
 - `GET /api/v1/student-knowledge` 已开放 Student-only 只读 API，只返回已物化的投影行。
+- `GET /v1/guardian-links/{studentId}/student-knowledge` 已开放 Guardian-only 只读 API，仅允许已验证且已绑定该学生的 Guardian 读取。
 - 共享契约新增当前投影 DTO 和列表响应 DTO。
 
 ## 11. 未解决问题
 
 - 是否需要为 `knowledge_point_ref` 独立建 `knowledge_points` 目录表，或继续沿用 P1.3 snapshot 中的 text ref。
 - 是否要把 `state = new` 物化为行，还是只在读取层按知识点目录补齐。
-- 是否需要 Guardian 读取 mastery/due；如需读取，必须另行实现显式、已验证的 guardian-student 授权上下文。
 - Demo 的学习任务、复习入口、进度页和游戏解锁不属于本规格 PR，需要在后续 Dev-only Demo 阶段单独实现。

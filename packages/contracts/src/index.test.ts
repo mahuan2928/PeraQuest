@@ -149,6 +149,7 @@ describe('shared security contracts', () => {
 
   it('drops non-whitelisted error detail fields', () => {
     expect(sanitizeErrorDetails({ field: 'version', reason: 'invalid', secret: 'token' })).toEqual({ field: 'version', reason: 'invalid' })
+    expect(sanitizeErrorDetails({ resource: 'payment_webhook', reason: 'invalid' })).toEqual({ resource: 'payment_webhook', reason: 'invalid' })
     expect(sanitizeErrorDetails({ message: 'raw provider error' })).toBeUndefined()
     expect({ code: 'AUTH_FORBIDDEN', details: { resource: 'request', reason: 'not_allowed' } } satisfies ErrorResponse).toBeDefined()
   })

@@ -94,6 +94,62 @@
         "security": []
       }
     },
+    "/v1/payments/web-checkout/webhook": {
+      "post": {
+        "operationId": "processWebCheckoutWebhook",
+        "summary": "Process a signed web-checkout subscription event into student entitlements.",
+        "description": "Server-to-server endpoint. The provider eventId is the idempotency key; clients must not send learner credentials or raw payment secrets.",
+        "security": [
+          {
+            "WebhookSignature": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebCheckoutWebhookRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook accepted and entitlement projection updated or deduplicated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebCheckoutWebhookResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "description": "Unsupported webhook event type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/v1/students/onboarding": {
       "post": {
         "operationId": "onboardStudent",
@@ -728,6 +784,50 @@
         }
       }
     },
+    "/v1/guardian-links/{studentId}/student-knowledge": {
+      "get": {
+        "operationId": "listGuardianStudentKnowledgeProjections",
+        "summary": "List a verified guardian's child mastery and due projections.",
+        "description": "Bearer guardian only. The target student must be linked to the authenticated guardian with a verified guardian link.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Child mastery/due projections ordered by dueAt then knowledgePointRef",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentKnowledgeProjectionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/v1/stage-attempts/{stageAttemptId}": {
       "get": {
         "operationId": "getStageAttempt",
@@ -1150,6 +1250,16 @@
       },
       "Conflict": {
         "description": "Conflict or idempotency-key reuse/in-progress request",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Required backend configuration is not available",
         "content": {
           "application/json": {
             "schema": {
@@ -1993,6 +2103,9 @@
           "TRIAL_ANSWER_ALREADY_SUBMITTED",
           "VOICE_CONSENT_REQUIRED",
           "SIGNED_UPLOAD_NOT_CONFIGURED",
+          "PAYMENT_WEBHOOK_NOT_CONFIGURED",
+          "PAYMENT_WEBHOOK_SIGNATURE_INVALID",
+          "PAYMENT_WEBHOOK_UNSUPPORTED_EVENT",
           "IDEMPOTENCY_KEY_REQUIRED",
           "IDEMPOTENCY_REPLAY",
           "REVISION_REQUIRED",
@@ -2039,7 +2152,8 @@
               "request",
               "stage_exam",
               "stage_attempt",
-              "submission"
+              "submission",
+              "payment_webhook"
             ]
           },
           "revision": {
@@ -2489,6 +2603,78 @@
             }
           }
         }
+      },
+      "WebCheckoutWebhookRequest": {
+        "description": "Signed web checkout subscription event. eventId is the webhook idempotency key.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId",
+          "eventType",
+          "studentId",
+          "purchaserGuardianId",
+          "externalSubscriptionId",
+          "entitlementCode"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "eventType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "enum": [
+              "subscription.active",
+              "subscription.grace_period",
+              "subscription.expired",
+              "subscription.revoked"
+            ]
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purchaserGuardianId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "externalSubscriptionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "entitlementCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "validUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "WebCheckoutWebhookResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "received",
+          "duplicate"
+        ],
+        "properties": {
+          "received": {
+            "type": "boolean"
+          },
+          "duplicate": {
+            "type": "boolean"
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -2509,6 +2695,12 @@
         "in": "header",
         "name": "X-Guardian-Id",
         "description": "Deprecated compatibility guardian actor used by the current scaffold runtime; replace with planned BearerAuth middleware."
+      },
+      "WebhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-PeraQuest-Webhook-Signature",
+        "description": "Lowercase hex HMAC-SHA256 over the canonical JSON payload using WEB_CHECKOUT_WEBHOOK_SECRET."
       }
     }
   },

@@ -414,7 +414,7 @@ export const stableErrorCodeMetadata = {
 export interface SafeErrorDetails {
   field?: string
   reason?: 'invalid' | 'missing' | 'expired' | 'conflict' | 'not_allowed'
-  resource?: 'student' | 'guardian_link' | 'consent' | 'trial_attempt' | 'request' | 'stage_exam' | 'stage_attempt' | 'submission'
+  resource?: 'student' | 'guardian_link' | 'consent' | 'trial_attempt' | 'request' | 'stage_exam' | 'stage_attempt' | 'submission' | 'payment_webhook'
   revision?: number
   retryAfterSeconds?: number
 }
@@ -431,7 +431,7 @@ export const legacyHeaderDeprecation = {
 } as const
 
 const safeDetailReasons = ['invalid', 'missing', 'expired', 'conflict', 'not_allowed'] as const
-const safeDetailResources = ['student', 'guardian_link', 'consent', 'trial_attempt', 'request', 'stage_exam', 'stage_attempt', 'submission'] as const
+const safeDetailResources = ['student', 'guardian_link', 'consent', 'trial_attempt', 'request', 'stage_exam', 'stage_attempt', 'submission', 'payment_webhook'] as const
 
 /** Keep error payloads deterministic and prevent raw validation/provider data from escaping. */
 export function sanitizeErrorDetails(input: unknown): SafeErrorDetails | undefined {

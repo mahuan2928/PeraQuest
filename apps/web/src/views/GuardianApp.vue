@@ -54,6 +54,7 @@ const props = defineProps<{
   invitationCode: string
   capabilities: CapabilityState | null
   knowledgeItems: KnowledgeItem[]
+  reportRefreshKey: number
 }>()
 
 const emit = defineEmits<{
@@ -87,6 +88,10 @@ watch(() => props.invitationCode, (value) => {
 watch(verified, (value) => {
   if (value) void refreshGuardianReport()
 }, { immediate: true })
+
+watch(() => props.reportRefreshKey, (value) => {
+  if (value > 0 && verified.value) void refreshGuardianReport()
+})
 
 function friendlyError() {
   return '招待コードが正しくないか、有効期限が切れています。'

@@ -32,6 +32,7 @@ const demoSession = ref<DemoSessionResponse | null>(null)
 const demoCapabilities = ref<Record<string, unknown> | null>(null)
 const demoInvitationCode = ref('')
 const demoKnowledgeItems = ref<Array<{ knowledgePointRef: string; masteryScore: number; state: string; dueAt: string | null }>>([])
+const guardianReportRefreshKey = ref(0)
 
 async function refreshDemoState() {
   if (!demoSession.value) return
@@ -75,6 +76,7 @@ function resetProductDemo() {
   demoCapabilities.value = null
   demoInvitationCode.value = ''
   demoKnowledgeItems.value = []
+  guardianReportRefreshKey.value = 0
   demoRole.value = 'student'
   demoError.value = ''
   step.value = 'onboarding'
@@ -160,6 +162,11 @@ async function onDemoChanged() {
     demoError.value = '最新の状態を確認できませんでした。時間をおいてもう一度お試しください。'
   }
 }
+
+function onStudentKnowledgeUpdated(items: typeof demoKnowledgeItems.value) {
+  demoKnowledgeItems.value = items
+  guardianReportRefreshKey.value += 1
+}
 </script>
 
 <template>
@@ -230,7 +237,7 @@ async function onDemoChanged() {
           :knowledge-items="demoKnowledgeItems"
           @refresh="onDemoChanged"
           @invitation-created="onDemoInvitationCreated"
-          @knowledge-updated="demoKnowledgeItems = $event"
+          @knowledge-updated="onStudentKnowledgeUpdated"
         />
         <GuardianApp
           v-show="demoRole === 'guardian'"
@@ -238,6 +245,7 @@ async function onDemoChanged() {
           :invitation-code="demoInvitationCode"
           :capabilities="demoCapabilities"
           :knowledge-items="demoKnowledgeItems"
+          :report-refresh-key="guardianReportRefreshKey"
           @verified="onDemoChanged"
           @consent-changed="onDemoChanged"
           @knowledge-updated="demoKnowledgeItems = $event"

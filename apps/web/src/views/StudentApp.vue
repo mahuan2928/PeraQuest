@@ -61,6 +61,7 @@ type QuestMapNode = {
   title: string
   description: string
   reward: string
+  action: string
   status: 'done' | 'current' | 'locked'
 }
 
@@ -118,30 +119,35 @@ const questBlueprint = [
     title: 'はじまりの港',
     description: '英検3級の冒険を始めます。',
     reward: 'スタート',
+    action: 'デモを開始しました。',
   },
   {
     id: 'guardian',
     title: '家族の門',
     description: '保護者確認で安全に学習を解放します。',
     reward: '盾バッジ',
+    action: '保護者に確認を依頼しましょう。',
   },
   {
     id: 'level-check',
     title: '力だめしの丘',
     description: 'レベルチェックで今の得意と復習を見つけます。',
     reward: 'XP + コイン',
+    action: 'レベルチェックに挑戦しましょう。',
   },
   {
     id: 'review',
     title: '復習の森',
     description: '苦手な単元を短く復習します。',
     reward: '復習ルート',
+    action: '復習予定を見て、短く確認しましょう。',
   },
   {
     id: 'next-island',
     title: '次の島',
     description: '次のステージへ進む準備をします。',
     reward: '近日公開',
+    action: '次の冒険は準備中です。',
   },
 ] satisfies Array<Omit<QuestMapNode, 'status'>>
 const questMapNodes = computed<QuestMapNode[]>(() => questBlueprint.map((node, index) => {
@@ -149,6 +155,13 @@ const questMapNodes = computed<QuestMapNode[]>(() => questBlueprint.map((node, i
   const status = questStep.value >= stepNumber ? 'done' : questStep.value === index ? 'current' : 'locked'
   return { ...node, status }
 }))
+const currentQuestNode = computed(() => questMapNodes.value.find((node) => node.status === 'current') ?? questMapNodes.value.at(-1)!)
+const completedQuestCount = computed(() => questMapNodes.value.filter((node) => node.status === 'done').length)
+const questStatusLabel = (status: QuestMapNode['status']) => {
+  if (status === 'done') return '達成'
+  if (status === 'current') return '次の目標'
+  return 'ロック中'
+}
 
 function toUserMessage() {
   return '接続を確認して、もう一度お試しください。'
@@ -295,6 +308,11 @@ watch(
           <span><strong>{{ gameState?.activityCoins ?? 0 }}</strong> コイン</span>
           <span><strong>{{ gameState?.questChapter ?? 0 }}</strong> 章</span>
         </div>
+        <div class="quest-current">
+          <span>現在の目標</span>
+          <strong>{{ currentQuestNode.title }}</strong>
+          <p>{{ currentQuestNode.action }}</p>
+        </div>
         <ol
           class="quest-map"
           aria-label="Quest Map"
@@ -307,7 +325,10 @@ watch(
           >
             <span class="quest-pin">{{ node.status === 'done' ? '✓' : index + 1 }}</span>
             <div>
-              <strong>{{ node.title }}</strong>
+              <strong>
+                {{ node.title }}
+                <small class="quest-state-label">{{ questStatusLabel(node.status) }}</small>
+              </strong>
               <small>{{ node.description }}</small>
               <em>{{ node.reward }}</em>
             </div>
@@ -317,7 +338,7 @@ watch(
           <span :style="{ width: `${questProgress}%` }" />
         </div>
         <p class="quest-step">
-          {{ questStep }} / {{ questMapNodes.length }} スポット
+          {{ completedQuestCount }} / {{ questMapNodes.length }} スポット達成
         </p>
         <div
           v-if="gameState?.badges.length"

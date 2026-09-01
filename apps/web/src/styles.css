@@ -81,6 +81,10 @@ h1 span { color: var(--green); }
 .quest-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0 14px; }
 .quest-stats span { padding: 10px; border: 2px solid var(--ink); background: white; text-align: center; font-size: .78rem; font-weight: 900; box-shadow: 3px 3px 0 var(--ink); }
 .quest-stats strong { display: block; color: var(--green); font-size: 1.45rem; line-height: 1; }
+.quest-current { display: grid; gap: 4px; margin: 16px 0; padding: 14px; border: 2px solid var(--ink); background: white; box-shadow: 4px 4px 0 var(--ink); }
+.quest-current span { color: var(--green); font-size: .7rem; font-weight: 900; letter-spacing: .12em; }
+.quest-current strong { font-size: 1.15rem; }
+.quest-current p { margin: 0 !important; font-size: .82rem; }
 .quest-map { position: relative; display: grid; gap: 10px; margin: 18px 0 12px; padding: 0; list-style: none; }
 .quest-node { display: grid; grid-template-columns: 42px 1fr; gap: 10px; align-items: start; padding: 10px; border: 2px solid var(--line); background: rgb(255 255 255 / 72%); }
 .quest-node.done { border-color: var(--ink); background: #eef8ca; box-shadow: 3px 3px 0 var(--ink); }
@@ -92,6 +96,9 @@ h1 span { color: var(--green); }
 .quest-node strong, .quest-node small, .quest-node em { display: block; }
 .quest-node small { margin-top: 3px; font-size: .75rem; line-height: 1.45; }
 .quest-node em { margin-top: 6px; color: var(--green); font-size: .7rem; font-style: normal; font-weight: 900; }
+.quest-state-label { display: inline-flex !important; margin: 0 0 0 8px !important; padding: 2px 6px; border: 1px solid currentcolor; color: var(--green); background: white; font-size: .62rem !important; line-height: 1.2 !important; vertical-align: middle; }
+.quest-node.current .quest-state-label { color: var(--orange); }
+.quest-node.locked .quest-state-label { color: #7f8985; }
 .quest-trail { height: 12px; overflow: hidden; border: 2px solid var(--ink); background: white; }
 .quest-trail span { display: block; height: 100%; background: linear-gradient(90deg, var(--orange), var(--lime)); transition: width .3s ease; }
 .quest-step { margin-top: 8px !important; font-size: .82rem; font-weight: 900; }

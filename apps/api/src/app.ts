@@ -17,6 +17,7 @@ import type {
   StudentOnboardingResponse,
   StartStageAttemptResponse,
   StageAttemptResultResponse,
+  StudentGameStateResponse,
   StudentKnowledgeProjectionListResponse,
   SubmitStageAttemptRequest,
   TrialAnswerResponse,
@@ -345,7 +346,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
   }
 
-  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification') || url.startsWith('/v1/guardian-links/')
+  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/api/v1/me/game-state') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification') || url.startsWith('/v1/guardian-links/')
   const protectedPath = (url: string): boolean => formalProtectedPath(url) || url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return
@@ -763,6 +764,14 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     if (!actor) return
     const items = await repository.listStudentKnowledgeProjections(actor.id)
     return { items }
+  })
+
+  app.get('/api/v1/me/game-state', async (request, reply): Promise<StudentGameStateResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const student = await repository.findById(actor.id)
+    if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    return repository.getStudentGameState(actor.id)
   })
 
   app.post<{ Params: { attemptId: string } }>('/v1/trial-attempts/:attemptId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {

@@ -110,6 +110,60 @@ describe('identity, consent, and capabilities slice', () => {
     await expect(repository.findById(studentId)).resolves.toMatchObject({ id: studentId })
   })
 
+  it('returns the current student game state only to a formal student bearer', async () => {
+    const now = () => new Date('2026-08-19T00:00:00Z')
+    const repository = new MemoryStudentRepository()
+    const verifier: TokenVerifier = {
+      verify: async (token) => ({
+        iss: 'https://issuer.example.test',
+        aud: 'peraquest-api',
+        sub: token,
+        iat: 1_787_097_600,
+        exp: 1_787_101_200,
+      }),
+    }
+    const authUserResolver = {
+      resolve: async (_issuer: string, providerSubject: string) => (
+        providerSubject === 'student-game-sub'
+          ? { id: '00000000-0000-0000-0000-00000000d101', role: 'student' as const }
+          : { id: '00000000-0000-0000-0000-00000000d102', role: 'guardian' as const }
+      ),
+    }
+    await repository.create({ id: '00000000-0000-0000-0000-00000000d101', birthMonth: '2012-04', isMinor: true, guardianLinkStatus: 'pending', guardianId: null })
+    const app = buildApp({ repository, tokenVerifier: verifier, authUserResolver, now })
+    apps.push(app)
+
+    const allowed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me/game-state',
+      headers: { authorization: 'Bearer student-game-sub' },
+    })
+    const legacyDenied = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me/game-state',
+      headers: { 'x-student-id': '00000000-0000-0000-0000-00000000d101' },
+    })
+    const guardianDenied = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me/game-state',
+      headers: { authorization: 'Bearer guardian-game-sub' },
+    })
+
+    expect(allowed.statusCode).toBe(200)
+    expect(allowed.json()).toMatchObject({
+      studentId: '00000000-0000-0000-0000-00000000d101',
+      totalXp: 0,
+      activityCoins: 0,
+      questChapter: 0,
+      questStep: 0,
+      badges: [],
+    })
+    expect(legacyDenied.statusCode).toBe(401)
+    expect(legacyDenied.json()).toEqual({ code: 'LEGACY_AUTH_NOT_ALLOWED' })
+    expect(guardianDenied.statusCode).toBe(403)
+    expect(guardianDenied.json()).toEqual({ code: 'AUTH_FORBIDDEN' })
+  })
+
   it('rejects onboarding when the provider subject is already bound', async () => {
     const now = () => new Date('2026-08-19T00:00:00Z')
     const repository = new MemoryStudentRepository()

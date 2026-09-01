@@ -77,6 +77,15 @@ h1 span { color: var(--green); }
 .action-card, .guardian-card, .future-card { padding: clamp(18px, 3vw, 26px); border: 2px solid var(--ink); background: var(--paper); box-shadow: 6px 6px 0 var(--ink); }
 .action-card h2, .guardian-card h2, .future-card h2 { margin: 4px 0 10px; font-size: clamp(1.25rem, 3vw, 1.9rem); }
 .action-card p, .guardian-card p, .future-card p { margin: 0; color: #59645f; line-height: 1.65; }
+.quest-card { background: #fff7d8; }
+.quest-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0 14px; }
+.quest-stats span { padding: 10px; border: 2px solid var(--ink); background: white; text-align: center; font-size: .78rem; font-weight: 900; box-shadow: 3px 3px 0 var(--ink); }
+.quest-stats strong { display: block; color: var(--green); font-size: 1.45rem; line-height: 1; }
+.quest-progress { height: 14px; overflow: hidden; border: 2px solid var(--ink); background: white; }
+.quest-progress span { display: block; height: 100%; background: var(--orange); transition: width .3s ease; }
+.quest-step { margin-top: 8px !important; font-size: .82rem; font-weight: 900; }
+.badge-list, .reward-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.badge-list span, .reward-summary span { display: inline-flex; padding: 6px 10px; border: 1px solid var(--ink); color: var(--ink); background: var(--lime); font-size: .72rem; font-weight: 900; }
 .invitation-code { margin-top: 14px !important; padding: 12px; border: 2px dashed var(--green); color: var(--ink) !important; background: #eef8ca; font-weight: 900; overflow-wrap: anywhere; }
 .plan-badge { display: inline-flex; margin-top: 14px; padding: 5px 9px; border: 1px solid var(--ink); color: var(--ink); background: var(--lime); font-size: .72rem; font-weight: 900; }
 .stage-question { display: grid; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }

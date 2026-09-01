@@ -146,6 +146,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0012_student_knowledge_concurrent_timestamp.sql',
           '0013_voice_consent_withdrawal_jobs.sql',
           '0014_payment_webhook_events.sql',
+          '0015_game_rewards_mvp.sql',
         ],
         [],
       ])
@@ -169,6 +170,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0012_student_knowledge_concurrent_timestamp.sql', count: '1' },
         { name: '0013_voice_consent_withdrawal_jobs.sql', count: '1' },
         { name: '0014_payment_webhook_events.sql', count: '1' },
+        { name: '0015_game_rewards_mvp.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])
@@ -509,6 +511,16 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         score: 1,
         passed: true,
         passScore: 0.8,
+        rewards: {
+          source: 'stage_attempt',
+          sourceRef: started.attempt.attemptId,
+          reason: 'stage_attempt_passed',
+          xpAwarded: 100,
+          activityCoinsAwarded: 50,
+          questStepDelta: 1,
+          questChapterUnlocked: 1,
+          badgesAwarded: ['level_check_cleared'],
+        },
       })
       expect(submit.result.items).toEqual([{ itemId: key.rows[0]!.item_id, outcome: 'correct', earnedScore: 1, maxScore: 1 }])
 
@@ -533,6 +545,11 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         state: string
         due_matches: boolean
         submitted_audits: number
+        reward_events: number
+        total_xp: number
+        activity_coins: number
+        quest_chapter: number
+        quest_step: number
       }>(`
         SELECT
           (SELECT count(*)::int FROM stage_attempt_answers WHERE attempt_id = $1 AND outcome = 'correct' AND earned_score = 1) AS scored_answers,
@@ -541,7 +558,12 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           (SELECT mastery_score::text FROM student_knowledge WHERE student_id = $2 AND knowledge_point_ref = 'unassigned') AS mastery_score,
           (SELECT state FROM student_knowledge WHERE student_id = $2 AND knowledge_point_ref = 'unassigned') AS state,
           (SELECT due_at = last_occurred_at + interval '14 days' FROM student_knowledge WHERE student_id = $2 AND knowledge_point_ref = 'unassigned') AS due_matches,
-          (SELECT count(*)::int FROM learning_audit_events WHERE attempt_id = $1 AND event_type = 'attempt_submitted') AS submitted_audits
+          (SELECT count(*)::int FROM learning_audit_events WHERE attempt_id = $1 AND event_type = 'attempt_submitted') AS submitted_audits,
+          (SELECT count(*)::int FROM game_reward_ledger WHERE student_id = $2 AND source_type = 'stage_attempt' AND source_ref = $1::text) AS reward_events,
+          (SELECT total_xp FROM student_game_state WHERE student_id = $2) AS total_xp,
+          (SELECT activity_coins FROM student_game_state WHERE student_id = $2) AS activity_coins,
+          (SELECT quest_chapter FROM student_game_state WHERE student_id = $2) AS quest_chapter,
+          (SELECT quest_step FROM student_game_state WHERE student_id = $2) AS quest_step
       `, [started.attempt.attemptId, ids.student])
       expect(persisted.rows).toEqual([{
         scored_answers: 1,
@@ -551,7 +573,19 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         state: 'mastered',
         due_matches: true,
         submitted_audits: 1,
+        reward_events: 1,
+        total_xp: 100,
+        activity_coins: 50,
+        quest_chapter: 1,
+        quest_step: 1,
       }])
+      await expect(repository.getStudentGameState(ids.student)).resolves.toMatchObject({
+        totalXp: 100,
+        activityCoins: 50,
+        questChapter: 1,
+        questStep: 1,
+        badges: ['level_check_cleared'],
+      })
     } finally {
       await client.end()
       await pool.end()

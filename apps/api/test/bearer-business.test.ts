@@ -86,6 +86,8 @@ const fakePool = {
       guardianInviteHashes.delete(String(parameters[1]))
       return { rows: [{ student_id: student.id, verified_at: parameters[2] }], rowCount: 1 }
     }
+    if (sql.includes('INSERT INTO game_reward_ledger')) return { rows: [{ id: 'reward-1' }], rowCount: 1 }
+    if (sql.includes('INSERT INTO student_game_state')) return { rows: [], rowCount: 1 }
     if (sql.includes('INSERT INTO user_devices')) {
       registeredDeviceKeys.add(`${String(parameters[0])}:${String(parameters[2])}`)
       return { rows: [{ platform: parameters[1], push_enabled: false, last_seen_at: parameters[5] }], rowCount: 1 }

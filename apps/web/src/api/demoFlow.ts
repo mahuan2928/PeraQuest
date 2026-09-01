@@ -107,6 +107,12 @@ export async function fetchDemoStudentKnowledge(studentToken: string): Promise<D
   })
 }
 
+export async function fetchDemoGameState(studentToken: string): Promise<DemoRequestResult> {
+  return requestJson('/api/v1/me/game-state', {
+    headers: bearerHeaders(studentToken),
+  })
+}
+
 export async function fetchDemoGuardianStudentKnowledge(guardianToken: string, studentId: string): Promise<DemoRequestResult> {
   return requestJson(`/v1/guardian-links/${studentId}/student-knowledge`, {
     headers: bearerHeaders(guardianToken),

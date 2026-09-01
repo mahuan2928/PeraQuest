@@ -20,6 +20,7 @@ import {
   type CurrentDeviceRegistrationRequest,
   type CurrentDeviceRegistrationResponse,
   type ErrorResponse,
+  type GameRewardGrantDto,
   type GuardianInvitationResponse,
   type GuardianLinkVerificationRequest,
   type GuardianLinkVerificationResponse,
@@ -29,6 +30,7 @@ import {
   type PublicStageExamItemDto,
   type RemediationTaskDto,
   type StartStageAttemptResponse,
+  type StudentGameStateResponse,
   type StudentKnowledgeProjectionDto,
   type StudentKnowledgeProjectionListResponse,
   type SubmitStageAttemptRequest,
@@ -139,6 +141,27 @@ const unlock = {
   updatedAt: '2026-08-27T00:00:00.000Z',
 } satisfies UnlockStateDto
 
+const gameReward = {
+  source: 'stage_attempt',
+  sourceRef: 'attempt-1',
+  reason: 'stage_attempt_passed',
+  xpAwarded: 100,
+  activityCoinsAwarded: 50,
+  questStepDelta: 1,
+  questChapterUnlocked: 1,
+  badgesAwarded: ['level_check_cleared'],
+} satisfies GameRewardGrantDto
+
+const gameState = {
+  studentId: evidence.studentId,
+  totalXp: 100,
+  activityCoins: 50,
+  questChapter: 1,
+  questStep: 1,
+  badges: gameReward.badgesAwarded,
+  updatedAt: '2026-08-30T00:00:00.000Z',
+} satisfies StudentGameStateResponse
+
 describe('shared security contracts', () => {
   it('keeps actor enums explicit and stable', () => {
     expect(userRoles).toEqual(['student', 'guardian', 'admin', 'service'])
@@ -201,6 +224,11 @@ describe('shared security contracts', () => {
     expect(voiceUploadTicketResponse).toMatchObject({ method: 'POST', bucket: 'voice-bucket', region: 'ap-northeast-1' })
     expect(voiceUploadTicketResponse.fields).toHaveProperty('policy')
     expect(voiceUploadTicketResponse.fields).not.toHaveProperty('secretAccessKey')
+  })
+
+  it('exposes Quest reward and game-state contracts', () => {
+    expect(gameReward).toMatchObject({ source: 'stage_attempt', xpAwarded: 100, activityCoinsAwarded: 50 })
+    expect(gameState).toMatchObject({ totalXp: 100, questChapter: 1, badges: ['level_check_cleared'] })
   })
 })
 

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   createDemoGuardianInvitation,
   createDemoVoiceUploadTicket,
+  fetchDemoGameState,
   fetchDemoStageAttemptResult,
   fetchDemoStudentKnowledge,
   registerDemoDevice,
@@ -39,6 +40,22 @@ type KnowledgeItem = {
   dueAt: string | null
 }
 
+type GameReward = {
+  xpAwarded: number
+  activityCoinsAwarded: number
+  questStepDelta: number
+  questChapterUnlocked: number | null
+  badgesAwarded: string[]
+}
+
+type GameState = {
+  totalXp: number
+  activityCoins: number
+  questChapter: number
+  questStep: number
+  badges: string[]
+}
+
 const props = defineProps<{
   session: DemoSessionResponse
   capabilities: CapabilityState | null
@@ -58,7 +75,8 @@ const message = ref('')
 const error = ref('')
 const attempt = ref<StageAttempt | null>(null)
 const selected = ref<Record<string, string>>({})
-const resultSummary = ref<{ passed?: boolean; score?: number; maxScore?: number } | null>(null)
+const resultSummary = ref<{ passed?: boolean; score?: number; maxScore?: number; rewards?: GameReward } | null>(null)
+const gameState = ref<GameState | null>(null)
 const voiceReady = ref(false)
 const deviceReady = ref(false)
 
@@ -70,6 +88,12 @@ const masteryAverage = computed(() => {
   if (!props.knowledgeItems.length) return 0
   return Math.round((props.knowledgeItems.reduce((sum, item) => sum + item.masteryScore, 0) / props.knowledgeItems.length) * 100)
 })
+const questProgress = computed(() => Math.min(100, Math.round(((gameState.value?.questStep ?? 0) / 5) * 100)))
+const badgeLabels: Record<string, string> = {
+  guardian_shield: 'ガーディアンシールド',
+  level_check_cleared: 'レベルチェッククリア',
+  level_check_challenger: 'Quest チャレンジャー',
+}
 
 function toUserMessage() {
   return '接続を確認して、もう一度お試しください。'
@@ -87,6 +111,12 @@ async function runAction(action: () => Promise<void>) {
   } finally {
     busy.value = false
   }
+}
+
+async function refreshGameState() {
+  const response = await fetchDemoGameState(props.session.studentToken)
+  console.info('student game state result', response)
+  if (response.ok) gameState.value = response.body as GameState
 }
 
 async function createInvitation() {
@@ -124,11 +154,12 @@ async function submitLevelCheck() {
     const result = await fetchDemoStageAttemptResult(props.session.studentToken, attempt.value!.attemptId)
     console.info('stage attempt result', result)
     if (!result.ok) throw new Error('stage attempt result failed')
-    resultSummary.value = result.body as { passed?: boolean; score?: number; maxScore?: number }
+    resultSummary.value = result.body as { passed?: boolean; score?: number; maxScore?: number; rewards?: GameReward }
     const knowledge = await fetchDemoStudentKnowledge(props.session.studentToken)
     console.info('student knowledge result', knowledge)
     if (knowledge.ok) emit('knowledgeUpdated', ((knowledge.body as { items?: KnowledgeItem[] }).items ?? []))
-    message.value = 'レベルチェックの結果を保存しました。復習予定を更新しました。'
+    await refreshGameState()
+    message.value = 'レベルチェックの結果を保存しました。Quest 進捗と復習予定を更新しました。'
   })
 }
 
@@ -151,6 +182,10 @@ async function registerDevice() {
     message.value = 'この端末で体験を続けられるようにしました。'
   })
 }
+
+onMounted(() => {
+  void refreshGameState()
+})
 </script>
 
 <template>
@@ -195,6 +230,39 @@ async function registerDevice() {
     </ul>
 
     <section class="student-grid">
+      <article class="action-card quest-card">
+        <p class="card-kicker">
+          Quest
+        </p>
+        <h2>Quest 進捗</h2>
+        <p>学習の成果が、XP・コイン・冒険の進み具合に変わります。</p>
+        <div class="quest-stats">
+          <span><strong>{{ gameState?.totalXp ?? 0 }}</strong> XP</span>
+          <span><strong>{{ gameState?.activityCoins ?? 0 }}</strong> コイン</span>
+          <span><strong>{{ gameState?.questChapter ?? 0 }}</strong> 章</span>
+        </div>
+        <div
+          class="quest-progress"
+          aria-label="Quest progress"
+        >
+          <span :style="{ width: `${questProgress}%` }" />
+        </div>
+        <p class="quest-step">
+          {{ gameState?.questStep ?? 0 }} / 5 ステップ
+        </p>
+        <div
+          v-if="gameState?.badges.length"
+          class="badge-list"
+        >
+          <span
+            v-for="badge in gameState.badges"
+            :key="badge"
+          >
+            {{ badgeLabels[badge] ?? badge }}
+          </span>
+        </div>
+      </article>
+
       <article class="action-card">
         <p class="card-kicker">
           家族連携
@@ -300,6 +368,16 @@ async function registerDevice() {
         <p class="score-line">
           {{ resultSummary.score }} / {{ resultSummary.maxScore }}
         </p>
+        <div
+          v-if="resultSummary.rewards"
+          class="reward-summary"
+        >
+          <span>+{{ resultSummary.rewards.xpAwarded }} XP</span>
+          <span>+{{ resultSummary.rewards.activityCoinsAwarded }} コイン</span>
+          <span v-if="resultSummary.rewards.questStepDelta">
+            Quest +{{ resultSummary.rewards.questStepDelta }}
+          </span>
+        </div>
       </article>
     </section>
 

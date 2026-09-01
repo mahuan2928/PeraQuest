@@ -14,6 +14,7 @@ describe('OpenAPI document', () => {
     const document = JSON.parse(await readFile(resolve(process.cwd(), '../../docs/api/openapi.json'), 'utf8')) as OpenApiDocument
     expect(document.openapi).toBe('3.1.0')
     expect(Object.keys(document.paths).sort()).toEqual([
+      '/api/v1/me/game-state',
       '/api/v1/stage-attempts/{stageAttemptId}',
       '/api/v1/stage-attempts/{stageAttemptId}/result',
       '/api/v1/stage-attempts/{stageAttemptId}/submit',
@@ -83,6 +84,8 @@ describe('OpenAPI document', () => {
     expect(document.components.schemas).toHaveProperty('StartStageAttemptResponse')
     expect(document.components.schemas).toHaveProperty('SubmitStageAttemptRequest')
     expect(document.components.schemas).toHaveProperty('StageAttemptResultResponse')
+    expect(document.components.schemas).toHaveProperty('GameRewardGrant')
+    expect(document.components.schemas).toHaveProperty('StudentGameStateResponse')
     expect(document.components.schemas).toHaveProperty('StudentKnowledgeProjection')
     expect(document.components.schemas).toHaveProperty('StudentKnowledgeProjectionListResponse')
     expect(document.components.schemas).toHaveProperty('WebCheckoutWebhookRequest')
@@ -118,6 +121,7 @@ describe('OpenAPI document', () => {
     const getStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}']?.get
     const submitStageAttemptOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/submit']?.post
     const getStageAttemptResultOperation = document.paths['/api/v1/stage-attempts/{stageAttemptId}/result']?.get
+    const getStudentGameStateOperation = document.paths['/api/v1/me/game-state']?.get
     const listStudentKnowledgeOperation = document.paths['/api/v1/student-knowledge']?.get
     expect(createDemoSessionOperation).toBeDefined()
     expect(startStageAttemptOperation).toBeDefined()
@@ -133,6 +137,7 @@ describe('OpenAPI document', () => {
     expect(getStageAttemptOperation).toBeDefined()
     expect(submitStageAttemptOperation).toBeDefined()
     expect(getStageAttemptResultOperation).toBeDefined()
+    expect(getStudentGameStateOperation).toBeDefined()
     expect(listStudentKnowledgeOperation).toBeDefined()
     expect(createDemoSessionOperation!.security).toEqual([])
     expect(putVoiceConsentOperation!.security).toContainEqual({ BearerAuth: [] })
@@ -150,6 +155,7 @@ describe('OpenAPI document', () => {
     expect(submitStageAttemptOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(submitStageAttemptOperation!.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/FormalIdempotencyKey')).toBe(true)
     expect(getStageAttemptResultOperation!.security).toEqual([{ BearerAuth: [] }])
+    expect(getStudentGameStateOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(listStudentKnowledgeOperation!.security).toEqual([{ BearerAuth: [] }])
     expect(document.components.securitySchemes).toHaveProperty('WebhookSignature')
     expect(document.components.securitySchemes.BearerAuth).toMatchObject({ description: expect.stringContaining('Required for formal stage-attempt runtime') })

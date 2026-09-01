@@ -233,7 +233,8 @@ describe('minor onboarding vertical slice', () => {
         guardianToken: 'guardian-token',
         expiresAt: '2026-08-31T12:10:00.000Z',
       }, 201))
-      .mockResolvedValueOnce(jsonResponse({ canLearn: false, canUploadVoice: false, guardianLinkStatus: 'pending', voiceConsentStatus: 'missing', entitlements: [] })))
+      .mockResolvedValueOnce(jsonResponse({ canLearn: false, canUploadVoice: false, guardianLinkStatus: 'pending', voiceConsentStatus: 'missing', entitlements: [] }))
+      .mockResolvedValueOnce(jsonResponse({ studentId: 'student-1', totalXp: 0, activityCoins: 0, questChapter: 0, questStep: 0, badges: [], updatedAt: '2026-08-31T12:00:00.000Z' })))
     const wrapper = mount(App)
 
     await wrapper.get('[data-testid="start-product-demo"]').trigger('click')
@@ -241,6 +242,7 @@ describe('minor onboarding vertical slice', () => {
 
     expect(wrapper.text()).toContain('生徒として体験')
     expect(wrapper.text()).toContain('保護者として体験')
+    expect(wrapper.text()).toContain('Quest 進捗')
     expect(wrapper.text()).not.toContain('HTTP')
     expect(wrapper.text()).not.toContain('token')
 

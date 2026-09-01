@@ -201,6 +201,20 @@ export interface StageAttemptResultItemDto {
   maxScore: number
 }
 
+export type GameRewardSource = 'stage_attempt' | 'guardian_verification'
+export type GameRewardReason = 'stage_attempt_passed' | 'stage_attempt_completed' | 'guardian_link_verified'
+
+export interface GameRewardGrantDto {
+  source: GameRewardSource
+  sourceRef: string
+  reason: GameRewardReason
+  xpAwarded: number
+  activityCoinsAwarded: number
+  questStepDelta: number
+  questChapterUnlocked: number | null
+  badgesAwarded: string[]
+}
+
 export interface StageAttemptResultResponse {
   attemptId: string
   status: 'passed' | 'failed'
@@ -211,6 +225,17 @@ export interface StageAttemptResultResponse {
   passed: boolean
   passScore: number
   items: StageAttemptResultItemDto[]
+  rewards?: GameRewardGrantDto
+}
+
+export interface StudentGameStateResponse {
+  studentId: string
+  totalXp: number
+  activityCoins: number
+  questChapter: number
+  questStep: number
+  badges: string[]
+  updatedAt: string
 }
 
 /** Contract-only knowledge-domain vocabulary. These DTOs do not imply runtime APIs or persistence. */

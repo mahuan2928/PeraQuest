@@ -784,6 +784,39 @@
         }
       }
     },
+    "/api/v1/me/game-state": {
+      "get": {
+        "operationId": "getStudentGameState",
+        "summary": "Read the current Bearer student's Quest progress, XP, activity coins, and badges.",
+        "description": "Student-only formal API. Rewards are projected only from server-verified learning and guardian-link events.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current Quest progress and reward wallet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentGameStateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/v1/guardian-links/{studentId}/student-knowledge": {
       "get": {
         "operationId": "listGuardianStudentKnowledgeProjections",
@@ -2524,6 +2557,116 @@
             "items": {
               "$ref": "#/components/schemas/StageAttemptResultItem"
             }
+          },
+          "rewards": {
+            "$ref": "#/components/schemas/GameRewardGrant"
+          }
+        }
+      },
+      "GameRewardGrant": {
+        "description": "Server-awarded Quest reward derived from verified learning or guardian-link events.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "sourceRef",
+          "reason",
+          "xpAwarded",
+          "activityCoinsAwarded",
+          "questStepDelta",
+          "questChapterUnlocked",
+          "badgesAwarded"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "stage_attempt",
+              "guardian_verification"
+            ]
+          },
+          "sourceRef": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "stage_attempt_passed",
+              "stage_attempt_completed",
+              "guardian_link_verified"
+            ]
+          },
+          "xpAwarded": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "activityCoinsAwarded": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "questStepDelta": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "questChapterUnlocked": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "badgesAwarded": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "StudentGameStateResponse": {
+        "description": "Current Quest progress, XP, activity coins, and earned badges for the authenticated student.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "studentId",
+          "totalXp",
+          "activityCoins",
+          "questChapter",
+          "questStep",
+          "badges",
+          "updatedAt"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "totalXp": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "activityCoins": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "questChapter": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "questStep": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "badges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

@@ -46,6 +46,7 @@ describe('database migrations', () => {
       '0012_student_knowledge_concurrent_timestamp.sql',
       '0013_voice_consent_withdrawal_jobs.sql',
       '0014_payment_webhook_events.sql',
+      '0015_game_rewards_mvp.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -58,6 +59,7 @@ describe('database migrations', () => {
     expect(tables.rows.map(({ table_name }) => table_name)).toEqual([
       'auth_identities',
       'consent_records',
+      'game_reward_ledger',
       'guardian_links',
       'idempotency_records',
       'knowledge_evidence',
@@ -77,6 +79,7 @@ describe('database migrations', () => {
       'stage_exam_version_retirements',
       'stage_exam_versions',
       'stage_exams',
+      'student_game_state',
       'student_knowledge',
       'student_knowledge_applied_evidence',
       'subscription_entitlements',
@@ -197,7 +200,8 @@ describe('database migrations', () => {
         ('00000000-0000-0000-0000-000000000075', $1, $3, 'apple_app_store', 'sub-expired-date', 'expired_date', 'active', TIMESTAMPTZ '2026-08-01 00:00:00+00'),
         ('00000000-0000-0000-0000-000000000076', $2, $3, 'web_checkout', 'sub-other-student', 'other_student', 'active', NULL)
     `, [studentA, studentB, guardian])
-    const repository = new PostgresStudentRepository({ query: database.query.bind(database) } as unknown as Pool)
+    const client = { query: database.query.bind(database), release: () => undefined }
+    const repository = new PostgresStudentRepository({ query: database.query.bind(database), connect: async () => client } as unknown as Pool)
 
     await expect(repository.listActiveEntitlements(studentA, new Date('2026-08-30T00:00:00.000Z'))).resolves.toEqual([
       'exam_grade_3_full',
@@ -277,7 +281,8 @@ describe('database migrations', () => {
     await runMigrations(asMigrationDatabase(database))
     const student = '00000000-0000-0000-0000-000000000081'
     await database.query("INSERT INTO users (id, role, birth_month, is_minor) VALUES ($1, 'student', '2000-01-01', false)", [student])
-    const repository = new PostgresStudentRepository({ query: database.query.bind(database) } as unknown as Pool)
+    const client = { query: database.query.bind(database), release: () => undefined }
+    const repository = new PostgresStudentRepository({ query: database.query.bind(database), connect: async () => client } as unknown as Pool)
 
     await expect(repository.upsertCurrentDevice({
       studentId: student,
@@ -324,7 +329,8 @@ describe('database migrations', () => {
         ($2, 'guardian', NULL, false)
     `, [student, guardian])
     await database.query("INSERT INTO guardian_links (id, student_id, status) VALUES ('00000000-0000-0000-0000-000000000086', $1, 'pending')", [student])
-    const repository = new PostgresStudentRepository({ query: database.query.bind(database) } as unknown as Pool)
+    const guardianClient = { query: database.query.bind(database), release: () => undefined }
+    const repository = new PostgresStudentRepository({ query: database.query.bind(database), connect: async () => guardianClient } as unknown as Pool)
 
     await expect(repository.createGuardianInvite({
       studentId: student,
@@ -368,6 +374,13 @@ describe('database migrations', () => {
       purchase_allowed: true,
       verified_at: new Date('2026-08-30T01:00:00.000Z'),
     }])
+    await expect(repository.getStudentGameState(student)).resolves.toMatchObject({
+      totalXp: 20,
+      activityCoins: 0,
+      questChapter: 0,
+      questStep: 0,
+      badges: ['guardian_shield'],
+    })
     await expect(repository.verifyGuardianInvite({
       guardianId: guardian,
       inviteCodeHash: 'hashed-invite-code',

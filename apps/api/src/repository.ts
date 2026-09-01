@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
+import type { AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -139,6 +139,7 @@ export interface StudentRepository {
   submitStageAttempt(input: SubmitStageAttemptInput): Promise<StageAttemptSubmitResult>
   findStageAttemptResult(studentId: string, attemptId: string): Promise<StageAttemptResultResponse | null>
   listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
+  getStudentGameState(studentId: string): Promise<StudentGameStateResponse>
   listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
   processPaymentWebhook(input: ProcessPaymentWebhookInput): Promise<PaymentWebhookProcessResult>
   upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse>
@@ -197,6 +198,15 @@ interface StudentKnowledgeProjectionRow extends Record<string, unknown> {
   state: StudentKnowledgeProjectionDto['state']
   last_occurred_at: Date
   due_at: Date
+  updated_at: Date
+}
+
+interface StudentGameStateRow extends Record<string, unknown> {
+  student_id: string
+  total_xp: number
+  activity_coins: number
+  quest_chapter: number
+  quest_step: number
   updated_at: Date
 }
 
@@ -324,6 +334,82 @@ const readStudentKnowledgeProjections = async (database: Queryable, studentId: s
   }))
 }
 
+const readStudentGameState = async (database: Queryable, studentId: string): Promise<StudentGameStateResponse> => {
+  const stateResult = await database.query<StudentGameStateRow>(`
+    INSERT INTO student_game_state (student_id)
+    VALUES ($1)
+    ON CONFLICT (student_id) DO UPDATE
+      SET updated_at = student_game_state.updated_at
+    RETURNING student_id, total_xp, activity_coins, quest_chapter, quest_step, updated_at
+  `, [studentId])
+  const state = stateResult.rows[0]
+  if (!state) throw new Error('student game state could not be read')
+  const badgeResult = await database.query<{ badge_code: string }>(`
+    SELECT DISTINCT badge_code
+    FROM game_reward_ledger
+    CROSS JOIN unnest(badge_codes) AS badge_code
+    WHERE student_id = $1
+    ORDER BY badge_code ASC
+  `, [studentId])
+  return {
+    studentId: state.student_id,
+    totalXp: state.total_xp,
+    activityCoins: state.activity_coins,
+    questChapter: state.quest_chapter,
+    questStep: state.quest_step,
+    badges: badgeResult.rows.map((row) => row.badge_code),
+    updatedAt: toIso(state.updated_at),
+  }
+}
+
+const applyGameReward = async (database: Queryable, studentId: string, reward: GameRewardGrantDto): Promise<GameRewardGrantDto> => {
+  const inserted = await database.query<{ id: string }>(`
+    INSERT INTO game_reward_ledger
+      (id, student_id, source_type, source_ref, reason, xp_delta, activity_coin_delta, quest_step_delta, quest_chapter_unlocked, badge_codes)
+    VALUES
+      (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::text[])
+    ON CONFLICT (student_id, source_type, source_ref) DO NOTHING
+    RETURNING id
+  `, [
+    studentId,
+    reward.source,
+    reward.sourceRef,
+    reward.reason,
+    reward.xpAwarded,
+    reward.activityCoinsAwarded,
+    reward.questStepDelta,
+    reward.questChapterUnlocked,
+    reward.badgesAwarded,
+  ])
+  if (inserted.rowCount === 0) {
+    return { ...reward, xpAwarded: 0, activityCoinsAwarded: 0, questStepDelta: 0, questChapterUnlocked: null, badgesAwarded: [] }
+  }
+  await database.query(`
+    INSERT INTO student_game_state
+      (student_id, total_xp, activity_coins, quest_chapter, quest_step, updated_at)
+    VALUES
+      ($1, $2, $3, COALESCE($4, 0), $5, CURRENT_TIMESTAMP)
+    ON CONFLICT (student_id) DO UPDATE
+    SET total_xp = student_game_state.total_xp + EXCLUDED.total_xp,
+        activity_coins = student_game_state.activity_coins + EXCLUDED.activity_coins,
+        quest_chapter = GREATEST(student_game_state.quest_chapter, EXCLUDED.quest_chapter),
+        quest_step = student_game_state.quest_step + EXCLUDED.quest_step,
+        updated_at = CURRENT_TIMESTAMP
+  `, [studentId, reward.xpAwarded, reward.activityCoinsAwarded, reward.questChapterUnlocked, reward.questStepDelta])
+  return reward
+}
+
+const stageAttemptRewardFor = (result: StageAttemptResultResponse): GameRewardGrantDto => ({
+  source: 'stage_attempt',
+  sourceRef: result.attemptId,
+  reason: result.passed ? 'stage_attempt_passed' : 'stage_attempt_completed',
+  xpAwarded: result.passed ? 100 : 40,
+  activityCoinsAwarded: result.passed ? 50 : 20,
+  questStepDelta: result.passed ? 1 : 0,
+  questChapterUnlocked: result.passed ? 1 : null,
+  badgesAwarded: result.passed ? ['level_check_cleared'] : ['level_check_challenger'],
+})
+
 export class PostgresStudentRepository implements StudentRepository {
   constructor(private readonly pool: Pool) {}
 
@@ -408,19 +494,43 @@ export class PostgresStudentRepository implements StudentRepository {
   }
 
   async verifyGuardianInvite(input: VerifyGuardianInviteInput): Promise<GuardianLinkVerificationResponse | null> {
-    const result = await this.pool.query<{ student_id: string; verified_at: Date }>(`
-      UPDATE guardian_links
-      SET guardian_id = $1,
-          status = 'verified',
-          purchase_allowed = true,
-          verified_at = $3
-      WHERE invitation_code_hash = $2
-        AND invitation_expires_at > $3
-        AND status = 'pending'
-      RETURNING student_id, verified_at
-    `, [input.guardianId, input.inviteCodeHash, input.verifiedAt])
-    const row = result.rows[0]
-    return row ? { studentId: row.student_id, status: 'verified', purchaseAllowed: true, verifiedAt: toIso(row.verified_at) } : null
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query<{ student_id: string; verified_at: Date }>(`
+        UPDATE guardian_links
+        SET guardian_id = $1,
+            status = 'verified',
+            purchase_allowed = true,
+            verified_at = $3
+        WHERE invitation_code_hash = $2
+          AND invitation_expires_at > $3
+          AND status = 'pending'
+        RETURNING student_id, verified_at
+      `, [input.guardianId, input.inviteCodeHash, input.verifiedAt])
+      const row = result.rows[0]
+      if (!row) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      await applyGameReward(client, row.student_id, {
+        source: 'guardian_verification',
+        sourceRef: input.guardianId,
+        reason: 'guardian_link_verified',
+        xpAwarded: 20,
+        activityCoinsAwarded: 0,
+        questStepDelta: 0,
+        questChapterUnlocked: null,
+        badgesAwarded: ['guardian_shield'],
+      })
+      await client.query('COMMIT')
+      return { studentId: row.student_id, status: 'verified', purchaseAllowed: true, verifiedAt: toIso(row.verified_at) }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async getVoiceConsent(studentId: string, requiredVersion: string): Promise<ConsentRecord> {
@@ -936,6 +1046,7 @@ export class PostgresStudentRepository implements StudentRepository {
 
       const result = await readStageAttemptResult(client, input.studentId, input.attemptId)
       if (!result) throw new Error('Submitted stage attempt result could not be read')
+      result.rewards = await applyGameReward(client, input.studentId, stageAttemptRewardFor(result))
       await client.query(`
         UPDATE idempotency_records
         SET status = 'completed',
@@ -962,6 +1073,10 @@ export class PostgresStudentRepository implements StudentRepository {
   async listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]> {
     return readStudentKnowledgeProjections(this.pool, studentId)
   }
+
+  async getStudentGameState(studentId: string): Promise<StudentGameStateResponse> {
+    return readStudentGameState(this.pool, studentId)
+  }
 }
 
 export class MemoryStudentRepository implements StudentRepository, AuthUserResolver {
@@ -975,6 +1090,8 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
   private readonly currentDevices = new Map<string, CurrentDeviceRegistrationResponse>()
   private readonly paymentWebhookEvents = new Map<string, string>()
   private readonly entitlements = new Map<string, { studentId: string; entitlementCode: string; status: SubscriptionEntitlementStatus; validUntil: Date | null }>()
+  private readonly gameStates = new Map<string, StudentGameStateResponse>()
+  private readonly gameRewardSources = new Set<string>()
   private readonly guardianInviteStudentIds = new Map<string, { studentId: string; expiresAt: Date }>()
   private readonly voiceConsentAuditEvents: Array<{ studentId: string; guardianId: string | null; status: Exclude<ConsentStatus, 'missing' | 'outdated'>; version: string }> = []
   private readonly voiceDataDeletionJobs: Array<{ studentId: string; guardianId: string | null; reason: 'voice_consent_withdrawn'; status: 'pending' }> = []
@@ -1023,6 +1140,16 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
     if (!student || student.guardianLinkStatus !== 'pending') return null
     this.guardianInviteStudentIds.delete(input.inviteCodeHash)
     this.students.set(invite.studentId, { ...student, guardianLinkStatus: 'verified', guardianId: input.guardianId })
+    this.applyMemoryGameReward(invite.studentId, {
+      source: 'guardian_verification',
+      sourceRef: input.guardianId,
+      reason: 'guardian_link_verified',
+      xpAwarded: 20,
+      activityCoinsAwarded: 0,
+      questStepDelta: 0,
+      questChapterUnlocked: null,
+      badgesAwarded: ['guardian_shield'],
+    }, input.verifiedAt)
     return { studentId: invite.studentId, status: 'verified', purchaseAllowed: true, verifiedAt: input.verifiedAt.toISOString() }
   }
 
@@ -1056,6 +1183,44 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
       .filter((entitlement) => entitlement.validUntil === null || entitlement.validUntil > asOf)
       .map((entitlement) => entitlement.entitlementCode)
       .sort()
+  }
+
+  async getStudentGameState(studentId: string): Promise<StudentGameStateResponse> {
+    return this.ensureMemoryGameState(studentId, new Date())
+  }
+
+  private ensureMemoryGameState(studentId: string, updatedAt: Date): StudentGameStateResponse {
+    const existing = this.gameStates.get(studentId)
+    if (existing) return existing
+    const created = {
+      studentId,
+      totalXp: 0,
+      activityCoins: 0,
+      questChapter: 0,
+      questStep: 0,
+      badges: [],
+      updatedAt: updatedAt.toISOString(),
+    }
+    this.gameStates.set(studentId, created)
+    return created
+  }
+
+  private applyMemoryGameReward(studentId: string, reward: GameRewardGrantDto, awardedAt: Date): GameRewardGrantDto {
+    const rewardKey = `${studentId}:${reward.source}:${reward.sourceRef}`
+    if (this.gameRewardSources.has(rewardKey)) return { ...reward, xpAwarded: 0, activityCoinsAwarded: 0, questStepDelta: 0, questChapterUnlocked: null, badgesAwarded: [] }
+    this.gameRewardSources.add(rewardKey)
+    const state = this.ensureMemoryGameState(studentId, awardedAt)
+    const badges = new Set([...state.badges, ...reward.badgesAwarded])
+    this.gameStates.set(studentId, {
+      ...state,
+      totalXp: state.totalXp + reward.xpAwarded,
+      activityCoins: state.activityCoins + reward.activityCoinsAwarded,
+      questChapter: Math.max(state.questChapter, reward.questChapterUnlocked ?? 0),
+      questStep: state.questStep + reward.questStepDelta,
+      badges: [...badges].sort(),
+      updatedAt: awardedAt.toISOString(),
+    })
+    return reward
   }
 
   async processPaymentWebhook(input: ProcessPaymentWebhookInput): Promise<PaymentWebhookProcessResult> {

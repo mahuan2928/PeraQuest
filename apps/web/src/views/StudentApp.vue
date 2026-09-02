@@ -89,6 +89,7 @@ const gameState = ref<GameState | null>(null)
 const voiceReady = ref(false)
 const deviceReady = ref(false)
 const selectedQuestNodeId = ref<string | null>(null)
+const rewardCelebrationOpen = ref(false)
 
 const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const learnReady = computed(() => props.capabilities?.canLearn === true)
@@ -159,6 +160,7 @@ const questMapNodes = computed<QuestMapNode[]>(() => questBlueprint.map((node, i
 const currentQuestNode = computed(() => questMapNodes.value.find((node) => node.status === 'current') ?? questMapNodes.value.at(-1)!)
 const selectedQuestNode = computed(() => questMapNodes.value.find((node) => node.id === selectedQuestNodeId.value) ?? currentQuestNode.value)
 const completedQuestCount = computed(() => questMapNodes.value.filter((node) => node.status === 'done').length)
+const rewardCelebration = computed(() => resultSummary.value?.rewards ?? null)
 const questStatusLabel = (status: QuestMapNode['status']) => {
   if (status === 'done') return '達成'
   if (status === 'current') return '次の目標'
@@ -166,6 +168,9 @@ const questStatusLabel = (status: QuestMapNode['status']) => {
 }
 const selectQuestNode = (node: QuestMapNode) => {
   selectedQuestNodeId.value = node.id
+}
+const closeRewardCelebration = () => {
+  rewardCelebrationOpen.value = false
 }
 
 function toUserMessage() {
@@ -207,6 +212,7 @@ async function startLevelCheck() {
     attempt.value = response.body as StageAttempt
     selected.value = {}
     resultSummary.value = null
+    rewardCelebrationOpen.value = false
     message.value = 'レベルチェックを開始しました。'
   })
 }
@@ -223,6 +229,7 @@ async function submitLevelCheck() {
     const result = await fetchDemoStageAttemptResult(props.session.studentToken, attempt.value!.attemptId)
     if (!result.ok) throw new Error('stage attempt result failed')
     resultSummary.value = result.body as { passed?: boolean; score?: number; maxScore?: number; rewards?: GameReward }
+    rewardCelebrationOpen.value = Boolean(resultSummary.value.rewards)
     const knowledge = await fetchDemoStudentKnowledge(props.session.studentToken)
     if (knowledge.ok) emit('knowledgeUpdated', ((knowledge.body as { items?: KnowledgeItem[] }).items ?? []))
     await refreshGameState()
@@ -502,6 +509,40 @@ watch(currentQuestNode, (node) => {
         </div>
       </article>
     </section>
+
+    <aside
+      v-if="rewardCelebration && rewardCelebrationOpen"
+      class="reward-celebration"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="reward-burst">
+        +
+      </div>
+      <div>
+        <span>報酬を獲得しました</span>
+        <strong>Quest が前に進みました</strong>
+        <p>学習の結果が、XP・コイン・バッジに変わりました。</p>
+        <div class="reward-summary">
+          <span>+{{ rewardCelebration.xpAwarded }} XP</span>
+          <span>+{{ rewardCelebration.activityCoinsAwarded }} コイン</span>
+          <span
+            v-for="badge in rewardCelebration.badgesAwarded"
+            :key="badge"
+          >
+            {{ badgeLabels[badge] ?? badge }}
+          </span>
+        </div>
+      </div>
+      <button
+        class="reward-close"
+        type="button"
+        aria-label="報酬のお知らせを閉じます"
+        @click="closeRewardCelebration"
+      >
+        閉じる
+      </button>
+    </aside>
 
     <section class="student-grid">
       <article class="action-card">

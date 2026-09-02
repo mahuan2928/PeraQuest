@@ -7,6 +7,7 @@ import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
 import KnowledgeMastery from './components/KnowledgeMastery.vue'
 import TrialLesson from './components/TrialLesson.vue'
+import StudentApp from './views/StudentApp.vue'
 
 const firstQuestion: TrialQuestion = {
   id: 'q1',
@@ -253,6 +254,70 @@ describe('minor onboarding vertical slice', () => {
 
     await wrapper.get('nav button:nth-child(2)').trigger('click')
     expect(wrapper.text()).toContain('お子さまの学習を見守ります')
+  })
+
+  it('shows and dismisses a reward celebration after the level check', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/v1/me/game-state') {
+        return jsonResponse({ studentId: 'student-1', totalXp: 60, activityCoins: 20, questChapter: 0, questStep: 3, badges: ['guardian_shield', 'level_check_challenger'], updatedAt: '2026-08-31T12:00:00.000Z' })
+      }
+      if (url.includes('/api/v1/stage-exams/') && url.endsWith('/attempts')) {
+        return jsonResponse({
+          attemptId: 'attempt-1',
+          items: [{
+            itemId: 'item-1',
+            prompt: 'Yesterday, I ___ my homework.',
+            support: '最も自然な過去形を選んでください。',
+            options: [{ optionId: 'option-1', text: 'finished' }],
+          }],
+        }, 201)
+      }
+      if (url === '/api/v1/stage-attempts/attempt-1/submit') return jsonResponse({ accepted: true })
+      if (url === '/api/v1/stage-attempts/attempt-1/result') {
+        return jsonResponse({
+          passed: false,
+          score: 0.5,
+          maxScore: 1,
+          rewards: {
+            xpAwarded: 60,
+            activityCoinsAwarded: 20,
+            questStepDelta: 1,
+            questChapterUnlocked: null,
+            badgesAwarded: ['level_check_challenger'],
+          },
+        })
+      }
+      if (url === '/api/v1/student-knowledge') return jsonResponse({ items: [] })
+      throw new Error(`Unexpected request: ${url}`)
+    }))
+    const wrapper = mount(StudentApp, {
+      props: {
+        session: {
+          studentId: 'student-1',
+          studentToken: 'student-token',
+          guardianToken: 'guardian-token',
+          expiresAt: '2026-08-31T12:10:00.000Z',
+        },
+        capabilities: { canLearn: true, canUploadVoice: false, guardianLinkStatus: 'verified', voiceConsentStatus: 'missing' },
+        invitationCode: '',
+        knowledgeItems: [],
+      },
+    })
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Quest Map'))
+    await wrapper.get('.lesson-panel .primary-action').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Yesterday, I ___ my homework.'))
+    await wrapper.get('input[value="option-1"]').setValue(true)
+    await wrapper.get('.question-card .primary-action').trigger('click')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('報酬を獲得しました'))
+    expect(wrapper.text()).toContain('+60 XP')
+    expect(wrapper.text()).toContain('+20 コイン')
+    expect(wrapper.text()).toContain('Quest チャレンジャー')
+
+    await wrapper.get('.reward-close').trigger('click')
+    expect(wrapper.text()).not.toContain('報酬を獲得しました')
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {

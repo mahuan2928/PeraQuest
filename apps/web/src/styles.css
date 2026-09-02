@@ -133,6 +133,19 @@ h1 span { color: var(--green); }
 .compact-choice { min-height: 44px; padding: 8px 10px; font-size: .82rem; }
 .listening-feedback { padding: 10px 12px; border-left: 5px solid var(--orange); background: #fff7d8; color: var(--ink) !important; font-size: .82rem !important; font-weight: 900; }
 .listening-feedback.correct { border-color: var(--green); background: #eef8ca; }
+.journey-summary-card { display: grid; gap: 14px; width: min(780px, 100%); margin: 0 auto 28px; padding: clamp(22px, 4vw, 34px); border: 3px solid var(--ink); background: linear-gradient(135deg, #fff7d8, #f7ffe2); box-shadow: 8px 8px 0 var(--ink); }
+.journey-summary-card h2 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.2rem); }
+.journey-summary-card p { margin: 0; font-size: .9rem; line-height: 1.6; }
+.journey-score-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.journey-score-grid div { padding: 12px; border: 2px solid var(--ink); background: white; text-align: center; box-shadow: 3px 3px 0 var(--ink); }
+.journey-score-grid strong { display: block; color: var(--green); font-size: 1.7rem; line-height: 1; }
+.journey-score-grid span { font-size: .68rem; font-weight: 900; }
+.journey-highlight-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.journey-highlight-list li { padding: 10px 12px; border-left: 5px solid var(--green); background: white; font-size: .84rem; font-weight: 900; }
+.journey-badges { display: grid; gap: 5px; padding: 12px; border: 2px dashed var(--orange); background: white; }
+.journey-badges span { color: var(--orange); font-size: .68rem; font-weight: 900; letter-spacing: .12em; }
+.journey-badges strong { font-size: .9rem; line-height: 1.5; }
+.journey-next-step { padding: 12px 14px; border: 2px solid var(--ink); background: var(--lime); font-weight: 900; }
 .stage-question { display: grid; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
 .stage-question:last-of-type { border-bottom: 0; }
 .stage-question h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 2.1rem); }
@@ -208,6 +221,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
   .role-tabs { width: 100%; }
   .role-tabs button { flex: 1; }
   .student-grid, .guardian-grid { grid-template-columns: 1fr; }
+  .journey-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mastery-heading { align-items: start; flex-direction: column; }
   .report-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .quest-mark { width: 84px; box-shadow: 7px 7px 0 var(--ink); }

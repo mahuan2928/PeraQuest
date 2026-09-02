@@ -231,6 +231,20 @@ const listeningDemoOptions = [
   },
 ] as const
 const listeningDemoCorrect = computed(() => listeningDemoAnswer.value === 'library')
+const journeySummaryVisible = computed(() => Boolean(resultSummary.value) || reviewQuestCompleted.value || listeningDemoSubmitted.value)
+const journeyHighlights = computed(() => [
+  guardianReady.value ? '保護者確認が完了しました' : '',
+  resultSummary.value || questStep.value >= 3 ? 'レベルチェックを完了しました' : '',
+  reviewQuestCompleted.value ? '復習の森をクリアしました' : '',
+  listeningDemoSubmitted.value ? 'リスニング入り江を体験しました' : '',
+].filter(Boolean))
+const latestBadgeLabels = computed(() => displayedBadges.value.map((badge) => badgeLabels[badge] ?? badge).slice(-4))
+const journeyNextStep = computed(() => {
+  if (listeningDemoSubmitted.value) return '次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。'
+  if (nextIslandReady.value) return '次は、リスニング入り江の1問体験に進みましょう。'
+  if (reviewQuestReady.value) return '次は、復習の森で苦手ポイントを短く確認しましょう。'
+  return 'まずはレベルチェックで今の得意と復習ポイントを見つけましょう。'
+})
 const questStatusLabel = (status: QuestMapNode['status']) => {
   if (status === 'done') return '達成'
   if (status === 'current') return '次の目標'
@@ -655,6 +669,54 @@ watch(() => props.knowledgeItems.length, (count) => {
           </section>
         </section>
       </article>
+    </section>
+
+    <section
+      v-if="journeySummaryVisible"
+      class="journey-summary-card"
+      aria-label="学習旅程サマリー"
+    >
+      <p class="card-kicker">
+        Journey Summary
+      </p>
+      <h2>今日の冒険まとめ</h2>
+      <p>今日の学習で進んだ場所と、次に向かうルートをまとめました。</p>
+      <div class="journey-score-grid">
+        <div>
+          <strong>{{ completedQuestCount }}</strong>
+          <span>達成スポット</span>
+        </div>
+        <div>
+          <strong>{{ displayedTotalXp }}</strong>
+          <span>XP</span>
+        </div>
+        <div>
+          <strong>{{ displayedActivityCoins }}</strong>
+          <span>コイン</span>
+        </div>
+        <div>
+          <strong>{{ masteryAverage }}%</strong>
+          <span>平均習熟度</span>
+        </div>
+      </div>
+      <ul class="journey-highlight-list">
+        <li
+          v-for="highlight in journeyHighlights"
+          :key="highlight"
+        >
+          {{ highlight }}
+        </li>
+      </ul>
+      <div
+        v-if="latestBadgeLabels.length"
+        class="journey-badges"
+      >
+        <span>獲得バッジ</span>
+        <strong>{{ latestBadgeLabels.join(' / ') }}</strong>
+      </div>
+      <p class="journey-next-step">
+        {{ journeyNextStep }}
+      </p>
     </section>
 
     <section class="lesson-panel">

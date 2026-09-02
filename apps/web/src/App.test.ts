@@ -356,6 +356,9 @@ describe('minor onboarding vertical slice', () => {
     await wrapper.get('.review-quest-panel .secondary-action').trigger('click')
     expect(wrapper.text()).toContain('今日の復習を完了しました')
     await vi.waitFor(() => expect(wrapper.text()).toContain('4 / 5 スポット達成'))
+    expect(wrapper.text()).toContain('今日の冒険まとめ')
+    expect(wrapper.text()).toContain('レベルチェックを完了しました')
+    expect(wrapper.text()).toContain('復習の森をクリアしました')
     expect(wrapper.text()).toContain('+15 XP')
     expect(wrapper.text()).toContain('+5 コイン')
     expect(wrapper.text()).toContain('復習の森クリア')
@@ -375,6 +378,8 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('+10 XP')
     expect(wrapper.text()).toContain('+3 コイン')
     expect(wrapper.text()).toContain('リスニング入り江体験')
+    expect(wrapper.text()).toContain('リスニング入り江を体験しました')
+    expect(wrapper.text()).toContain('次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。')
     expect(wrapper.findAll('button').some((button) => button.text().includes('体験済みです'))).toBe(true)
   })
 

@@ -301,13 +301,20 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 @media (max-width: 680px) {
   .brand-bar { flex-wrap: wrap; gap: 10px 14px; }
+  .brand-bar nav { width: 100%; }
   .stage { width: min(100% - 24px, 560px); padding: 32px 0 56px; }
   .role-tabs { width: 100%; }
   .role-tabs button { flex: 1; }
+  .demo-session-actions { align-items: stretch; flex-direction: column; }
+  .demo-session-actions button { width: 100%; }
   .landing-value-grid { grid-template-columns: 1fr; }
   .demo-guide-card { grid-template-columns: 1fr; }
   .demo-answer-guide { align-items: stretch; flex-direction: column; }
   .student-grid, .guardian-grid { grid-template-columns: 1fr; }
+  .quest-node-button { grid-template-columns: 34px 1fr; padding: 9px; }
+  .quest-avatar { grid-column: 2; justify-self: start; width: auto; min-width: 42px; height: 28px; padding: 0 8px; border-radius: 999px; }
+  .quest-state-label { display: flex !important; width: fit-content; margin: 5px 0 0 !important; }
+  .inventory-item { grid-template-columns: 30px 1fr; }
   .journey-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mastery-heading { align-items: start; flex-direction: column; }
   .report-stat-grid, .guardian-journey-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

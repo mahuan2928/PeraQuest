@@ -134,6 +134,17 @@ h1 span { color: var(--green); }
 .mini-mastery { display: grid; gap: 3px; min-width: 112px; padding: 14px; border: 2px solid var(--ink); background: var(--lime); text-align: center; box-shadow: 4px 4px 0 var(--ink); }
 .mini-mastery strong { font-size: 2rem; line-height: 1; }
 .mini-mastery span { font-size: .7rem; font-weight: 900; }
+.review-route { display: grid; gap: 10px; margin-top: 18px; padding: 14px; border: 2px dashed var(--green); background: #f7ffe2; }
+.review-route > span, .review-quest-panel > span { color: var(--green); font-size: .68rem; font-weight: 900; letter-spacing: .12em; }
+.review-route > strong, .review-quest-panel > strong { font-size: 1.05rem; }
+.review-route ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.review-route li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 9px 10px; border: 1px solid var(--line); background: white; }
+.review-route li > span { padding: 3px 6px; color: white; background: var(--green); font-size: .62rem; font-weight: 900; }
+.review-route li strong { font-size: .86rem; }
+.review-route li small { color: #59645f; font-size: .68rem; font-weight: 900; }
+.review-quest-panel { display: grid; gap: 8px; margin-top: 16px; padding: 14px; border: 2px solid var(--ink); background: white; box-shadow: 4px 4px 0 var(--ink); }
+.review-quest-panel p { margin: 0; font-size: .82rem; }
+.review-complete { color: var(--green) !important; font-weight: 900; }
 .guardian-report { display: grid; gap: 18px; }
 .report-highlight { padding: 18px; border: 2px solid var(--ink); background: #fff7d8; box-shadow: 4px 4px 0 var(--ink); }
 .report-highlight h3, .report-section h3 { margin: 0 0 8px; font-size: 1.1rem; }

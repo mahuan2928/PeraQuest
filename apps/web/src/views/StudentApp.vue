@@ -91,6 +91,8 @@ const deviceReady = ref(false)
 const selectedQuestNodeId = ref<string | null>(null)
 const earnedReward = ref<GameReward | null>(null)
 const rewardCelebrationOpen = ref(false)
+const reviewQuestOpen = ref(false)
+const reviewQuestCompleted = ref(false)
 
 const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const learnReady = computed(() => props.capabilities?.canLearn === true)
@@ -115,6 +117,20 @@ const badgeLabels: Record<string, string> = {
   guardian_shield: 'ガーディアンシールド',
   level_check_cleared: 'レベルチェッククリア',
   level_check_challenger: 'Quest チャレンジャー',
+}
+const knowledgePointLabels: Record<string, string> = {
+  'grammar.past_tense': '過去形',
+  'vocabulary.context': '文脈から語彙を選ぶ力',
+  'reading.reason': '理由を読み取る力',
+  'grammar.comparative': '比較表現',
+  'listening.time': '時刻を聞き取る力',
+  'writing.word_order': '自然な語順',
+  'past-tense': '過去形',
+  'daily-vocabulary': '日常語彙',
+  'main-idea': '文章の要点をつかむ力',
+  comparatives: '比較表現',
+  'short-dialogue': '短い会話を聞き取る力',
+  'sentence-order': '自然な語順',
 }
 const questBlueprint = [
   {
@@ -161,16 +177,39 @@ const questMapNodes = computed<QuestMapNode[]>(() => questBlueprint.map((node, i
 const currentQuestNode = computed(() => questMapNodes.value.find((node) => node.status === 'current') ?? questMapNodes.value.at(-1)!)
 const selectedQuestNode = computed(() => questMapNodes.value.find((node) => node.id === selectedQuestNodeId.value) ?? currentQuestNode.value)
 const completedQuestCount = computed(() => questMapNodes.value.filter((node) => node.status === 'done').length)
+const reviewQuestItems = computed(() => [...props.knowledgeItems]
+  .sort((left, right) => left.masteryScore - right.masteryScore)
+  .slice(0, 3))
+const reviewQuestReady = computed(() => questStep.value >= 3 && reviewQuestItems.value.length > 0)
 const questStatusLabel = (status: QuestMapNode['status']) => {
   if (status === 'done') return '達成'
   if (status === 'current') return '次の目標'
   return 'ロック中'
+}
+const knowledgePointLabel = (knowledgePointRef: string) => knowledgePointLabels[knowledgePointRef] ?? '復習ポイント'
+const reviewStateLabel = (state: string) => {
+  if (state === 'mastered') return '安定'
+  if (state === 'due') return '復習優先'
+  if (state === 'learning') return '練習中'
+  return '確認'
 }
 const selectQuestNode = (node: QuestMapNode) => {
   selectedQuestNodeId.value = node.id
 }
 const closeRewardCelebration = () => {
   rewardCelebrationOpen.value = false
+}
+const startReviewQuest = () => {
+  if (!reviewQuestReady.value) return
+  selectedQuestNodeId.value = 'review'
+  reviewQuestOpen.value = true
+  reviewQuestCompleted.value = false
+  message.value = '復習の森に入りました。今日の3つを短く確認しましょう。'
+}
+const completeReviewQuest = () => {
+  if (!reviewQuestOpen.value) return
+  reviewQuestCompleted.value = true
+  message.value = '今日の復習クエストを完了しました。次の冒険へ進む準備ができています。'
 }
 
 const hasRewardValue = (reward: GameReward | null): reward is GameReward => (
@@ -290,6 +329,13 @@ watch(
 watch(currentQuestNode, (node) => {
   selectedQuestNodeId.value = node.id
 }, { immediate: true })
+
+watch(() => props.knowledgeItems.length, (count) => {
+  if (!count) {
+    reviewQuestOpen.value = false
+    reviewQuestCompleted.value = false
+  }
+})
 </script>
 
 <template>
@@ -595,6 +641,55 @@ watch(currentQuestNode, (node) => {
           <strong>{{ masteryAverage }}%</strong>
           <span>平均習熟度</span>
         </div>
+        <section
+          v-if="reviewQuestItems.length"
+          class="review-route"
+          aria-label="今日の復習クエスト"
+        >
+          <span>今日の復習クエスト</span>
+          <strong>復習の森ルート</strong>
+          <ol>
+            <li
+              v-for="item in reviewQuestItems"
+              :key="item.knowledgePointRef"
+            >
+              <span>{{ reviewStateLabel(item.state) }}</span>
+              <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
+              <small>習熟度 {{ Math.round(item.masteryScore * 100) }}%</small>
+            </li>
+          </ol>
+        </section>
+        <button
+          class="primary-action"
+          type="button"
+          :disabled="!reviewQuestReady"
+          @click="startReviewQuest"
+        >
+          {{ reviewQuestReady ? '復習クエストを始めます' : 'レベルチェック後に始められます' }}
+        </button>
+        <section
+          v-if="reviewQuestOpen"
+          class="review-quest-panel"
+          aria-live="polite"
+        >
+          <span>森のルート</span>
+          <strong>{{ reviewQuestItems.length }}つのポイントを確認中</strong>
+          <p>声に出して例文を読み、間違えた理由を1つだけ思い出しましょう。</p>
+          <button
+            class="secondary-action"
+            type="button"
+            :disabled="reviewQuestCompleted"
+            @click="completeReviewQuest"
+          >
+            {{ reviewQuestCompleted ? '復習済みです' : '今日の復習を完了します' }}
+          </button>
+          <p
+            v-if="reviewQuestCompleted"
+            class="review-complete"
+          >
+            今日の復習を完了しました。次は「次の島」の準備へ進みます。
+          </p>
+        </section>
       </article>
 
       <article class="action-card">

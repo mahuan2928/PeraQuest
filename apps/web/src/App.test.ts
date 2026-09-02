@@ -318,6 +318,45 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).not.toContain('報酬を獲得しました')
   })
 
+  it('opens a review quest from the review forest after level check progress', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/v1/me/game-state') {
+        return jsonResponse({ studentId: 'student-1', totalXp: 60, activityCoins: 20, questChapter: 0, questStep: 3, badges: ['guardian_shield', 'level_check_challenger'], updatedAt: '2026-08-31T12:01:00.000Z' })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    }))
+    const wrapper = mount(StudentApp, {
+      props: {
+        session: {
+          studentId: 'student-1',
+          studentToken: 'student-token',
+          guardianToken: 'guardian-token',
+          expiresAt: '2026-08-31T12:10:00.000Z',
+        },
+        capabilities: { canLearn: true, canUploadVoice: false, guardianLinkStatus: 'verified', voiceConsentStatus: 'missing' },
+        invitationCode: '',
+        knowledgeItems: [
+          { knowledgePointRef: 'grammar.past_tense', masteryScore: 0.25, state: 'due', dueAt: null },
+          { knowledgePointRef: 'vocabulary.context', masteryScore: 0.5, state: 'learning', dueAt: null },
+          { knowledgePointRef: 'reading.reason', masteryScore: 0.75, state: 'mastered', dueAt: null },
+        ],
+      },
+    })
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('復習クエストを始めます'))
+    expect(wrapper.text()).toContain('今日の復習クエスト')
+    expect(wrapper.text()).toContain('過去形')
+    expect(wrapper.text()).toContain('文脈から語彙を選ぶ力')
+
+    await wrapper.get('.review-route + .primary-action').trigger('click')
+    expect(wrapper.text()).toContain('森のルート')
+    expect(wrapper.text()).toContain('3つのポイントを確認中')
+
+    await wrapper.get('.review-quest-panel .secondary-action').trigger('click')
+    expect(wrapper.text()).toContain('今日の復習を完了しました')
+  })
+
   it('keeps demo practice unavailable without emitting or calling an API', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

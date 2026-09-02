@@ -21,6 +21,11 @@ npm run dev:api
 
 Copy `.env.example` to `.env`. Voice feature flags are off by default.
 
+## Demo
+
+- Online product demo runbook: `docs/demo-runbook.md`
+- Current demo entry: `https://peraquest-dev.larkjapandemo.workers.dev`
+
 ## Quality gate
 
 ```bash

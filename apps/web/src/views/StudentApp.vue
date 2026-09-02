@@ -510,6 +510,9 @@ const reviewStateLabel = (state: string) => {
 }
 const selectQuestNode = (node: QuestMapNode) => {
   selectedQuestNodeId.value = node.id
+  if (node.id === 'review' && reviewQuestReady.value && !reviewQuestOpen.value) {
+    startReviewQuest()
+  }
 }
 const fillDemoLevelCheckAnswers = () => {
   if (!attempt.value || resultSummary.value) return

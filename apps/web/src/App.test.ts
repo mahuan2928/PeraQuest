@@ -481,7 +481,9 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('過去形')
     expect(wrapper.text()).toContain('文脈から語彙を選ぶ力')
 
-    await wrapper.get('.review-route + .primary-action').trigger('click')
+    const reviewForestNode = wrapper.findAll('.quest-node-button').find((button) => button.text().includes('復習の森') && button.text().includes('復習ルート'))
+    expect(reviewForestNode).toBeDefined()
+    await reviewForestNode!.trigger('click')
     expect(wrapper.text()).toContain('森のルート')
     expect(wrapper.text()).toContain('3つのポイントを確認中')
     expect(wrapper.text()).toContain('例文を声に出して読みました')

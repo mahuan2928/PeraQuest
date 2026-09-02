@@ -36,6 +36,7 @@ const trialStatus = ref<TrialStatus>('idle')
 const onboardingPending = ref(false)
 const onboardingError = ref('')
 const demoPending = ref(false)
+const demoSlowStart = ref(false)
 const demoError = ref('')
 const demoRole = ref<DemoRole>('student')
 const demoSession = ref<DemoSessionResponse | null>(null)
@@ -61,7 +62,11 @@ async function refreshDemoKnowledge() {
 
 async function startProductDemo() {
   demoPending.value = true
+  demoSlowStart.value = false
   demoError.value = ''
+  const slowStartTimer = window.setTimeout(() => {
+    if (demoPending.value) demoSlowStart.value = true
+  }, 2500)
   try {
     const session = await createDemoSession()
     if (!session.ok) throw new Error('demo session failed')
@@ -74,9 +79,11 @@ async function startProductDemo() {
     step.value = 'demo'
   } catch (error) {
     console.error(error)
-    demoError.value = '体験セッションの有効期限が切れました。もう一度開始してください。'
+    demoError.value = 'デモ環境を準備できませんでした。少し待ってから、もう一度開始してください。'
   } finally {
+    window.clearTimeout(slowStartTimer)
     demoPending.value = false
+    demoSlowStart.value = false
   }
 }
 
@@ -226,6 +233,7 @@ function onStudentJourneyUpdated(summary: DemoJourneySummary) {
         v-if="step === 'onboarding'"
         :submitting="onboardingPending"
         :demo-submitting="demoPending"
+        :demo-slow-start="demoSlowStart"
         :submit-error="onboardingError || demoError"
         @submit="finishOnboarding"
         @start-demo="startProductDemo"
@@ -235,12 +243,16 @@ function onStudentJourneyUpdated(summary: DemoJourneySummary) {
         class="demo-product-shell"
       >
         <div class="demo-session-actions">
+          <div>
+            <strong>Demo Session</strong>
+            <span>状態が残った場合は、最初から新しい体験を開始できます。</span>
+          </div>
           <button
             type="button"
             class="secondary-action"
             @click="resetProductDemo"
           >
-            もう一度開始します
+            最初からやり直します
           </button>
         </div>
         <StudentApp

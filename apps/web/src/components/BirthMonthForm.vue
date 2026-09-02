@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-defineProps<{ submitting?: boolean; submitError?: string; demoSubmitting?: boolean }>()
+defineProps<{ submitting?: boolean; submitError?: string; demoSubmitting?: boolean; demoSlowStart?: boolean }>()
 const emit = defineEmits<{ submit: [birthMonth: string], startDemo: [] }>()
 const birthMonth = ref('')
 const attempted = ref(false)
@@ -43,6 +43,13 @@ function submit() {
     >
       {{ demoSubmitting ? 'デモを準備しています…' : 'デモを体験する' }}
     </button>
+    <p
+      v-if="demoSubmitting"
+      class="demo-start-note"
+      role="status"
+    >
+      {{ demoSlowStart ? 'デモ環境を起動しています。少し時間がかかる場合があります。' : '体験セッションを準備しています。' }}
+    </p>
 
     <form
       class="birth-form"

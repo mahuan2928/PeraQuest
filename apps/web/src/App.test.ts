@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { mount } from '@vue/test-utils'
 import type { TrialQuestion } from '@peraquest/contracts'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.vue'
 import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
@@ -98,6 +98,10 @@ beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
   vi.restoreAllMocks()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('minor onboarding vertical slice', () => {
@@ -265,6 +269,26 @@ describe('minor onboarding vertical slice', () => {
 
     await wrapper.get('nav button:nth-child(2)').trigger('click')
     expect(wrapper.text()).toContain('お子さまの学習を見守ります')
+
+    expect(wrapper.text()).toContain('Demo Session')
+    expect(wrapper.text()).toContain('状態が残った場合は、最初から新しい体験を開始できます。')
+    await wrapper.findAll('button').find((button) => button.text().includes('最初からやり直します'))!.trigger('click')
+    expect(wrapper.text()).toContain('デモを体験する')
+    expect(wrapper.text()).not.toContain('Quest Map')
+  })
+
+  it('shows a slow-start hint while the online demo backend is waking up', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+    const wrapper = mount(App)
+
+    await wrapper.get('[data-testid="start-product-demo"]').trigger('click')
+    expect(wrapper.text()).toContain('体験セッションを準備しています。')
+
+    vi.advanceTimersByTime(2500)
+    await Promise.resolve()
+
+    expect(wrapper.text()).toContain('デモ環境を起動しています。少し時間がかかる場合があります。')
   })
 
   it('shows the student journey summary in the guardian report', async () => {

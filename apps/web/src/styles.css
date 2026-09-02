@@ -67,8 +67,12 @@ h1 span { color: var(--green); }
 .redeemed-note { color: var(--green); font-weight: 800; }
 .status-note { margin: 12px 0 0; color: var(--green); font-size: .82rem; font-weight: 800; }
 .demo-start-button { max-width: 360px; margin-top: 12px; background: var(--orange); }
+.demo-start-note { display: inline-flex; max-width: 520px; margin: 12px 0 0; padding: 9px 12px; border-left: 5px solid var(--orange); background: #fff7d8; color: var(--ink); font-size: .82rem; font-weight: 900; line-height: 1.5; }
 .demo-product-shell { display: grid; gap: 18px; }
-.demo-session-actions { display: flex; justify-content: flex-end; }
+.demo-session-actions { display: flex; justify-content: space-between; gap: 14px; align-items: center; padding: 12px 14px; border: 2px solid var(--ink); background: white; box-shadow: 4px 4px 0 var(--ink); }
+.demo-session-actions div { display: grid; gap: 3px; }
+.demo-session-actions strong { font-size: .86rem; }
+.demo-session-actions span { color: #59645f; font-size: .74rem; font-weight: 800; line-height: 1.4; }
 .secondary-action { min-height: 46px; padding: 10px 14px; border: 2px solid var(--ink); color: var(--ink); background: var(--paper); font-size: .8rem; font-weight: 900; box-shadow: 3px 3px 0 var(--ink); }
 .product-panel { width: min(980px, 100%); }
 .product-hero { margin-bottom: 28px; }

@@ -20,7 +20,7 @@ const emit = defineEmits<{ startTrial: [] }>()
       <span>✓</span>
     </div>
     <p class="eyebrow">
-      SAFETY CHECK
+      安全確認
     </p>
     <h1 id="guardian-title">
       保護者の方との<br>連携を待っています
@@ -44,7 +44,7 @@ const emit = defineEmits<{ startTrial: [] }>()
       <div>
         <p class="card-kicker">
           待っている間に
-        </p><h2>英検3級 おためしクエスト</h2><p>記録を残さず、12問だけ体験できます。</p>
+        </p><h2>英検3級 おためしクエスト</h2><p>記録を残さず、12問だけおためしできます。</p>
       </div>
       <button
         class="primary-action"
@@ -53,7 +53,7 @@ const emit = defineEmits<{ startTrial: [] }>()
         :disabled="trialRedeemed || trialPending"
         @click="emit('startTrial')"
       >
-        {{ trialStatus === 'expired' || trialRedeemed ? 'おためし済みです' : trialPending ? '確認中…' : trialStatus === 'error' ? 'もう一度試す' : '1回だけ体験する' }}
+        {{ trialStatus === 'expired' || trialRedeemed ? 'おためし済みです' : trialPending ? '確認中…' : trialStatus === 'error' ? 'もう一度試す' : '1回だけおためしする' }}
       </button>
     </div>
     <p

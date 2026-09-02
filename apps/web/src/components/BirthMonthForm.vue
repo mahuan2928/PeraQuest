@@ -26,18 +26,18 @@ function submit() {
       Q
     </div>
     <p class="eyebrow">
-      英検3級・学習冒険デモ
+      英検3級・学習アプリ
     </p>
     <h1 id="welcome-title">
       学習成果が、<br><span>冒険の進みになる。</span>
     </h1>
     <p class="lead">
-      レベルチェック、復習クエスト、バッジ、保護者レポートまでを1つのオンライン体験で確認できます。
+      レベルチェック、復習クエスト、バッジ、保護者レポートまでをアプリでそのまま確認できます。
     </p>
     <div class="demo-promise">
-      <strong>3分で体験できること</strong>
+      <strong>3分でわかること</strong>
       <ul>
-        <li>生徒は Quest Map に沿って英検3級の冒険を進めます。</li>
+        <li>生徒は冒険マップに沿って英検3級の学習を進めます。</li>
         <li>XP、コイン、バッジが冒険バッグに集まります。</li>
         <li>保護者は今日の学習成果と次のおすすめを確認できます。</li>
       </ul>
@@ -47,17 +47,17 @@ function submit() {
       aria-label="PeraQuest の特徴"
     >
       <article>
-        <span>For Students</span>
+        <span>生徒向け</span>
         <strong>続けたくなる学習</strong>
         <p>短い問題、復習クエスト、ごほうびで、毎日の英検3級学習を冒険に変えます。</p>
       </article>
       <article>
-        <span>For Guardians</span>
+        <span>保護者向け</span>
         <strong>見守れるレポート</strong>
         <p>得意、復習ポイント、次のおすすめを親子で話しやすい言葉にまとめます。</p>
       </article>
       <article>
-        <span>Best Fit</span>
+        <span>こんな方に</span>
         <strong>親子で始める英検準備</strong>
         <p>はじめて英検3級に挑戦する小中学生の、最初の習慣づくりに向いています。</p>
       </article>
@@ -69,8 +69,8 @@ function submit() {
       <strong>安心して試せること</strong>
       <ul>
         <li>氏名・学校名・地域は入力しません。</li>
-        <li>状態が残った場合は体験セッションを最初からやり直せます。</li>
-        <li>正式なお支払い機能はまだ表示しません。</li>
+        <li>記録はいつでもリセットできます。</li>
+        <li>お支払いは発生しません。</li>
       </ul>
     </div>
     <button
@@ -80,14 +80,14 @@ function submit() {
       :disabled="demoSubmitting"
       @click="emit('startDemo')"
     >
-      {{ demoSubmitting ? 'デモを準備しています…' : 'デモを体験する' }}
+      {{ demoSubmitting ? '準備しています…' : '無料ではじめる' }}
     </button>
     <p
       v-if="demoSubmitting"
       class="demo-start-note"
       role="status"
     >
-      {{ demoSlowStart ? 'デモ環境を起動しています。少し時間がかかる場合があります。' : '体験セッションを準備しています。' }}
+      {{ demoSlowStart ? '起動しています。少し時間がかかる場合があります。' : 'アカウントを準備しています。' }}
     </p>
 
     <form
@@ -128,7 +128,7 @@ function submit() {
         type="submit"
         :disabled="submitting"
       >
-        {{ submitting ? '安全設定を確認中…' : '自分で登録して体験する' }} <span aria-hidden="true">→</span>
+        {{ submitting ? '安全設定を確認中…' : '生年月から登録する' }} <span aria-hidden="true">→</span>
       </button>
       <p
         v-if="submitError"

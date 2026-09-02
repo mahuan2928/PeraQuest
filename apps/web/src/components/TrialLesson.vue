@@ -84,7 +84,7 @@ function next() {
     <header class="lesson-header">
       <div>
         <p class="eyebrow">
-          TRIAL QUEST
+          おためし
         </p><strong>英検3級 · おためし</strong>
       </div>
       <p aria-live="polite">

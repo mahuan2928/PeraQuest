@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, provide, ref, toRef } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import type { TrialQuestion } from '@peraquest/contracts'
 import { ApiRequestError, createStudentOnboarding, createTrialAttempt, getCapabilities, getGuardianStatus } from './api/onboarding'
 import { createDemoSession, fetchDemoCapabilities, fetchDemoStudentKnowledge, type DemoSessionResponse } from './api/demoFlow'
@@ -8,8 +9,10 @@ import GuardianWait from './components/GuardianWait.vue'
 import TrialLesson from './components/TrialLesson.vue'
 import TrialResult from './components/TrialResult.vue'
 import KnowledgeMastery from './components/KnowledgeMastery.vue'
-import StudentApp from './views/StudentApp.vue'
-import GuardianApp from './views/GuardianApp.vue'
+import StudentExperienceProvider from './providers/StudentExperienceProvider.vue'
+import PresenterBar from './providers/PresenterBar.vue'
+import { guardianContextKey } from './providers/guardianContext'
+import { routes } from './router'
 
 type Step = 'onboarding' | 'guardian' | 'trial' | 'result' | 'adult' | 'demo'
 type DemoRole = 'student' | 'guardian'
@@ -60,6 +63,70 @@ async function refreshDemoKnowledge() {
   demoKnowledgeItems.value = ((knowledge.body as { items?: typeof demoKnowledgeItems.value }).items ?? [])
 }
 
+const route = useRoute()
+const router = useRouter()
+const navItems = computed(() => routes.filter((item) => item.meta?.nav))
+const isGuardianView = computed(() => route.path === '/guardian')
+
+provide(guardianContextKey, {
+  session: toRef(() => demoSession.value),
+  invitationCode: toRef(() => demoInvitationCode.value),
+  capabilities: toRef(() => demoCapabilities.value),
+  knowledgeItems: toRef(() => demoKnowledgeItems.value),
+  studentJourneySummary: toRef(() => demoJourneySummary.value),
+  reportRefreshKey: toRef(() => guardianReportRefreshKey.value),
+  onVerified: () => { void onDemoChanged() },
+  onConsentChanged: () => { void onDemoChanged() },
+  onKnowledgeUpdated: (items) => { demoKnowledgeItems.value = items },
+})
+
+const demoSessionStorageKey = 'peraquest.demo.session'
+
+function saveDemoSession(session: DemoSessionResponse) {
+  try {
+    sessionStorage.setItem(demoSessionStorageKey, JSON.stringify(session))
+  } catch {
+    // ストレージが使えない環境では、その回かぎりの体験として続行します。
+  }
+}
+
+function clearDemoSession() {
+  try {
+    sessionStorage.removeItem(demoSessionStorageKey)
+  } catch {
+    // 破棄できなくても操作は継続します。
+  }
+}
+
+function readDemoSession(): DemoSessionResponse | null {
+  try {
+    const raw = sessionStorage.getItem(demoSessionStorageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as DemoSessionResponse
+    if (!parsed?.studentToken || !parsed?.guardianToken || !parsed?.studentId) return null
+    if (parsed.expiresAt && new Date(parsed.expiresAt).getTime() <= Date.now()) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+// URL を直接開いた場合や再読み込みでも、同じ体験セッションを続けられるようにします。
+onMounted(async () => {
+  if (step.value !== 'onboarding') return
+  const stored = readDemoSession()
+  if (!stored) return
+  demoSession.value = stored
+  demoRole.value = 'student'
+  try {
+    await refreshDemoState()
+    step.value = 'demo'
+  } catch {
+    clearDemoSession()
+    demoSession.value = null
+  }
+})
+
 async function startProductDemo() {
   demoPending.value = true
   demoSlowStart.value = false
@@ -71,15 +138,17 @@ async function startProductDemo() {
     const session = await createDemoSession()
     if (!session.ok) throw new Error('demo session failed')
     demoSession.value = session.body
+    saveDemoSession(session.body)
     demoInvitationCode.value = ''
     demoKnowledgeItems.value = []
     demoJourneySummary.value = null
     demoRole.value = 'student'
     await refreshDemoState()
     step.value = 'demo'
+    if (route.path !== '/') await router.replace('/')
   } catch (error) {
     console.error(error)
-    demoError.value = 'デモ環境を準備できませんでした。少し待ってから、もう一度開始してください。'
+    demoError.value = '準備できませんでした。少し待ってから、もう一度お試しください。'
   } finally {
     window.clearTimeout(slowStartTimer)
     demoPending.value = false
@@ -88,6 +157,7 @@ async function startProductDemo() {
 }
 
 function resetProductDemo() {
+  clearDemoSession()
   demoSession.value = null
   demoCapabilities.value = null
   demoInvitationCode.value = ''
@@ -205,22 +275,20 @@ function onStudentJourneyUpdated(summary: DemoJourneySummary) {
       <nav
         v-if="step === 'demo'"
         class="role-tabs"
-        aria-label="体験する役割"
+        aria-label="表示の切り替え"
       >
-        <button
-          type="button"
-          :class="{ active: demoRole === 'student' }"
-          @click="demoRole = 'student'"
+        <RouterLink
+          :class="{ active: !isGuardianView }"
+          to="/"
         >
-          生徒として体験
-        </button>
-        <button
-          type="button"
-          :class="{ active: demoRole === 'guardian' }"
-          @click="demoRole = 'guardian'"
+          生徒
+        </RouterLink>
+        <RouterLink
+          :class="{ active: isGuardianView }"
+          to="/guardian"
         >
-          保護者として体験
-        </button>
+          保護者
+        </RouterLink>
       </nav>
       <span v-else>英検3級</span>
     </header>
@@ -242,21 +310,7 @@ function onStudentJourneyUpdated(summary: DemoJourneySummary) {
         v-else-if="step === 'demo' && demoSession"
         class="demo-product-shell"
       >
-        <div class="demo-session-actions">
-          <div>
-            <strong>Demo Session</strong>
-            <span>状態が残った場合は、最初から新しい体験を開始できます。</span>
-          </div>
-          <button
-            type="button"
-            class="secondary-action"
-            @click="resetProductDemo"
-          >
-            最初からやり直します
-          </button>
-        </div>
-        <StudentApp
-          v-show="demoRole === 'student'"
+        <StudentExperienceProvider
           :session="demoSession"
           :capabilities="demoCapabilities"
           :invitation-code="demoInvitationCode"
@@ -265,19 +319,33 @@ function onStudentJourneyUpdated(summary: DemoJourneySummary) {
           @invitation-created="onDemoInvitationCreated"
           @knowledge-updated="onStudentKnowledgeUpdated"
           @journey-updated="onStudentJourneyUpdated"
-        />
-        <GuardianApp
-          v-show="demoRole === 'guardian'"
-          :session="demoSession"
-          :invitation-code="demoInvitationCode"
-          :capabilities="demoCapabilities"
-          :knowledge-items="demoKnowledgeItems"
-          :student-journey-summary="demoJourneySummary"
-          :report-refresh-key="guardianReportRefreshKey"
-          @verified="onDemoChanged"
-          @consent-changed="onDemoChanged"
-          @knowledge-updated="demoKnowledgeItems = $event"
-        />
+        >
+          <PresenterBar @reset="resetProductDemo" />
+          <nav
+            v-if="!isGuardianView"
+            class="app-nav"
+            aria-label="学習メニュー"
+          >
+            <RouterLink
+              v-for="item in navItems"
+              :key="String(item.path)"
+              :to="String(item.path)"
+              class="app-nav-link"
+            >
+              {{ item.meta?.title }}
+            </RouterLink>
+          </nav>
+          <header
+            v-if="!isGuardianView"
+            class="page-head"
+          >
+            <p class="eyebrow">
+              生徒アプリ
+            </p>
+            <h1>{{ route.meta?.title ?? 'ホーム' }}</h1>
+          </header>
+          <RouterView />
+        </StudentExperienceProvider>
         <p
           v-if="demoError"
           class="field-error"

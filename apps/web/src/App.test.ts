@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { routes } from './router'
 import type { TrialQuestion } from '@peraquest/contracts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.vue'
@@ -7,7 +9,7 @@ import BirthMonthForm from './components/BirthMonthForm.vue'
 import GuardianWait from './components/GuardianWait.vue'
 import KnowledgeMastery from './components/KnowledgeMastery.vue'
 import TrialLesson from './components/TrialLesson.vue'
-import StudentApp from './views/StudentApp.vue'
+import StudentApp from './test-support/StudentHarness.vue'
 import GuardianApp from './views/GuardianApp.vue'
 
 const firstQuestion: TrialQuestion = {
@@ -104,24 +106,30 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+function mountApp() {
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  const wrapper = mount(App, { global: { plugins: [router], stubs: { teleport: true } } })
+  return { wrapper, router }
+}
+
 describe('minor onboarding vertical slice', () => {
   it('marks the header home link as a dedicated touch target', () => {
-    const wrapper = mount(App)
+    const { wrapper } = mountApp()
     expect(wrapper.get('header a[aria-label="LingoQuest JP ホーム"]').classes()).toContain('home-link')
   })
 
   it('requires a valid birth month before continuing', async () => {
     const wrapper = mount(BirthMonthForm)
-    expect(wrapper.text()).toContain('英検3級・学習冒険デモ')
+    expect(wrapper.text()).toContain('英検3級・学習アプリ')
     expect(wrapper.text()).toContain('学習成果が、冒険の進みになる。')
-    expect(wrapper.text()).toContain('3分で体験できること')
+    expect(wrapper.text()).toContain('3分でわかること')
     expect(wrapper.text()).toContain('保護者は今日の学習成果と次のおすすめを確認できます。')
     expect(wrapper.text()).toContain('続けたくなる学習')
     expect(wrapper.text()).toContain('見守れるレポート')
     expect(wrapper.text()).toContain('親子で始める英検準備')
     expect(wrapper.text()).toContain('安心して試せること')
     expect(wrapper.text()).toContain('氏名・学校名・地域は入力しません。')
-    expect(wrapper.text()).toContain('正式なお支払い機能はまだ表示しません。')
+    expect(wrapper.text()).toContain('お支払いは発生しません。')
 
     await wrapper.get('form').trigger('submit')
     expect(wrapper.get('[role="alert"]').text()).toContain('正しい生年月')
@@ -217,7 +225,7 @@ describe('minor onboarding vertical slice', () => {
 
   it('loads access policy and starts a server-authorized trial', async () => {
     installSuccessfulApi()
-    const wrapper = mount(App)
+    const { wrapper } = mountApp()
     await wrapper.get('[data-testid="birth-month"]').setValue('2012-04')
     await wrapper.get('form').trigger('submit')
     await vi.waitFor(() => expect(wrapper.text()).toContain('保護者の方との'))
@@ -230,7 +238,7 @@ describe('minor onboarding vertical slice', () => {
 
   it('switches to the knowledge mastery page for an active learner', async () => {
     installActiveApi()
-    const wrapper = mount(App)
+    const { wrapper } = mountApp()
 
     expect(wrapper.find('[data-testid="birth-month"]').exists()).toBe(true)
     await wrapper.get('[data-testid="birth-month"]').setValue('2000-04')
@@ -252,23 +260,28 @@ describe('minor onboarding vertical slice', () => {
       }, 201))
       .mockResolvedValueOnce(jsonResponse({ canLearn: false, canUploadVoice: false, guardianLinkStatus: 'pending', voiceConsentStatus: 'missing', entitlements: [] }))
       .mockResolvedValueOnce(jsonResponse({ studentId: 'student-1', totalXp: 0, activityCoins: 0, questChapter: 0, questStep: 0, badges: [], updatedAt: '2026-08-31T12:00:00.000Z' })))
-    const wrapper = mount(App)
+    const { wrapper, router } = mountApp()
 
     await wrapper.get('[data-testid="start-product-demo"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('生徒アプリ'))
 
-    expect(wrapper.text()).toContain('生徒として体験')
-    expect(wrapper.text()).toContain('保護者として体験')
-    expect(wrapper.text()).toContain('デモ進行ガイド')
+    expect(wrapper.text()).toContain('レベルチェック')
+    expect(wrapper.text()).toContain('冒険バッグ')
+    expect(wrapper.text()).toContain('説明者用')
     expect(wrapper.text()).toContain('保護者への確認依頼を作ります')
-    await wrapper.findAll('button').find((button) => button.text().includes('デモ進行ガイド'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('進行ガイド'))!.trigger('click')
     expect(wrapper.text()).toContain('「招待コードを発行します」を押します。')
     expect(wrapper.text()).toContain('最初に、安全に学習を始めるための親子連携を見せます。')
     expect(wrapper.text()).toContain('招待コード')
     expect(wrapper.text()).toContain('標準デモの口径')
     expect(wrapper.text()).toContain('+100 XP / +50 コイン')
     expect(wrapper.text()).toContain('リスニング入り江体験バッジを紹介します。')
-    expect(wrapper.text()).toContain('Quest Map')
+    expect(wrapper.text()).not.toContain('HTTP')
+    expect(wrapper.text()).not.toContain('token')
+
+    await router.push('/map')
+    await flushPromises()
+    expect(wrapper.text()).toContain('冒険マップ')
     expect(wrapper.text()).toContain('はじまりの港')
     expect(wrapper.text()).toContain('Chapter 1')
     expect(wrapper.text()).toContain('はじまりの島')
@@ -279,36 +292,37 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('現在の目標')
     expect(wrapper.text()).toContain('次の目標')
     expect(wrapper.text()).toContain('スポット詳細')
+    expect(wrapper.text()).toContain('LQ')
+
+    await router.push('/collection')
+    await flushPromises()
     expect(wrapper.text()).toContain('冒険バッグ')
     expect(wrapper.text()).toContain('XP クリスタル')
     expect(wrapper.text()).toContain('冒険コイン')
     expect(wrapper.text()).toContain('次に集めるもの')
-    expect(wrapper.text()).toContain('LQ')
-    expect(wrapper.text()).not.toContain('HTTP')
-    expect(wrapper.text()).not.toContain('token')
 
-    await wrapper.get('nav button:nth-child(2)').trigger('click')
+    await router.push('/guardian')
+    await flushPromises()
     expect(wrapper.text()).toContain('お子さまの学習を見守ります')
 
-    expect(wrapper.text()).toContain('Demo Session')
-    expect(wrapper.text()).toContain('状態が残った場合は、最初から新しい体験を開始できます。')
-    await wrapper.findAll('button').find((button) => button.text().includes('最初からやり直します'))!.trigger('click')
-    expect(wrapper.text()).toContain('デモを体験する')
-    expect(wrapper.text()).not.toContain('Demo Session')
+    expect(wrapper.text()).toContain('説明者用')
+        await wrapper.findAll('button').find((button) => button.text().includes('セッションを再開'))!.trigger('click')
+    expect(wrapper.text()).toContain('無料ではじめる')
+    expect(wrapper.text()).not.toContain('説明者用')
   })
 
   it('shows a slow-start hint while the online demo backend is waking up', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
-    const wrapper = mount(App)
+    const { wrapper } = mountApp()
 
     await wrapper.get('[data-testid="start-product-demo"]').trigger('click')
-    expect(wrapper.text()).toContain('体験セッションを準備しています。')
+    expect(wrapper.text()).toContain('アカウントを準備しています。')
 
     vi.advanceTimersByTime(2500)
     await Promise.resolve()
 
-    expect(wrapper.text()).toContain('デモ環境を起動しています。少し時間がかかる場合があります。')
+    expect(wrapper.text()).toContain('起動しています。少し時間がかかる場合があります。')
   })
 
   it('shows the student journey summary in the guardian report', async () => {
@@ -418,6 +432,7 @@ describe('minor onboarding vertical slice', () => {
       throw new Error(`Unexpected request: ${url}`)
     }))
     const wrapper = mount(StudentApp, {
+      global: { stubs: { teleport: true } },
       props: {
         session: {
           studentId: 'student-1',
@@ -431,18 +446,18 @@ describe('minor onboarding vertical slice', () => {
       },
     })
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Quest Map'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('冒険マップ'))
     await wrapper.get('.lesson-panel .primary-action').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Yesterday, I ___ my homework.'))
-    expect(wrapper.text()).toContain('デモ用の回答を入れます')
-    await wrapper.findAll('button').find((button) => button.text().includes('デモ用の回答を入れます'))!.trigger('click')
-    expect(wrapper.text()).toContain('デモ用の回答を入力しました。')
+    expect(wrapper.text()).toContain('回答を自動入力')
+    await wrapper.findAll('button').find((button) => button.text().includes('回答を自動入力'))!.trigger('click')
+    expect(wrapper.text()).toContain('回答を入力しました。')
     await wrapper.get('.question-card .primary-action').trigger('click')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('報酬を獲得しました'))
     expect(wrapper.text()).toContain('+60 XP')
     expect(wrapper.text()).toContain('+20 コイン')
-    expect(wrapper.text()).toContain('Quest チャレンジャー')
+    expect(wrapper.text()).toContain('チャレンジャー')
     expect(wrapper.text()).toContain('60 XP を集めました。')
     expect(wrapper.text()).toContain('20 コインを持っています。')
 
@@ -480,6 +495,7 @@ describe('minor onboarding vertical slice', () => {
       throw new Error(`Unexpected request: ${url}`)
     }))
     const wrapper = mount(StudentApp, {
+      global: { stubs: { teleport: true } },
       props: {
         session: {
           studentId: 'student-1',
@@ -493,10 +509,10 @@ describe('minor onboarding vertical slice', () => {
       },
     })
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Quest Map'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('冒険マップ'))
     await wrapper.get('.lesson-panel .primary-action').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Yesterday, I ___ my homework.'))
-    await wrapper.findAll('button').find((button) => button.text().includes('デモ用の回答を入れます'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('回答を自動入力'))!.trigger('click')
     await wrapper.get('.question-card .primary-action').trigger('click')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('レベルチェックの結果を保存しました。進捗は少し待ってから更新されます。'))
@@ -514,6 +530,7 @@ describe('minor onboarding vertical slice', () => {
       throw new Error(`Unexpected request: ${url}`)
     }))
     const wrapper = mount(StudentApp, {
+      global: { stubs: { teleport: true } },
       props: {
         session: {
           studentId: 'student-1',
@@ -562,14 +579,14 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('復習の森クリア')
     expect(wrapper.text()).toContain('次の冒険は準備中です')
 
-    await wrapper.findAll('button').find((button) => button.text().includes('近日公開の体験'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('近日公開'))!.trigger('click')
     await wrapper.findAll('button').find((button) => button.text().includes('次の島をプレビューします'))!.trigger('click')
     expect(wrapper.text()).toContain('リスニング入り江')
     expect(wrapper.text()).toContain('短い会話を聞き取り、時間・理由・気持ちを選ぶ新しい冒険です。')
     expect(wrapper.text()).toContain('保護者レポートに次のおすすめとして表示予定')
     expect(wrapper.text()).toContain('Chapter 3')
 
-    await wrapper.findAll('button').find((button) => button.text().includes('1問だけ体験します'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('1問ためしてみる'))!.trigger('click')
     expect(wrapper.text()).toContain('どこで会いますか？')
     expect(wrapper.text()).toContain("Let's meet at the library after school.")
     await wrapper.get('input[value="library"]').setValue(true)
@@ -582,10 +599,10 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('28 コインを持っています。')
     expect(wrapper.text()).toContain('リスニング入り江を体験しました')
     expect(wrapper.text()).toContain('保護者レポートへ切り替えます')
-    await wrapper.findAll('button').find((button) => button.text().includes('デモ進行ガイド'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('進行ガイド'))!.trigger('click')
     expect(wrapper.text()).toContain('上部の「保護者として体験」を押します。')
     expect(wrapper.text()).toContain('次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。')
-    expect(wrapper.findAll('button').some((button) => button.text().includes('体験済みです'))).toBe(true)
+    expect(wrapper.findAll('button').some((button) => button.text().includes('ためしました'))).toBe(true)
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {
@@ -596,7 +613,7 @@ describe('minor onboarding vertical slice', () => {
 
     expect(buttons.length).toBeGreaterThan(0)
     expect(buttons.every((button) => button.attributes('disabled') !== undefined)).toBe(true)
-    expect(wrapper.text()).toContain('体験表示では利用できません')
+    expect(wrapper.text()).toContain('サンプルでは利用できません')
 
     const firstButton = buttons.at(0)
     expect(firstButton).toBeDefined()
@@ -614,7 +631,7 @@ describe('minor onboarding vertical slice', () => {
       return baseImplementation(input, init)
     })
 
-    const wrapper = mount(App)
+    const { wrapper } = mountApp()
     await wrapper.get('[data-testid="birth-month"]').setValue('2012-04')
     await wrapper.get('form').trigger('submit')
     await vi.waitFor(() => expect(wrapper.find('[data-testid="start-trial"]').exists()).toBe(true))
@@ -632,7 +649,7 @@ describe('minor onboarding vertical slice', () => {
 
   it('fails closed when onboarding policy cannot be loaded', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({}, 503)))
-    const wrapper = mount(App)
+    const { wrapper } = mountApp()
     await wrapper.get('[data-testid="birth-month"]').setValue('2012-04')
     await wrapper.get('form').trigger('submit')
     await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('安全設定を確認できませんでした'))
@@ -649,7 +666,7 @@ describe('minor onboarding vertical slice', () => {
       return baseImplementation(input, init)
     })
 
-    const wrapper = mount(App)
+    const { wrapper } = mountApp()
     await wrapper.get('[data-testid="birth-month"]').setValue('2012-04')
     await wrapper.get('form').trigger('submit')
     await vi.waitFor(() => expect(wrapper.find('[data-testid="start-trial"]').exists()).toBe(true))

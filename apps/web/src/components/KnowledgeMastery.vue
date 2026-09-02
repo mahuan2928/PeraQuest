@@ -22,7 +22,7 @@ import { knowledgeGroups } from '../data/knowledge'
           class="demo-notice"
           data-testid="mastery-demo-notice"
         >
-          <strong>体験表示</strong> 表示中の掌握度はサンプルです。実際の学習データではありません。
+          <strong>サンプル表示</strong> 表示中の掌握度はサンプルです。実際の学習データではありません。
         </p>
       </div>
       <div
@@ -107,10 +107,10 @@ import { knowledgeGroups } from '../data/knowledge'
               class="practice-button"
               type="button"
               disabled
-              :aria-label="`${point.title}の練習は体験表示では利用できません`"
+              :aria-label="`${point.title}の練習はサンプルでは利用できません`"
               data-testid="practice-unavailable"
             >
-              練習する（体験表示では利用できません）
+              練習する（サンプルでは利用できません）
             </button>
           </li>
         </ul>

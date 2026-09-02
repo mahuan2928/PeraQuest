@@ -130,7 +130,7 @@ test('real API 410 expiry returns to GuardianWait and never starts a second tria
   await page.getByTestId('birth-month').fill('2012-04')
   await page.getByTestId('onboarding-submit').click()
   await page.getByTestId('start-trial').click()
-  await expect(page.getByText('TRIAL QUEST')).toBeVisible()
+  await expect(page.getByText('おためし', { exact: true })).toBeVisible()
   expiryClock = new Date('2026-08-27T00:31:00.000Z')
   await page.getByRole('radio').first().check()
   const expiredResponse = page.waitForResponse((response) =>
@@ -142,7 +142,7 @@ test('real API 410 expiry returns to GuardianWait and never starts a second tria
   await expect(page.getByRole('alert')).toContainText('有効期限が切れました')
   await expect(page.getByText(/新しいおためしは開始せず、保護者の方に連携/)).toBeVisible()
   await expect(page.getByTestId('start-trial')).toBeDisabled()
-  await expect(page.getByText('TRIAL QUEST')).toHaveCount(0)
+  await expect(page.getByText('おためし', { exact: true })).toHaveCount(0)
   expect(trialStarts).toBe(1)
 })
 
@@ -163,7 +163,7 @@ test('trial API failure keeps the minor on the restricted guardian screen', asyn
 
   await expect(page.getByRole('alert')).toContainText('おためしクエストを開始できませんでした')
   await expect(page.getByRole('heading', { name: /保護者の方との/ })).toBeVisible()
-  await expect(page.getByText('TRIAL QUEST')).toHaveCount(0)
+  await expect(page.getByText('おためし', { exact: true })).toHaveCount(0)
 })
 
 test('fails closed when the onboarding API is unavailable', async ({ page }) => {

@@ -162,11 +162,14 @@ function friendlyError() {
 }
 
 async function confirmInvitation() {
-  if (!inputCode.value || busy.value) return
+  if (!inputCode.value.trim() || busy.value) return
   busy.value = true
   error.value = ''
   try {
-    const response = await verifyDemoGuardian(props.session.guardianToken, inputCode.value)
+    // 画面では読みやすさのため4文字ごとに区切って表示しているため、
+    // 空白を取り除いてから照合します。
+    const normalizedCode = inputCode.value.replace(/\s+/g, '')
+    const response = await verifyDemoGuardian(props.session.guardianToken, normalizedCode)
     if (!response.ok) {
       error.value = friendlyError()
       return
@@ -256,7 +259,7 @@ function stateLabel(state: string) {
 function badgeLabel(badge: string) {
   if (badge === 'guardian_shield') return 'ガーディアンシールド'
   if (badge === 'level_check_cleared') return 'レベルチェッククリア'
-  if (badge === 'level_check_challenger') return 'Quest チャレンジャー'
+  if (badge === 'level_check_challenger') return 'チャレンジャー'
   if (badge === 'review_forest_cleared') return '復習の森クリア'
   if (badge === 'listening_cove_trial') return 'リスニング入り江体験'
   return badge
@@ -326,8 +329,8 @@ function badgeLabel(badge: string) {
 
       <article class="guardian-card">
         <h2>学習プラン</h2>
-        <p>未契約です。正式なお支払い機能は準備中です。</p>
-        <span class="plan-badge">近日公開</span>
+        <p>現在は無料でご利用いただけます。</p>
+        <span class="plan-badge">無料プラン</span>
       </article>
     </section>
 
@@ -393,7 +396,7 @@ function badgeLabel(badge: string) {
           aria-label="お子さまの冒険まとめ"
         >
           <p class="card-kicker">
-            Quest Report
+            学習レポート
           </p>
           <h3>お子さまの冒険まとめ</h3>
           <p>今日の学習で進んだ場所と、獲得したごほうびを保護者向けにまとめました。</p>
@@ -508,7 +511,7 @@ function badgeLabel(badge: string) {
           v-if="learningSummary"
           class="report-section"
         >
-          <h3>Quest の成長</h3>
+          <h3>クエストの記録</h3>
           <p>{{ learningSummary.quest.summary }}</p>
           <div
             v-if="learningSummary.quest.badges.length"
@@ -570,10 +573,6 @@ function badgeLabel(badge: string) {
       </div>
     </section>
 
-    <section class="future-card">
-      <h2>近日公開</h2>
-      <p>正式なお支払い機能と Quest Map の拡張は準備中です。</p>
-    </section>
 
     <p
       v-if="message"

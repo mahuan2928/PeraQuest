@@ -26,14 +26,22 @@ function submit() {
       Q
     </div>
     <p class="eyebrow">
-      英検3級・はじめてのクエスト
+      英検3級・学習冒険デモ
     </p>
     <h1 id="welcome-title">
-      今日の3分が、<br><span>自信に変わる。</span>
+      学習成果が、<br><span>冒険の進みになる。</span>
     </h1>
     <p class="lead">
-      英検3級に向けて、あなたに合う冒険を準備します。
+      レベルチェック、復習クエスト、バッジ、保護者レポートまでを1つのオンライン体験で確認できます。
     </p>
+    <div class="demo-promise">
+      <strong>3分で体験できること</strong>
+      <ul>
+        <li>生徒は Quest Map に沿って英検3級の冒険を進めます。</li>
+        <li>XP、コイン、バッジが冒険バッグに集まります。</li>
+        <li>保護者は今日の学習成果と次のおすすめを確認できます。</li>
+      </ul>
+    </div>
     <button
       class="primary-action demo-start-button"
       type="button"

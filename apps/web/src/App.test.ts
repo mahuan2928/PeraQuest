@@ -112,6 +112,11 @@ describe('minor onboarding vertical slice', () => {
 
   it('requires a valid birth month before continuing', async () => {
     const wrapper = mount(BirthMonthForm)
+    expect(wrapper.text()).toContain('英検3級・学習冒険デモ')
+    expect(wrapper.text()).toContain('学習成果が、冒険の進みになる。')
+    expect(wrapper.text()).toContain('3分で体験できること')
+    expect(wrapper.text()).toContain('保護者は今日の学習成果と次のおすすめを確認できます。')
+
     await wrapper.get('form').trigger('submit')
     expect(wrapper.get('[role="alert"]').text()).toContain('正しい生年月')
     expect(wrapper.emitted('submit')).toBeUndefined()
@@ -274,7 +279,7 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('状態が残った場合は、最初から新しい体験を開始できます。')
     await wrapper.findAll('button').find((button) => button.text().includes('最初からやり直します'))!.trigger('click')
     expect(wrapper.text()).toContain('デモを体験する')
-    expect(wrapper.text()).not.toContain('Quest Map')
+    expect(wrapper.text()).not.toContain('Demo Session')
   })
 
   it('shows a slow-start hint while the online demo backend is waking up', async () => {

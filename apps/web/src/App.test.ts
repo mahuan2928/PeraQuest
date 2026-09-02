@@ -8,6 +8,7 @@ import GuardianWait from './components/GuardianWait.vue'
 import KnowledgeMastery from './components/KnowledgeMastery.vue'
 import TrialLesson from './components/TrialLesson.vue'
 import StudentApp from './views/StudentApp.vue'
+import GuardianApp from './views/GuardianApp.vue'
 
 const firstQuestion: TrialQuestion = {
   id: 'q1',
@@ -254,6 +255,75 @@ describe('minor onboarding vertical slice', () => {
 
     await wrapper.get('nav button:nth-child(2)').trigger('click')
     expect(wrapper.text()).toContain('お子さまの学習を見守ります')
+  })
+
+  it('shows the student journey summary in the guardian report', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/v1/guardian-links/student-1/student-knowledge') return jsonResponse({ items: [] })
+      if (url === '/v1/guardian-links/student-1/learning-summary') {
+        return jsonResponse({
+          studentId: 'student-1',
+          generatedAt: '2026-08-31T12:00:00.000Z',
+          overview: {
+            headline: '今日の学習で、冒険が前に進みました。',
+            weeklyActivityLabel: '6項目の学習記録が更新されています。',
+            averageMasteryPercent: 100,
+            reviewItemCount: 0,
+            masteredItemCount: 6,
+          },
+          strengths: [],
+          reviewFocus: [],
+          quest: {
+            totalXp: 135,
+            activityCoins: 55,
+            questChapter: 1,
+            questStep: 4,
+            badges: ['guardian_shield', 'level_check_cleared', 'review_forest_cleared'],
+            summary: 'Quest Map が次の島まで進みました。',
+          },
+          nextRecommendation: '次は、リスニング入り江の1問体験に進みましょう。',
+        })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    }))
+    const wrapper = mount(GuardianApp, {
+      props: {
+        session: {
+          studentId: 'student-1',
+          studentToken: 'student-token',
+          guardianToken: 'guardian-token',
+          expiresAt: '2026-08-31T12:10:00.000Z',
+        },
+        invitationCode: 'invite-code',
+        capabilities: { canUploadVoice: false, guardianLinkStatus: 'verified', voiceConsentStatus: 'missing' },
+        knowledgeItems: [],
+        reportRefreshKey: 0,
+        studentJourneySummary: {
+          completedQuestCount: 4,
+          totalQuestCount: 5,
+          totalXp: 145,
+          activityCoins: 58,
+          masteryAverage: 100,
+          highlights: [
+            '保護者確認が完了しました',
+            'レベルチェックを完了しました',
+            '復習の森をクリアしました',
+            'リスニング入り江を体験しました',
+          ],
+          badges: ['guardian_shield', 'level_check_cleared', 'review_forest_cleared', 'listening_cove_trial'],
+          nextStep: '次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。',
+        },
+      },
+    })
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('お子さまの冒険まとめ'))
+    expect(wrapper.text()).toContain('4 / 5')
+    expect(wrapper.text()).toContain('145')
+    expect(wrapper.text()).toContain('58')
+    expect(wrapper.text()).toContain('リスニング入り江を体験しました')
+    expect(wrapper.text()).toContain('リスニング入り江体験')
+    expect(wrapper.text()).toContain('次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。')
   })
 
   it('shows and dismisses a reward celebration from game-state progress after the level check', async () => {

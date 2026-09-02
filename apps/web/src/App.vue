@@ -13,6 +13,16 @@ import GuardianApp from './views/GuardianApp.vue'
 
 type Step = 'onboarding' | 'guardian' | 'trial' | 'result' | 'adult' | 'demo'
 type DemoRole = 'student' | 'guardian'
+type DemoJourneySummary = {
+  completedQuestCount: number
+  totalQuestCount: number
+  totalXp: number
+  activityCoins: number
+  masteryAverage: number
+  highlights: string[]
+  badges: string[]
+  nextStep: string
+}
 const step = ref<Step>('onboarding')
 const score = ref(0)
 const trialRedeemed = ref(false)
@@ -32,6 +42,7 @@ const demoSession = ref<DemoSessionResponse | null>(null)
 const demoCapabilities = ref<Record<string, unknown> | null>(null)
 const demoInvitationCode = ref('')
 const demoKnowledgeItems = ref<Array<{ knowledgePointRef: string; masteryScore: number; state: string; dueAt: string | null }>>([])
+const demoJourneySummary = ref<DemoJourneySummary | null>(null)
 const guardianReportRefreshKey = ref(0)
 
 async function refreshDemoState() {
@@ -57,6 +68,7 @@ async function startProductDemo() {
     demoSession.value = session.body
     demoInvitationCode.value = ''
     demoKnowledgeItems.value = []
+    demoJourneySummary.value = null
     demoRole.value = 'student'
     await refreshDemoState()
     step.value = 'demo'
@@ -73,6 +85,7 @@ function resetProductDemo() {
   demoCapabilities.value = null
   demoInvitationCode.value = ''
   demoKnowledgeItems.value = []
+  demoJourneySummary.value = null
   guardianReportRefreshKey.value = 0
   demoRole.value = 'student'
   demoError.value = ''
@@ -164,6 +177,10 @@ function onStudentKnowledgeUpdated(items: typeof demoKnowledgeItems.value) {
   demoKnowledgeItems.value = items
   guardianReportRefreshKey.value += 1
 }
+
+function onStudentJourneyUpdated(summary: DemoJourneySummary) {
+  demoJourneySummary.value = summary
+}
 </script>
 
 <template>
@@ -235,6 +252,7 @@ function onStudentKnowledgeUpdated(items: typeof demoKnowledgeItems.value) {
           @refresh="onDemoChanged"
           @invitation-created="onDemoInvitationCreated"
           @knowledge-updated="onStudentKnowledgeUpdated"
+          @journey-updated="onStudentJourneyUpdated"
         />
         <GuardianApp
           v-show="demoRole === 'guardian'"
@@ -242,6 +260,7 @@ function onStudentKnowledgeUpdated(items: typeof demoKnowledgeItems.value) {
           :invitation-code="demoInvitationCode"
           :capabilities="demoCapabilities"
           :knowledge-items="demoKnowledgeItems"
+          :student-journey-summary="demoJourneySummary"
           :report-refresh-key="guardianReportRefreshKey"
           @verified="onDemoChanged"
           @consent-changed="onDemoChanged"

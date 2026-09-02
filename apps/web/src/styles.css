@@ -186,6 +186,19 @@ h1 span { color: var(--green); }
 .summary-list span { color: var(--ink); font-weight: 800; }
 .summary-list strong { color: var(--green); }
 .badge-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.guardian-journey-card { display: grid; gap: 13px; padding: 18px; border: 2px solid var(--ink); background: linear-gradient(135deg, #fff7d8, #f7ffe2); box-shadow: 4px 4px 0 var(--ink); }
+.guardian-journey-card h3 { margin: 0; font-size: clamp(1.25rem, 3vw, 1.7rem); }
+.guardian-journey-card p { margin: 0; }
+.guardian-journey-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.guardian-journey-grid div { padding: 10px; border: 1px solid var(--ink); background: white; text-align: center; }
+.guardian-journey-grid strong { display: block; color: var(--green); font-size: 1.35rem; line-height: 1; }
+.guardian-journey-grid span { font-size: .66rem; font-weight: 900; }
+.guardian-journey-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.guardian-journey-list li { padding: 9px 10px; border-left: 4px solid var(--green); background: white; font-size: .82rem; font-weight: 900; }
+.guardian-journey-badges { display: grid; gap: 5px; padding: 10px; border: 2px dashed var(--orange); background: white; }
+.guardian-journey-badges span { color: var(--orange); font-size: .66rem; font-weight: 900; letter-spacing: .12em; }
+.guardian-journey-badges strong { font-size: .86rem; line-height: 1.5; }
+.guardian-journey-next { padding: 11px 12px; border: 2px solid var(--ink); background: var(--lime); font-weight: 900; }
 .future-card { margin-top: 24px; background: #fff0e9; }
 .lesson-panel { width: min(780px, 100%); margin: 0 auto; }
 .lesson-header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 12px; }
@@ -223,7 +236,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
   .student-grid, .guardian-grid { grid-template-columns: 1fr; }
   .journey-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mastery-heading { align-items: start; flex-direction: column; }
-  .report-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-stat-grid, .guardian-journey-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .quest-mark { width: 84px; box-shadow: 7px 7px 0 var(--ink); }
   .reward-celebration { grid-template-columns: 1fr; }
   .reward-close { width: 100%; }

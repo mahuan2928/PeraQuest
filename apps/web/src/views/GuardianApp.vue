@@ -49,11 +49,23 @@ type LearningSummary = {
   nextRecommendation: string
 }
 
+type StudentJourneySummary = {
+  completedQuestCount: number
+  totalQuestCount: number
+  totalXp: number
+  activityCoins: number
+  masteryAverage: number
+  highlights: string[]
+  badges: string[]
+  nextStep: string
+}
+
 const props = defineProps<{
   session: DemoSessionResponse
   invitationCode: string
   capabilities: CapabilityState | null
   knowledgeItems: KnowledgeItem[]
+  studentJourneySummary: StudentJourneySummary | null
   reportRefreshKey: number
 }>()
 
@@ -79,6 +91,37 @@ const displayKnowledgeItems = computed(() => guardianKnowledgeItems.value.length
 const masteryAverage = computed(() => {
   if (!displayKnowledgeItems.value.length) return 0
   return Math.round((displayKnowledgeItems.value.reduce((sum, item) => sum + item.masteryScore, 0) / displayKnowledgeItems.value.length) * 100)
+})
+const guardianJourneySummary = computed<StudentJourneySummary | null>(() => {
+  if (props.studentJourneySummary) return props.studentJourneySummary
+  if (!learningSummary.value) return null
+  const badges = learningSummary.value.quest.badges
+  const completedQuestCount = Math.min(5, learningSummary.value.quest.questStep)
+  const highlights = [
+    badges.includes('guardian_shield') ? '保護者確認が完了しました' : '',
+    badges.includes('level_check_cleared') || badges.includes('level_check_challenger') || learningSummary.value.overview.masteredItemCount > 0
+      ? 'レベルチェックを完了しました'
+      : '',
+    badges.includes('review_forest_cleared') ? '復習の森をクリアしました' : '',
+    badges.includes('listening_cove_trial') ? 'リスニング入り江を体験しました' : '',
+  ].filter(Boolean)
+  const nextStep = badges.includes('listening_cove_trial')
+    ? '次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。'
+    : completedQuestCount >= 4
+      ? '次は、リスニング入り江の1問体験に進みましょう。'
+      : completedQuestCount >= 3
+        ? '次は、復習の森で苦手ポイントを短く確認しましょう。'
+        : learningSummary.value.nextRecommendation
+  return {
+    completedQuestCount,
+    totalQuestCount: 5,
+    totalXp: learningSummary.value.quest.totalXp,
+    activityCoins: learningSummary.value.quest.activityCoins,
+    masteryAverage: learningSummary.value.overview.averageMasteryPercent,
+    highlights,
+    badges,
+    nextStep,
+  }
 })
 
 watch(() => props.invitationCode, (value) => {
@@ -193,6 +236,8 @@ function badgeLabel(badge: string) {
   if (badge === 'guardian_shield') return 'ガーディアンシールド'
   if (badge === 'level_check_cleared') return 'レベルチェッククリア'
   if (badge === 'level_check_challenger') return 'Quest チャレンジャー'
+  if (badge === 'review_forest_cleared') return '復習の森クリア'
+  if (badge === 'listening_cove_trial') return 'リスニング入り江体験'
   return badge
 }
 </script>
@@ -320,6 +365,54 @@ function badgeLabel(badge: string) {
             <span>コイン</span>
           </div>
         </div>
+
+        <section
+          v-if="guardianJourneySummary"
+          class="guardian-journey-card"
+          aria-label="お子さまの冒険まとめ"
+        >
+          <p class="card-kicker">
+            Quest Report
+          </p>
+          <h3>お子さまの冒険まとめ</h3>
+          <p>今日の学習で進んだ場所と、獲得したごほうびを保護者向けにまとめました。</p>
+          <div class="guardian-journey-grid">
+            <div>
+              <strong>{{ guardianJourneySummary.completedQuestCount }} / {{ guardianJourneySummary.totalQuestCount }}</strong>
+              <span>達成スポット</span>
+            </div>
+            <div>
+              <strong>{{ guardianJourneySummary.totalXp }}</strong>
+              <span>XP</span>
+            </div>
+            <div>
+              <strong>{{ guardianJourneySummary.activityCoins }}</strong>
+              <span>コイン</span>
+            </div>
+            <div>
+              <strong>{{ guardianJourneySummary.masteryAverage }}%</strong>
+              <span>平均習熟度</span>
+            </div>
+          </div>
+          <ul class="guardian-journey-list">
+            <li
+              v-for="highlight in guardianJourneySummary.highlights"
+              :key="highlight"
+            >
+              {{ highlight }}
+            </li>
+          </ul>
+          <div
+            v-if="guardianJourneySummary.badges.length"
+            class="guardian-journey-badges"
+          >
+            <span>獲得バッジ</span>
+            <strong>{{ guardianJourneySummary.badges.map(badgeLabel).join(' / ') }}</strong>
+          </div>
+          <p class="guardian-journey-next">
+            {{ guardianJourneySummary.nextStep }}
+          </p>
+        </section>
 
         <section
           v-if="learningSummary"

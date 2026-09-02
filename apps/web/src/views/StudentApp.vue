@@ -65,6 +65,17 @@ type QuestMapNode = {
   status: 'done' | 'current' | 'locked'
 }
 
+type JourneySummary = {
+  completedQuestCount: number
+  totalQuestCount: number
+  totalXp: number
+  activityCoins: number
+  masteryAverage: number
+  highlights: string[]
+  badges: string[]
+  nextStep: string
+}
+
 const props = defineProps<{
   session: DemoSessionResponse
   capabilities: CapabilityState | null
@@ -76,6 +87,7 @@ const emit = defineEmits<{
   refresh: []
   invitationCreated: [code: string]
   knowledgeUpdated: [items: KnowledgeItem[]]
+  journeyUpdated: [summary: JourneySummary]
 }>()
 
 const demoStageExamId = import.meta.env.VITE_DEMO_STAGE_EXAM_ID ?? '11111111-1111-4111-8111-111111111111'
@@ -245,6 +257,16 @@ const journeyNextStep = computed(() => {
   if (reviewQuestReady.value) return '次は、復習の森で苦手ポイントを短く確認しましょう。'
   return 'まずはレベルチェックで今の得意と復習ポイントを見つけましょう。'
 })
+const journeySummary = computed<JourneySummary>(() => ({
+  completedQuestCount: completedQuestCount.value,
+  totalQuestCount: questMapNodes.value.length,
+  totalXp: displayedTotalXp.value,
+  activityCoins: displayedActivityCoins.value,
+  masteryAverage: masteryAverage.value,
+  highlights: journeyHighlights.value,
+  badges: displayedBadges.value,
+  nextStep: journeyNextStep.value,
+}))
 const questStatusLabel = (status: QuestMapNode['status']) => {
   if (status === 'done') return '達成'
   if (status === 'current') return '次の目標'
@@ -428,6 +450,10 @@ watch(() => props.knowledgeItems.length, (count) => {
     reviewQuestCompleted.value = false
   }
 })
+
+watch(journeySummary, (summary) => {
+  emit('journeyUpdated', summary)
+}, { immediate: true })
 </script>
 
 <template>

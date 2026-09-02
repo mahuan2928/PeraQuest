@@ -267,6 +267,9 @@ h1 span { color: var(--green); }
 .lesson-header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 12px; }
 .lesson-header p { margin: 0; font-weight: 900; }
 .lesson-header .eyebrow { margin-bottom: 5px; }
+.demo-answer-guide { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin: 0 0 18px; padding: 12px 14px; border: 2px solid var(--ink); background: #fff7d8; box-shadow: 4px 4px 0 var(--ink); }
+.demo-answer-guide span { color: var(--orange); font-size: .68rem; font-weight: 900; letter-spacing: .1em; }
+.demo-answer-guide strong { display: block; margin-top: 3px; font-size: .86rem; line-height: 1.45; }
 .progress-track { height: 10px; overflow: hidden; border: 1px solid var(--ink); background: var(--paper); }
 .progress-track span { display: block; height: 100%; background: var(--orange); transition: width .3s ease; }
 .question-card { margin-top: 22px; padding: clamp(24px, 5vw, 52px); border: 2px solid var(--ink); background: var(--paper); box-shadow: 10px 10px 0 var(--ink); }
@@ -297,6 +300,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
   .role-tabs { width: 100%; }
   .role-tabs button { flex: 1; }
   .demo-guide-card { grid-template-columns: 1fr; }
+  .demo-answer-guide { align-items: stretch; flex-direction: column; }
   .student-grid, .guardian-grid { grid-template-columns: 1fr; }
   .journey-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mastery-heading { align-items: start; flex-direction: column; }

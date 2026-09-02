@@ -353,6 +353,14 @@ const listeningDemoOptions = [
     text: '公園で会う',
   },
 ] as const
+const demoAnswerTextByPrompt: Record<string, string> = {
+  'Yesterday, I ___ my homework before dinner.': 'finished',
+  'I am looking ___ my keys.': 'for',
+  'The train was late, so Emi took a bus. Why did Emi take a bus?': 'The train was late.',
+  'This bag is ___ than that one.': 'heavier',
+  'Mika says, “Let’s meet at three.” What time will they meet?': 'At three.',
+  'Choose the correct sentence.': 'I play soccer after school.',
+}
 const listeningDemoCorrect = computed(() => listeningDemoAnswer.value === 'library')
 const journeySummaryVisible = computed(() => Boolean(resultSummary.value) || reviewQuestCompleted.value || listeningDemoSubmitted.value)
 const journeyHighlights = computed(() => [
@@ -419,7 +427,7 @@ const demoGuide = computed<DemoGuide>(() => {
   }
   if (props.invitationCode) {
     return {
-      step: '演示の切り替え',
+      step: 'デモの切り替え',
       title: '保護者確認を完了します',
       detail: '子ども側で招待コードを出し、保護者側で確認すると学習が解放されます。',
       action: '上部の「保護者として体験」に切り替えます。',
@@ -456,6 +464,17 @@ const reviewStateLabel = (state: string) => {
 }
 const selectQuestNode = (node: QuestMapNode) => {
   selectedQuestNodeId.value = node.id
+}
+const fillDemoLevelCheckAnswers = () => {
+  if (!attempt.value || resultSummary.value) return
+  const nextSelected: Record<string, string> = { ...selected.value }
+  for (const item of attempt.value.items) {
+    const suggestedText = demoAnswerTextByPrompt[item.prompt]
+    const suggestedOption = item.options.find((option) => option.text === suggestedText) ?? item.options[0]
+    if (suggestedOption) nextSelected[item.itemId] = suggestedOption.optionId
+  }
+  selected.value = nextSelected
+  message.value = 'デモ用の回答を入力しました。このまま結果まで進めます。'
 }
 const closeRewardCelebration = () => {
   rewardCelebrationOpen.value = false
@@ -1040,6 +1059,20 @@ watch(journeySummary, (summary) => {
         v-else-if="!resultSummary"
         class="question-card"
       >
+        <div class="demo-answer-guide">
+          <div>
+            <span>Demo Stable Path</span>
+            <strong>デモ用の回答を入れて、同じ結果で説明できます。</strong>
+          </div>
+          <button
+            class="secondary-action"
+            type="button"
+            :disabled="busy"
+            @click="fillDemoLevelCheckAnswers"
+          >
+            デモ用の回答を入れます
+          </button>
+        </div>
         <div
           v-for="(item, index) in attempt.items"
           :key="item.itemId"

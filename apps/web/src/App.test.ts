@@ -422,7 +422,9 @@ describe('minor onboarding vertical slice', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Quest Map'))
     await wrapper.get('.lesson-panel .primary-action').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Yesterday, I ___ my homework.'))
-    await wrapper.get('input[value="option-1"]').setValue(true)
+    expect(wrapper.text()).toContain('デモ用の回答を入れます')
+    await wrapper.findAll('button').find((button) => button.text().includes('デモ用の回答を入れます'))!.trigger('click')
+    expect(wrapper.text()).toContain('デモ用の回答を入力しました。')
     await wrapper.get('.question-card .primary-action').trigger('click')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('報酬を獲得しました'))

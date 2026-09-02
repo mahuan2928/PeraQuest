@@ -95,6 +95,9 @@ const reviewQuestOpen = ref(false)
 const reviewQuestCompleted = ref(false)
 const reviewQuestReward = ref<GameReward | null>(null)
 const nextIslandPreviewOpen = ref(false)
+const listeningDemoOpen = ref(false)
+const listeningDemoAnswer = ref('')
+const listeningDemoSubmitted = ref(false)
 
 const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const learnReady = computed(() => props.capabilities?.canLearn === true)
@@ -201,6 +204,21 @@ const reviewQuestItems = computed(() => [...props.knowledgeItems]
   .slice(0, 3))
 const reviewQuestReady = computed(() => questStep.value >= 3 && reviewQuestItems.value.length > 0)
 const nextIslandReady = computed(() => questStep.value >= 4)
+const listeningDemoOptions = [
+  {
+    id: 'library',
+    text: '図書館で会う',
+  },
+  {
+    id: 'station',
+    text: '駅で会う',
+  },
+  {
+    id: 'park',
+    text: '公園で会う',
+  },
+] as const
+const listeningDemoCorrect = computed(() => listeningDemoAnswer.value === 'library')
 const questStatusLabel = (status: QuestMapNode['status']) => {
   if (status === 'done') return '達成'
   if (status === 'current') return '次の目標'
@@ -240,6 +258,20 @@ const openNextIslandPreview = () => {
   selectedQuestNodeId.value = 'next-island'
   nextIslandPreviewOpen.value = true
   message.value = '次の島の予告を開きました。新しい冒険の準備を確認しましょう。'
+}
+const startListeningDemo = () => {
+  if (!nextIslandReady.value) return
+  listeningDemoOpen.value = true
+  listeningDemoSubmitted.value = false
+  listeningDemoAnswer.value = ''
+  message.value = 'リスニング入り江の体験を開始しました。会話の内容を選びましょう。'
+}
+const submitListeningDemo = () => {
+  if (!listeningDemoAnswer.value) return
+  listeningDemoSubmitted.value = true
+  message.value = listeningDemoCorrect.value
+    ? '正解です。短い会話から待ち合わせ場所を聞き取れました。'
+    : 'もう一度聞くつもりで、場所を表す言葉に注目しましょう。'
 }
 
 const hasRewardValue = (reward: GameReward | null): reward is GameReward => (
@@ -551,6 +583,59 @@ watch(() => props.knowledgeItems.length, (count) => {
             <li>復習の森で見つけた苦手ポイントを反映</li>
             <li>保護者レポートに次のおすすめとして表示予定</li>
           </ul>
+          <button
+            class="secondary-action"
+            type="button"
+            @click="startListeningDemo"
+          >
+            1問だけ体験します
+          </button>
+          <section
+            v-if="listeningDemoOpen"
+            class="listening-demo"
+            aria-live="polite"
+          >
+            <span>Listening Demo</span>
+            <strong>どこで会いますか？</strong>
+            <p class="listening-script">
+              A: Let&apos;s meet at the library after school.<br>
+              B: OK. See you there at four.
+            </p>
+            <fieldset :disabled="listeningDemoSubmitted">
+              <legend class="sr-only">
+                会話に合う答えを1つ選んでください
+              </legend>
+              <label
+                v-for="option in listeningDemoOptions"
+                :key="option.id"
+                class="choice compact-choice"
+                :class="{ selected: listeningDemoAnswer === option.id }"
+              >
+                <input
+                  v-model="listeningDemoAnswer"
+                  type="radio"
+                  name="listening-demo"
+                  :value="option.id"
+                >
+                <span>{{ option.text }}</span>
+              </label>
+            </fieldset>
+            <button
+              class="secondary-action"
+              type="button"
+              :disabled="!listeningDemoAnswer || listeningDemoSubmitted"
+              @click="submitListeningDemo"
+            >
+              答えを確認します
+            </button>
+            <p
+              v-if="listeningDemoSubmitted"
+              class="listening-feedback"
+              :class="{ correct: listeningDemoCorrect }"
+            >
+              {{ listeningDemoCorrect ? '正解です。library は「図書館」です。' : '惜しいです。library という場所の言葉を聞き取りましょう。' }}
+            </p>
+          </section>
         </section>
       </article>
     </section>

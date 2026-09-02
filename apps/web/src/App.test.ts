@@ -365,6 +365,13 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('リスニング入り江')
     expect(wrapper.text()).toContain('短い会話を聞き取り、時間・理由・気持ちを選ぶ新しい冒険です。')
     expect(wrapper.text()).toContain('保護者レポートに次のおすすめとして表示予定')
+
+    await wrapper.findAll('button').find((button) => button.text().includes('1問だけ体験します'))!.trigger('click')
+    expect(wrapper.text()).toContain('どこで会いますか？')
+    expect(wrapper.text()).toContain("Let's meet at the library after school.")
+    await wrapper.get('input[value="library"]').setValue(true)
+    await wrapper.findAll('button').find((button) => button.text().includes('答えを確認します'))!.trigger('click')
+    expect(wrapper.text()).toContain('正解です。library は「図書館」です。')
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {

@@ -92,6 +92,11 @@ h1 span { color: var(--green); }
 .demo-guide-card strong { display: block; font-size: 1.08rem; }
 .demo-guide-card p { margin: 5px 0 0; color: #53615c; font-size: .84rem; font-weight: 800; line-height: 1.55; }
 .demo-guide-card > p { margin: 0; padding: 10px 12px; border-left: 5px solid var(--green); background: white; color: var(--ink); }
+.demo-guide-script { display: grid; gap: 8px; padding: 10px 12px; border-left: 5px solid var(--green); background: white; }
+.demo-guide-script p { margin: 0; color: var(--ink); }
+.demo-guide-script small { color: #59645f; font-size: .74rem; font-weight: 800; line-height: 1.45; }
+.demo-guide-script ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.demo-guide-script li { padding: 4px 7px; border: 1px solid var(--ink); background: var(--lime); font-size: .64rem; font-weight: 900; }
 .student-grid, .guardian-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 24px 0; }
 .action-card, .guardian-card, .future-card { padding: clamp(18px, 3vw, 26px); border: 2px solid var(--ink); background: var(--paper); box-shadow: 6px 6px 0 var(--ink); }
 .action-card h2, .guardian-card h2, .future-card h2 { margin: 4px 0 10px; font-size: clamp(1.25rem, 3vw, 1.9rem); }

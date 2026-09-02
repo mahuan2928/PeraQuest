@@ -259,6 +259,8 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('Demo Guide')
     expect(wrapper.text()).toContain('保護者への確認依頼を作ります')
     expect(wrapper.text()).toContain('「招待コードを発行します」を押します。')
+    expect(wrapper.text()).toContain('最初に、安全に学習を始めるための親子連携を見せます。')
+    expect(wrapper.text()).toContain('招待コード')
     expect(wrapper.text()).toContain('Quest Map')
     expect(wrapper.text()).toContain('はじまりの港')
     expect(wrapper.text()).toContain('Chapter 1')

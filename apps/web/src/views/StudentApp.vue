@@ -98,6 +98,8 @@ type DemoGuide = {
   title: string
   detail: string
   action: string
+  talkTrack: string
+  checkpoints: string[]
 }
 
 const props = defineProps<{
@@ -383,6 +385,8 @@ const demoGuide = computed<DemoGuide>(() => {
       title: '保護者レポートへ切り替えます',
       detail: '学習結果、冒険の進み、次のおすすめが保護者にも伝わることを確認します。',
       action: '上部の「保護者として体験」を押します。',
+      talkTrack: '最後に、子どもの体験が保護者の見守りレポートにつながることを見せます。',
+      checkpoints: ['今日の冒険まとめ', 'リスニング入り江体験', '保護者レポート'],
     }
   }
   if (nextIslandReady.value) {
@@ -391,6 +395,8 @@ const demoGuide = computed<DemoGuide>(() => {
       title: '次の島プレビューを開きます',
       detail: '復習の成果が新しい冒険の予告につながる流れを見せます。',
       action: '「次の島をプレビューします」を押します。',
+      talkTrack: '復習が終わると、次に進みたくなる予告が開きます。',
+      checkpoints: ['復習の森クリア', '次の島プレビュー', 'リスニング入り江'],
     }
   }
   if (reviewQuestReady.value) {
@@ -399,6 +405,8 @@ const demoGuide = computed<DemoGuide>(() => {
       title: '復習クエストを体験します',
       detail: 'レベルチェックで見つけた苦手ポイントが、短い復習タスクに変わります。',
       action: '「復習クエストを始めます」を押します。',
+      talkTrack: '苦手をただ表示するのではなく、次の短い冒険タスクに変換します。',
+      checkpoints: ['復習予定', '3つの復習タスク', 'ごほうび'],
     }
   }
   if (resultSummary.value) {
@@ -407,6 +415,8 @@ const demoGuide = computed<DemoGuide>(() => {
       title: 'Quest Map と冒険バッグを確認します',
       detail: '回答結果が XP、コイン、バッジ、次の復習ルートに変わったことを説明します。',
       action: '画面上部の Quest Map と冒険バッグを見せます。',
+      talkTrack: '点数だけで終わらず、学習成果が冒険の進みと報酬になります。',
+      checkpoints: ['XP', 'コイン', '復習の森'],
     }
   }
   if (attempt.value) {
@@ -415,6 +425,8 @@ const demoGuide = computed<DemoGuide>(() => {
       title: 'レベルチェックを提出します',
       detail: '短い問題に答えるだけで、得意と復習ポイントが見えることを見せます。',
       action: '答えを選んで「答えを提出します」を押します。',
+      talkTrack: 'デモ用の回答ボタンを使うと、毎回同じ説明しやすい結果にできます。',
+      checkpoints: ['デモ用の回答', '6問', '提出ボタン'],
     }
   }
   if (learnReady.value) {
@@ -423,6 +435,8 @@ const demoGuide = computed<DemoGuide>(() => {
       title: 'レベルチェックを開始します',
       detail: '安全確認後に学習が解放され、冒険が学習結果で進む入口です。',
       action: '「レベルチェックを開始します」を押します。',
+      talkTrack: '保護者確認が終わると、子どもはすぐ学習冒険を始められます。',
+      checkpoints: ['家族の門達成', 'レベルチェック開始', 'Quest Map'],
     }
   }
   if (props.invitationCode) {
@@ -431,6 +445,8 @@ const demoGuide = computed<DemoGuide>(() => {
       title: '保護者確認を完了します',
       detail: '子ども側で招待コードを出し、保護者側で確認すると学習が解放されます。',
       action: '上部の「保護者として体験」に切り替えます。',
+      talkTrack: '未成年向けの安全導線として、学習前に保護者確認を通します。',
+      checkpoints: ['招待コード', '保護者として体験', '連携確認'],
     }
   }
   return {
@@ -438,6 +454,8 @@ const demoGuide = computed<DemoGuide>(() => {
     title: '保護者への確認依頼を作ります',
     detail: '未成年向けの安全導線として、学習前に保護者確認が必要なことを見せます。',
     action: '「招待コードを発行します」を押します。',
+    talkTrack: '最初に、安全に学習を始めるための親子連携を見せます。',
+    checkpoints: ['Demo Guide', 'Quest Map', '招待コード'],
   }
 })
 const journeySummary = computed<JourneySummary>(() => ({
@@ -685,7 +703,18 @@ watch(journeySummary, (summary) => {
         <strong>{{ demoGuide.title }}</strong>
         <p>{{ demoGuide.detail }}</p>
       </div>
-      <p>{{ demoGuide.action }}</p>
+      <div class="demo-guide-script">
+        <p>{{ demoGuide.action }}</p>
+        <small>{{ demoGuide.talkTrack }}</small>
+        <ul>
+          <li
+            v-for="checkpoint in demoGuide.checkpoints"
+            :key="checkpoint"
+          >
+            {{ checkpoint }}
+          </li>
+        </ul>
+      </div>
     </aside>
 
     <ul class="safety-list">

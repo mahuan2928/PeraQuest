@@ -34,6 +34,7 @@ Action:
 Expected:
 
 - Student page shows `今日の学習を始めます`.
+- `Demo Guide` appears and tells the presenter the recommended next action.
 - `Quest Map` appears.
 - `冒険バッグ` appears.
 - Initial Quest Map shows:
@@ -86,13 +87,7 @@ Talk track:
 Action:
 
 - Click `レベルチェックを開始します`.
-- Select the expected answers:
-  - `finished`
-  - `for`
-  - `The train was late.`
-  - `heavier`
-  - `At three.`
-  - `I play soccer after school.`
+- Click `デモ用の回答を入れます`.
 - Click `答えを提出します`.
 
 Expected:
@@ -166,7 +161,9 @@ Action:
 Expected:
 
 - Guardian report shows `お子さまの冒険まとめ`.
+- Guardian report shows `家庭サポートメモ`.
 - It includes latest student-side journey progress, XP, coins, badges, and next recommendation.
+- It includes a parent-friendly encouragement cue under `声かけ例`.
 
 Talk track:
 
@@ -180,6 +177,9 @@ Before an external demo:
 - Confirm the loaded script asset is not stale if the page looks old.
 - Start a new demo session with `もう一度開始します` if a previous session is still visible.
 - Confirm the first screen contains `Quest Map`, `冒険バッグ`, and `Chapter 1`.
+- Confirm the student page contains `Demo Guide`.
+- Confirm the level check contains `デモ用の回答を入れます`.
+- Confirm the guardian report contains `家庭サポートメモ`.
 - Confirm the Render API is awake by reaching the student page after `デモを体験する`.
 
 ## Fallbacks

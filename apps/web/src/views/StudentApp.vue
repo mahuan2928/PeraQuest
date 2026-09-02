@@ -93,6 +93,7 @@ const earnedReward = ref<GameReward | null>(null)
 const rewardCelebrationOpen = ref(false)
 const reviewQuestOpen = ref(false)
 const reviewQuestCompleted = ref(false)
+const reviewQuestReward = ref<GameReward | null>(null)
 
 const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const learnReady = computed(() => props.capabilities?.canLearn === true)
@@ -102,21 +103,38 @@ const masteryAverage = computed(() => {
   if (!props.knowledgeItems.length) return 0
   return Math.round((props.knowledgeItems.reduce((sum, item) => sum + item.masteryScore, 0) / props.knowledgeItems.length) * 100)
 })
+const reviewCompletionReward: GameReward = {
+  xpAwarded: 15,
+  activityCoinsAwarded: 5,
+  questStepDelta: 1,
+  questChapterUnlocked: null,
+  badgesAwarded: ['review_forest_cleared'],
+}
 const questStep = computed(() => {
   const rawStep = gameState.value?.questStep ?? 0
   const badges = new Set(gameState.value?.badges ?? [])
-  const earnedStep = badges.has('level_check_cleared') || badges.has('level_check_challenger') || props.knowledgeItems.length > 0
-    ? 3
-    : badges.has('guardian_shield') || (gameState.value?.totalXp ?? 0) >= 20
-      ? 2
-      : 0
+  const earnedStep = reviewQuestCompleted.value
+    ? 4
+    : badges.has('level_check_cleared') || badges.has('level_check_challenger') || props.knowledgeItems.length > 0
+      ? 3
+      : badges.has('guardian_shield') || (gameState.value?.totalXp ?? 0) >= 20
+        ? 2
+        : 0
   return Math.max(rawStep, earnedStep)
 })
 const questProgress = computed(() => Math.min(100, Math.round((questStep.value / questMapNodes.value.length) * 100)))
+const displayedTotalXp = computed(() => (gameState.value?.totalXp ?? 0) + (reviewQuestReward.value?.xpAwarded ?? 0))
+const displayedActivityCoins = computed(() => (gameState.value?.activityCoins ?? 0) + (reviewQuestReward.value?.activityCoinsAwarded ?? 0))
+const displayedBadges = computed(() => {
+  const badges = new Set(gameState.value?.badges ?? [])
+  for (const badge of reviewQuestReward.value?.badgesAwarded ?? []) badges.add(badge)
+  return [...badges]
+})
 const badgeLabels: Record<string, string> = {
   guardian_shield: 'ガーディアンシールド',
   level_check_cleared: 'レベルチェッククリア',
   level_check_challenger: 'Quest チャレンジャー',
+  review_forest_cleared: '復習の森クリア',
 }
 const knowledgePointLabels: Record<string, string> = {
   'grammar.past_tense': '過去形',
@@ -204,11 +222,15 @@ const startReviewQuest = () => {
   selectedQuestNodeId.value = 'review'
   reviewQuestOpen.value = true
   reviewQuestCompleted.value = false
+  reviewQuestReward.value = null
   message.value = '復習の森に入りました。今日の3つを短く確認しましょう。'
 }
 const completeReviewQuest = () => {
   if (!reviewQuestOpen.value) return
   reviewQuestCompleted.value = true
+  reviewQuestReward.value = reviewCompletionReward
+  earnedReward.value = reviewCompletionReward
+  rewardCelebrationOpen.value = true
   message.value = '今日の復習クエストを完了しました。次の冒険へ進む準備ができています。'
 }
 
@@ -387,8 +409,8 @@ watch(() => props.knowledgeItems.length, (count) => {
         <h2>Quest Map</h2>
         <p>学習の成果が、冒険マップの進み具合に変わります。</p>
         <div class="quest-stats">
-          <span><strong>{{ gameState?.totalXp ?? 0 }}</strong> XP</span>
-          <span><strong>{{ gameState?.activityCoins ?? 0 }}</strong> コイン</span>
+          <span><strong>{{ displayedTotalXp }}</strong> XP</span>
+          <span><strong>{{ displayedActivityCoins }}</strong> コイン</span>
           <span><strong>{{ gameState?.questChapter ?? 0 }}</strong> 章</span>
         </div>
         <div class="quest-current">
@@ -447,11 +469,11 @@ watch(() => props.knowledgeItems.length, (count) => {
           {{ completedQuestCount }} / {{ questMapNodes.length }} スポット達成
         </p>
         <div
-          v-if="gameState?.badges.length"
+          v-if="displayedBadges.length"
           class="badge-list"
         >
           <span
-            v-for="badge in gameState.badges"
+            v-for="badge in displayedBadges"
             :key="badge"
           >
             {{ badgeLabels[badge] ?? badge }}

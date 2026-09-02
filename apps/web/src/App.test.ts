@@ -355,6 +355,11 @@ describe('minor onboarding vertical slice', () => {
 
     await wrapper.get('.review-quest-panel .secondary-action').trigger('click')
     expect(wrapper.text()).toContain('今日の復習を完了しました')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('4 / 5 スポット達成'))
+    expect(wrapper.text()).toContain('+15 XP')
+    expect(wrapper.text()).toContain('+5 コイン')
+    expect(wrapper.text()).toContain('復習の森クリア')
+    expect(wrapper.text()).toContain('次の冒険は準備中です')
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {

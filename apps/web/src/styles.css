@@ -82,6 +82,11 @@ h1 span { color: var(--green); }
 .product-panel { width: min(980px, 100%); }
 .product-hero { margin-bottom: 28px; }
 .product-hero h1 { font-size: clamp(2.35rem, 6vw, 4.9rem); }
+.demo-guide-card { display: grid; grid-template-columns: 1fr minmax(180px, .42fr); gap: 18px; align-items: center; margin: 0 0 24px; padding: 16px 18px; border: 2px solid var(--ink); background: linear-gradient(135deg, #fff7d8, #f7ffe2); box-shadow: 5px 5px 0 var(--ink); }
+.demo-guide-card span { display: inline-flex; width: fit-content; margin-bottom: 6px; padding: 4px 8px; border: 1px solid var(--ink); background: white; font-size: .72rem; font-weight: 900; }
+.demo-guide-card strong { display: block; font-size: 1.08rem; }
+.demo-guide-card p { margin: 5px 0 0; color: #53615c; font-size: .84rem; font-weight: 800; line-height: 1.55; }
+.demo-guide-card > p { margin: 0; padding: 10px 12px; border-left: 5px solid var(--green); background: white; color: var(--ink); }
 .student-grid, .guardian-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 24px 0; }
 .action-card, .guardian-card, .future-card { padding: clamp(18px, 3vw, 26px); border: 2px solid var(--ink); background: var(--paper); box-shadow: 6px 6px 0 var(--ink); }
 .action-card h2, .guardian-card h2, .future-card h2 { margin: 4px 0 10px; font-size: clamp(1.25rem, 3vw, 1.9rem); }
@@ -285,6 +290,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
   .stage { width: min(100% - 24px, 560px); padding: 32px 0 56px; }
   .role-tabs { width: 100%; }
   .role-tabs button { flex: 1; }
+  .demo-guide-card { grid-template-columns: 1fr; }
   .student-grid, .guardian-grid { grid-template-columns: 1fr; }
   .journey-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mastery-heading { align-items: start; flex-direction: column; }

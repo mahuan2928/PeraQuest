@@ -253,6 +253,9 @@ describe('minor onboarding vertical slice', () => {
 
     expect(wrapper.text()).toContain('生徒として体験')
     expect(wrapper.text()).toContain('保護者として体験')
+    expect(wrapper.text()).toContain('Demo Guide')
+    expect(wrapper.text()).toContain('保護者への確認依頼を作ります')
+    expect(wrapper.text()).toContain('「招待コードを発行します」を押します。')
     expect(wrapper.text()).toContain('Quest Map')
     expect(wrapper.text()).toContain('はじまりの港')
     expect(wrapper.text()).toContain('Chapter 1')
@@ -502,6 +505,8 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('85 XP を集めました。')
     expect(wrapper.text()).toContain('28 コインを持っています。')
     expect(wrapper.text()).toContain('リスニング入り江を体験しました')
+    expect(wrapper.text()).toContain('保護者レポートへ切り替えます')
+    expect(wrapper.text()).toContain('上部の「保護者として体験」を押します。')
     expect(wrapper.text()).toContain('次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。')
     expect(wrapper.findAll('button').some((button) => button.text().includes('体験済みです'))).toBe(true)
   })

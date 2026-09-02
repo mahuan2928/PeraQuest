@@ -93,6 +93,13 @@ type InventoryItem = {
   status: 'collected' | 'locked'
 }
 
+type DemoGuide = {
+  step: string
+  title: string
+  detail: string
+  action: string
+}
+
 const props = defineProps<{
   session: DemoSessionResponse
   capabilities: CapabilityState | null
@@ -361,6 +368,70 @@ const journeyNextStep = computed(() => {
   if (reviewQuestReady.value) return '次は、復習の森で苦手ポイントを短く確認しましょう。'
   return 'まずはレベルチェックで今の得意と復習ポイントを見つけましょう。'
 })
+const demoGuide = computed<DemoGuide>(() => {
+  if (listeningDemoSubmitted.value) {
+    return {
+      step: '最後に見せる',
+      title: '保護者レポートへ切り替えます',
+      detail: '学習結果、冒険の進み、次のおすすめが保護者にも伝わることを確認します。',
+      action: '上部の「保護者として体験」を押します。',
+    }
+  }
+  if (nextIslandReady.value) {
+    return {
+      step: '次の見せ場',
+      title: '次の島プレビューを開きます',
+      detail: '復習の成果が新しい冒険の予告につながる流れを見せます。',
+      action: '「次の島をプレビューします」を押します。',
+    }
+  }
+  if (reviewQuestReady.value) {
+    return {
+      step: '次の操作',
+      title: '復習クエストを体験します',
+      detail: 'レベルチェックで見つけた苦手ポイントが、短い復習タスクに変わります。',
+      action: '「復習クエストを始めます」を押します。',
+    }
+  }
+  if (resultSummary.value) {
+    return {
+      step: '見せるポイント',
+      title: 'Quest Map と冒険バッグを確認します',
+      detail: '回答結果が XP、コイン、バッジ、次の復習ルートに変わったことを説明します。',
+      action: '画面上部の Quest Map と冒険バッグを見せます。',
+    }
+  }
+  if (attempt.value) {
+    return {
+      step: '次の操作',
+      title: 'レベルチェックを提出します',
+      detail: '短い問題に答えるだけで、得意と復習ポイントが見えることを見せます。',
+      action: '答えを選んで「答えを提出します」を押します。',
+    }
+  }
+  if (learnReady.value) {
+    return {
+      step: '次の操作',
+      title: 'レベルチェックを開始します',
+      detail: '安全確認後に学習が解放され、冒険が学習結果で進む入口です。',
+      action: '「レベルチェックを開始します」を押します。',
+    }
+  }
+  if (props.invitationCode) {
+    return {
+      step: '演示の切り替え',
+      title: '保護者確認を完了します',
+      detail: '子ども側で招待コードを出し、保護者側で確認すると学習が解放されます。',
+      action: '上部の「保護者として体験」に切り替えます。',
+    }
+  }
+  return {
+    step: '最初の操作',
+    title: '保護者への確認依頼を作ります',
+    detail: '未成年向けの安全導線として、学習前に保護者確認が必要なことを見せます。',
+    action: '「招待コードを発行します」を押します。',
+  }
+})
 const journeySummary = computed<JourneySummary>(() => ({
   completedQuestCount: completedQuestCount.value,
   totalQuestCount: questMapNodes.value.length,
@@ -582,6 +653,21 @@ watch(journeySummary, (summary) => {
         保護者の確認、学習プラン、音声練習の準備が整うと、レベルチェックと復習が進められます。
       </p>
     </header>
+
+    <aside
+      class="demo-guide-card"
+      aria-label="Demo Guide"
+    >
+      <div>
+        <p class="card-kicker">
+          Demo Guide
+        </p>
+        <span>{{ demoGuide.step }}</span>
+        <strong>{{ demoGuide.title }}</strong>
+        <p>{{ demoGuide.detail }}</p>
+      </div>
+      <p>{{ demoGuide.action }}</p>
+    </aside>
 
     <ul class="safety-list">
       <li :class="{ done: guardianReady }">

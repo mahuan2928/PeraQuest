@@ -98,6 +98,7 @@ const nextIslandPreviewOpen = ref(false)
 const listeningDemoOpen = ref(false)
 const listeningDemoAnswer = ref('')
 const listeningDemoSubmitted = ref(false)
+const listeningDemoReward = ref<GameReward | null>(null)
 
 const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const learnReady = computed(() => props.capabilities?.canLearn === true)
@@ -114,6 +115,13 @@ const reviewCompletionReward: GameReward = {
   questChapterUnlocked: null,
   badgesAwarded: ['review_forest_cleared'],
 }
+const listeningDemoCompletionReward: GameReward = {
+  xpAwarded: 10,
+  activityCoinsAwarded: 3,
+  questStepDelta: 0,
+  questChapterUnlocked: null,
+  badgesAwarded: ['listening_cove_trial'],
+}
 const questStep = computed(() => {
   const rawStep = gameState.value?.questStep ?? 0
   const badges = new Set(gameState.value?.badges ?? [])
@@ -127,11 +135,14 @@ const questStep = computed(() => {
   return Math.max(rawStep, earnedStep)
 })
 const questProgress = computed(() => Math.min(100, Math.round((questStep.value / questMapNodes.value.length) * 100)))
-const displayedTotalXp = computed(() => (gameState.value?.totalXp ?? 0) + (reviewQuestReward.value?.xpAwarded ?? 0))
-const displayedActivityCoins = computed(() => (gameState.value?.activityCoins ?? 0) + (reviewQuestReward.value?.activityCoinsAwarded ?? 0))
+const localRewards = computed(() => [reviewQuestReward.value, listeningDemoReward.value].filter((reward): reward is GameReward => Boolean(reward)))
+const displayedTotalXp = computed(() => (gameState.value?.totalXp ?? 0) + localRewards.value.reduce((sum, reward) => sum + reward.xpAwarded, 0))
+const displayedActivityCoins = computed(() => (gameState.value?.activityCoins ?? 0) + localRewards.value.reduce((sum, reward) => sum + reward.activityCoinsAwarded, 0))
 const displayedBadges = computed(() => {
   const badges = new Set(gameState.value?.badges ?? [])
-  for (const badge of reviewQuestReward.value?.badgesAwarded ?? []) badges.add(badge)
+  for (const reward of localRewards.value) {
+    for (const badge of reward.badgesAwarded) badges.add(badge)
+  }
   return [...badges]
 })
 const badgeLabels: Record<string, string> = {
@@ -139,6 +150,7 @@ const badgeLabels: Record<string, string> = {
   level_check_cleared: 'レベルチェッククリア',
   level_check_challenger: 'Quest チャレンジャー',
   review_forest_cleared: '復習の森クリア',
+  listening_cove_trial: 'リスニング入り江体験',
 }
 const knowledgePointLabels: Record<string, string> = {
   'grammar.past_tense': '過去形',
@@ -264,14 +276,18 @@ const startListeningDemo = () => {
   listeningDemoOpen.value = true
   listeningDemoSubmitted.value = false
   listeningDemoAnswer.value = ''
+  listeningDemoReward.value = null
   message.value = 'リスニング入り江の体験を開始しました。会話の内容を選びましょう。'
 }
 const submitListeningDemo = () => {
-  if (!listeningDemoAnswer.value) return
+  if (!listeningDemoAnswer.value || listeningDemoSubmitted.value) return
   listeningDemoSubmitted.value = true
+  listeningDemoReward.value = listeningDemoCompletionReward
+  earnedReward.value = listeningDemoCompletionReward
+  rewardCelebrationOpen.value = true
   message.value = listeningDemoCorrect.value
-    ? '正解です。短い会話から待ち合わせ場所を聞き取れました。'
-    : 'もう一度聞くつもりで、場所を表す言葉に注目しましょう。'
+    ? '正解です。短い会話から待ち合わせ場所を聞き取れました。リスニング入り江の体験バッジを獲得しました。'
+    : '場所を表す言葉に注目できました。リスニング入り江の体験バッジを獲得しました。'
 }
 
 const hasRewardValue = (reward: GameReward | null): reward is GameReward => (
@@ -586,9 +602,10 @@ watch(() => props.knowledgeItems.length, (count) => {
           <button
             class="secondary-action"
             type="button"
+            :disabled="listeningDemoSubmitted"
             @click="startListeningDemo"
           >
-            1問だけ体験します
+            {{ listeningDemoSubmitted ? '体験済みです' : '1問だけ体験します' }}
           </button>
           <section
             v-if="listeningDemoOpen"

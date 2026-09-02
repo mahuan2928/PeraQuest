@@ -372,6 +372,10 @@ describe('minor onboarding vertical slice', () => {
     await wrapper.get('input[value="library"]').setValue(true)
     await wrapper.findAll('button').find((button) => button.text().includes('答えを確認します'))!.trigger('click')
     expect(wrapper.text()).toContain('正解です。library は「図書館」です。')
+    expect(wrapper.text()).toContain('+10 XP')
+    expect(wrapper.text()).toContain('+3 コイン')
+    expect(wrapper.text()).toContain('リスニング入り江体験')
+    expect(wrapper.findAll('button').some((button) => button.text().includes('体験済みです'))).toBe(true)
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {

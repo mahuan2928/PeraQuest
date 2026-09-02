@@ -119,6 +119,13 @@ h1 span { color: var(--green); }
 .reward-close { min-height: 40px; padding: 8px 12px; border: 2px solid var(--ink); color: var(--ink); background: var(--paper); font-size: .74rem; font-weight: 900; box-shadow: 3px 3px 0 var(--ink); }
 .invitation-code { margin-top: 14px !important; padding: 12px; border: 2px dashed var(--green); color: var(--ink) !important; background: #eef8ca; font-weight: 900; overflow-wrap: anywhere; }
 .plan-badge { display: inline-flex; margin-top: 14px; padding: 5px 9px; border: 1px solid var(--ink); color: var(--ink); background: var(--lime); font-size: .72rem; font-weight: 900; }
+.next-island-card { background: #fff7d8; }
+.next-island-lock { display: grid; gap: 4px; margin: 16px 0; padding: 14px; border: 2px dashed var(--orange); background: white; }
+.next-island-lock span, .next-island-preview span { color: var(--orange); font-size: .68rem; font-weight: 900; letter-spacing: .12em; }
+.next-island-lock strong, .next-island-preview strong { font-size: 1.05rem; }
+.next-island-preview { display: grid; gap: 10px; margin-top: 16px; padding: 16px; border: 2px solid var(--ink); background: white; box-shadow: 4px 4px 0 var(--ink); }
+.next-island-preview p { margin: 0; font-size: .84rem; line-height: 1.55; }
+.next-island-preview ul { display: grid; gap: 8px; margin: 0; padding-left: 18px; font-size: .82rem; }
 .stage-question { display: grid; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
 .stage-question:last-of-type { border-bottom: 0; }
 .stage-question h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 2.1rem); }

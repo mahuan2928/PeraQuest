@@ -94,6 +94,7 @@ const rewardCelebrationOpen = ref(false)
 const reviewQuestOpen = ref(false)
 const reviewQuestCompleted = ref(false)
 const reviewQuestReward = ref<GameReward | null>(null)
+const nextIslandPreviewOpen = ref(false)
 
 const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const learnReady = computed(() => props.capabilities?.canLearn === true)
@@ -199,6 +200,7 @@ const reviewQuestItems = computed(() => [...props.knowledgeItems]
   .sort((left, right) => left.masteryScore - right.masteryScore)
   .slice(0, 3))
 const reviewQuestReady = computed(() => questStep.value >= 3 && reviewQuestItems.value.length > 0)
+const nextIslandReady = computed(() => questStep.value >= 4)
 const questStatusLabel = (status: QuestMapNode['status']) => {
   if (status === 'done') return '達成'
   if (status === 'current') return '次の目標'
@@ -232,6 +234,12 @@ const completeReviewQuest = () => {
   earnedReward.value = reviewCompletionReward
   rewardCelebrationOpen.value = true
   message.value = '今日の復習クエストを完了しました。次の冒険へ進む準備ができています。'
+}
+const openNextIslandPreview = () => {
+  if (!nextIslandReady.value) return
+  selectedQuestNodeId.value = 'next-island'
+  nextIslandPreviewOpen.value = true
+  message.value = '次の島の予告を開きました。新しい冒険の準備を確認しましょう。'
 }
 
 const hasRewardValue = (reward: GameReward | null): reward is GameReward => (
@@ -510,6 +518,40 @@ watch(() => props.knowledgeItems.length, (count) => {
         <h2>学習プラン</h2>
         <p>正式なお支払い機能は準備中です。現在の体験では、保護者確認後にレベルチェックへ進めます。</p>
         <span class="plan-badge">近日公開</span>
+      </article>
+
+      <article class="action-card next-island-card">
+        <p class="card-kicker">
+          次の冒険
+        </p>
+        <h2>次の島プレビュー</h2>
+        <p>{{ nextIslandReady ? '復習の森を越えました。次のステージの予告を確認できます。' : '復習クエストを完了すると、次の島の予告が開きます。' }}</p>
+        <div class="next-island-lock">
+          <span>{{ nextIslandReady ? '解放済み' : '解放条件' }}</span>
+          <strong>{{ nextIslandReady ? '新しい島への航路を確認できます' : '復習の森をクリアしましょう' }}</strong>
+        </div>
+        <button
+          class="primary-action"
+          type="button"
+          :disabled="!nextIslandReady"
+          @click="openNextIslandPreview"
+        >
+          {{ nextIslandReady ? '次の島をプレビューします' : '復習後にプレビューできます' }}
+        </button>
+        <section
+          v-if="nextIslandPreviewOpen"
+          class="next-island-preview"
+          aria-live="polite"
+        >
+          <span>Coming Soon</span>
+          <strong>リスニング入り江</strong>
+          <p>短い会話を聞き取り、時間・理由・気持ちを選ぶ新しい冒険です。</p>
+          <ul>
+            <li>3分で挑戦できる短い会話</li>
+            <li>復習の森で見つけた苦手ポイントを反映</li>
+            <li>保護者レポートに次のおすすめとして表示予定</li>
+          </ul>
+        </section>
       </article>
     </section>
 

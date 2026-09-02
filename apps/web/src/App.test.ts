@@ -360,6 +360,11 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('+5 コイン')
     expect(wrapper.text()).toContain('復習の森クリア')
     expect(wrapper.text()).toContain('次の冒険は準備中です')
+
+    await wrapper.findAll('button').find((button) => button.text().includes('次の島をプレビューします'))!.trigger('click')
+    expect(wrapper.text()).toContain('リスニング入り江')
+    expect(wrapper.text()).toContain('短い会話を聞き取り、時間・理由・気持ちを選ぶ新しい冒険です。')
+    expect(wrapper.text()).toContain('保護者レポートに次のおすすめとして表示予定')
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {

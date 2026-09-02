@@ -89,6 +89,7 @@ const gameState = ref<GameState | null>(null)
 const voiceReady = ref(false)
 const deviceReady = ref(false)
 const selectedQuestNodeId = ref<string | null>(null)
+const earnedReward = ref<GameReward | null>(null)
 const rewardCelebrationOpen = ref(false)
 
 const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
@@ -160,7 +161,6 @@ const questMapNodes = computed<QuestMapNode[]>(() => questBlueprint.map((node, i
 const currentQuestNode = computed(() => questMapNodes.value.find((node) => node.status === 'current') ?? questMapNodes.value.at(-1)!)
 const selectedQuestNode = computed(() => questMapNodes.value.find((node) => node.id === selectedQuestNodeId.value) ?? currentQuestNode.value)
 const completedQuestCount = computed(() => questMapNodes.value.filter((node) => node.status === 'done').length)
-const rewardCelebration = computed(() => resultSummary.value?.rewards ?? null)
 const questStatusLabel = (status: QuestMapNode['status']) => {
   if (status === 'done') return '達成'
   if (status === 'current') return '次の目標'
@@ -171,6 +171,23 @@ const selectQuestNode = (node: QuestMapNode) => {
 }
 const closeRewardCelebration = () => {
   rewardCelebrationOpen.value = false
+}
+
+const hasRewardValue = (reward: GameReward | null): reward is GameReward => (
+  Boolean(reward)
+  && (reward!.xpAwarded > 0 || reward!.activityCoinsAwarded > 0 || reward!.questStepDelta > 0 || reward!.badgesAwarded.length > 0)
+)
+
+const rewardFromGameStateDelta = (before: GameState | null, after: GameState | null): GameReward | null => {
+  if (!after) return null
+  const previousBadges = new Set(before?.badges ?? [])
+  return {
+    xpAwarded: Math.max(0, after.totalXp - (before?.totalXp ?? 0)),
+    activityCoinsAwarded: Math.max(0, after.activityCoins - (before?.activityCoins ?? 0)),
+    questStepDelta: Math.max(0, after.questStep - (before?.questStep ?? 0)),
+    questChapterUnlocked: after.questChapter > (before?.questChapter ?? 0) ? after.questChapter : null,
+    badgesAwarded: after.badges.filter((badge) => !previousBadges.has(badge)),
+  }
 }
 
 function toUserMessage() {
@@ -212,6 +229,7 @@ async function startLevelCheck() {
     attempt.value = response.body as StageAttempt
     selected.value = {}
     resultSummary.value = null
+    earnedReward.value = null
     rewardCelebrationOpen.value = false
     message.value = 'レベルチェックを開始しました。'
   })
@@ -220,6 +238,7 @@ async function startLevelCheck() {
 async function submitLevelCheck() {
   if (!attempt.value || !answered.value) return
   await runAction(async () => {
+    const previousGameState = gameState.value
     const answers = attempt.value!.items.map((item) => ({
       itemId: item.itemId,
       selectedOptionId: selected.value[item.itemId] ?? null,
@@ -229,10 +248,12 @@ async function submitLevelCheck() {
     const result = await fetchDemoStageAttemptResult(props.session.studentToken, attempt.value!.attemptId)
     if (!result.ok) throw new Error('stage attempt result failed')
     resultSummary.value = result.body as { passed?: boolean; score?: number; maxScore?: number; rewards?: GameReward }
-    rewardCelebrationOpen.value = Boolean(resultSummary.value.rewards)
     const knowledge = await fetchDemoStudentKnowledge(props.session.studentToken)
     if (knowledge.ok) emit('knowledgeUpdated', ((knowledge.body as { items?: KnowledgeItem[] }).items ?? []))
     await refreshGameState()
+    const reward = resultSummary.value.rewards ?? rewardFromGameStateDelta(previousGameState, gameState.value)
+    earnedReward.value = hasRewardValue(reward) ? reward : null
+    rewardCelebrationOpen.value = Boolean(earnedReward.value)
     message.value = 'レベルチェックの結果を保存しました。Quest 進捗と復習予定を更新しました。'
   })
 }
@@ -498,20 +519,20 @@ watch(currentQuestNode, (node) => {
           {{ resultSummary.score }} / {{ resultSummary.maxScore }}
         </p>
         <div
-          v-if="resultSummary.rewards"
+          v-if="earnedReward"
           class="reward-summary"
         >
-          <span>+{{ resultSummary.rewards.xpAwarded }} XP</span>
-          <span>+{{ resultSummary.rewards.activityCoinsAwarded }} コイン</span>
-          <span v-if="resultSummary.rewards.questStepDelta">
-            Quest +{{ resultSummary.rewards.questStepDelta }}
+          <span>+{{ earnedReward.xpAwarded }} XP</span>
+          <span>+{{ earnedReward.activityCoinsAwarded }} コイン</span>
+          <span v-if="earnedReward.questStepDelta">
+            Quest +{{ earnedReward.questStepDelta }}
           </span>
         </div>
       </article>
     </section>
 
     <aside
-      v-if="rewardCelebration && rewardCelebrationOpen"
+      v-if="earnedReward && rewardCelebrationOpen"
       class="reward-celebration"
       role="status"
       aria-live="polite"
@@ -524,10 +545,10 @@ watch(currentQuestNode, (node) => {
         <strong>Quest が前に進みました</strong>
         <p>学習の結果が、XP・コイン・バッジに変わりました。</p>
         <div class="reward-summary">
-          <span>+{{ rewardCelebration.xpAwarded }} XP</span>
-          <span>+{{ rewardCelebration.activityCoinsAwarded }} コイン</span>
+          <span>+{{ earnedReward.xpAwarded }} XP</span>
+          <span>+{{ earnedReward.activityCoinsAwarded }} コイン</span>
           <span
-            v-for="badge in rewardCelebration.badgesAwarded"
+            v-for="badge in earnedReward.badgesAwarded"
             :key="badge"
           >
             {{ badgeLabels[badge] ?? badge }}

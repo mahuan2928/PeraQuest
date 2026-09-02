@@ -256,11 +256,16 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('お子さまの学習を見守ります')
   })
 
-  it('shows and dismisses a reward celebration after the level check', async () => {
+  it('shows and dismisses a reward celebration from game-state progress after the level check', async () => {
+    let gameStateCalls = 0
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url === '/api/v1/me/game-state') {
-        return jsonResponse({ studentId: 'student-1', totalXp: 60, activityCoins: 20, questChapter: 0, questStep: 3, badges: ['guardian_shield', 'level_check_challenger'], updatedAt: '2026-08-31T12:00:00.000Z' })
+        gameStateCalls += 1
+        if (gameStateCalls === 1) {
+          return jsonResponse({ studentId: 'student-1', totalXp: 0, activityCoins: 0, questChapter: 0, questStep: 2, badges: ['guardian_shield'], updatedAt: '2026-08-31T12:00:00.000Z' })
+        }
+        return jsonResponse({ studentId: 'student-1', totalXp: 60, activityCoins: 20, questChapter: 0, questStep: 3, badges: ['guardian_shield', 'level_check_challenger'], updatedAt: '2026-08-31T12:01:00.000Z' })
       }
       if (url.includes('/api/v1/stage-exams/') && url.endsWith('/attempts')) {
         return jsonResponse({
@@ -279,13 +284,6 @@ describe('minor onboarding vertical slice', () => {
           passed: false,
           score: 0.5,
           maxScore: 1,
-          rewards: {
-            xpAwarded: 60,
-            activityCoinsAwarded: 20,
-            questStepDelta: 1,
-            questChapterUnlocked: null,
-            badgesAwarded: ['level_check_challenger'],
-          },
         })
       }
       if (url === '/api/v1/student-knowledge') return jsonResponse({ items: [] })

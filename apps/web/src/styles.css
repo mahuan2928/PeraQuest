@@ -203,6 +203,17 @@ h1 span { color: var(--green); }
 .review-route li small { color: #59645f; font-size: .68rem; font-weight: 900; }
 .review-quest-panel { display: grid; gap: 8px; margin-top: 16px; padding: 14px; border: 2px solid var(--ink); background: white; box-shadow: 4px 4px 0 var(--ink); }
 .review-quest-panel p { margin: 0; font-size: .82rem; }
+.review-task-list, .review-focus-task { display: grid; gap: 8px; }
+.review-focus-task { margin: 0; padding: 0; border: 0; }
+.review-focus-task legend { margin-bottom: 4px; font-size: .74rem; font-weight: 900; }
+.review-task { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: center; padding: 10px; border: 1px solid var(--line); background: #fffdf6; }
+.review-task.done { border-color: var(--green); background: #f7ffe2; }
+.review-task input[type="checkbox"], .review-task input[type="radio"] { width: 18px; height: 18px; accent-color: var(--green); }
+.review-task strong, .review-task small { display: block; }
+.review-task small { color: #59645f; font-size: .72rem; line-height: 1.4; }
+.review-task.rewrite { grid-template-columns: 1fr; }
+.review-rewrite-input { min-height: 44px; padding: 9px 10px; border: 2px solid var(--line); background: white; font-weight: 800; }
+.review-task-progress { justify-self: start; padding: 6px 9px; border: 1px solid var(--ink); background: var(--lime); font-weight: 900; }
 .review-complete { color: var(--green) !important; font-weight: 900; }
 .guardian-report { display: grid; gap: 18px; }
 .report-highlight { padding: 18px; border: 2px solid var(--ink); background: #fff7d8; box-shadow: 4px 4px 0 var(--ink); }

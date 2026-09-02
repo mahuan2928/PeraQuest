@@ -123,6 +123,9 @@ const rewardCelebrationOpen = ref(false)
 const reviewQuestOpen = ref(false)
 const reviewQuestCompleted = ref(false)
 const reviewQuestReward = ref<GameReward | null>(null)
+const reviewReadAloudDone = ref(false)
+const reviewFocusRef = ref('')
+const reviewRewriteText = ref('')
 const nextIslandPreviewOpen = ref(false)
 const listeningDemoOpen = ref(false)
 const listeningDemoAnswer = ref('')
@@ -322,6 +325,12 @@ const reviewQuestItems = computed(() => [...props.knowledgeItems]
   .sort((left, right) => left.masteryScore - right.masteryScore)
   .slice(0, 3))
 const reviewQuestReady = computed(() => questStep.value >= 3 && reviewQuestItems.value.length > 0)
+const reviewTaskProgress = computed(() => [
+  reviewReadAloudDone.value,
+  Boolean(reviewFocusRef.value),
+  reviewRewriteText.value.trim().length >= 6,
+].filter(Boolean).length)
+const reviewQuestCanComplete = computed(() => reviewQuestOpen.value && reviewTaskProgress.value === 3)
 const nextIslandReady = computed(() => questStep.value >= 4)
 const listeningDemoOptions = [
   {
@@ -386,10 +395,13 @@ const startReviewQuest = () => {
   reviewQuestOpen.value = true
   reviewQuestCompleted.value = false
   reviewQuestReward.value = null
+  reviewReadAloudDone.value = false
+  reviewFocusRef.value = ''
+  reviewRewriteText.value = ''
   message.value = '復習の森に入りました。今日の3つを短く確認しましょう。'
 }
 const completeReviewQuest = () => {
-  if (!reviewQuestOpen.value) return
+  if (!reviewQuestCanComplete.value) return
   reviewQuestCompleted.value = true
   reviewQuestReward.value = reviewCompletionReward
   earnedReward.value = reviewCompletionReward
@@ -543,6 +555,9 @@ watch(() => props.knowledgeItems.length, (count) => {
   if (!count) {
     reviewQuestOpen.value = false
     reviewQuestCompleted.value = false
+    reviewReadAloudDone.value = false
+    reviewFocusRef.value = ''
+    reviewRewriteText.value = ''
   }
 })
 
@@ -1099,10 +1114,68 @@ watch(journeySummary, (summary) => {
           <span>森のルート</span>
           <strong>{{ reviewQuestItems.length }}つのポイントを確認中</strong>
           <p>声に出して例文を読み、間違えた理由を1つだけ思い出しましょう。</p>
+          <div class="review-task-list">
+            <label
+              class="review-task"
+              :class="{ done: reviewReadAloudDone }"
+            >
+              <input
+                v-model="reviewReadAloudDone"
+                type="checkbox"
+                :disabled="reviewQuestCompleted"
+              >
+              <span>
+                <strong>例文を声に出して読みました</strong>
+                <small>今日の復習ポイントを1つ、ゆっくり読み上げます。</small>
+              </span>
+            </label>
+            <fieldset
+              class="review-focus-task"
+              :disabled="reviewQuestCompleted"
+            >
+              <legend>今日いちばん復習したいポイント</legend>
+              <label
+                v-for="item in reviewQuestItems"
+                :key="`focus-${item.knowledgePointRef}`"
+                class="review-task"
+                :class="{ done: reviewFocusRef === item.knowledgePointRef }"
+              >
+                <input
+                  v-model="reviewFocusRef"
+                  type="radio"
+                  name="review-focus"
+                  :value="item.knowledgePointRef"
+                >
+                <span>
+                  <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
+                  <small>習熟度 {{ Math.round(item.masteryScore * 100) }}%</small>
+                </span>
+              </label>
+            </fieldset>
+            <label
+              class="review-task rewrite"
+              :class="{ done: reviewRewriteText.trim().length >= 6 }"
+            >
+              <span>
+                <strong>短い英文を1つ書き直しました</strong>
+                <small>例: I finished my homework.</small>
+              </span>
+              <input
+                v-model="reviewRewriteText"
+                class="review-rewrite-input"
+                type="text"
+                placeholder="I finished my homework."
+                :disabled="reviewQuestCompleted"
+              >
+            </label>
+          </div>
+          <p class="review-task-progress">
+            {{ reviewTaskProgress }} / 3 タスク完了
+          </p>
           <button
             class="secondary-action"
             type="button"
-            :disabled="reviewQuestCompleted"
+            :disabled="reviewQuestCompleted || !reviewQuestCanComplete"
             @click="completeReviewQuest"
           >
             {{ reviewQuestCompleted ? '復習済みです' : '今日の復習を完了します' }}

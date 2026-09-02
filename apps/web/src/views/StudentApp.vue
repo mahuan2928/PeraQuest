@@ -58,11 +58,21 @@ type GameState = {
 
 type QuestMapNode = {
   id: string
+  islandId: string
   title: string
   description: string
   reward: string
   action: string
   status: 'done' | 'current' | 'locked'
+}
+
+type QuestIsland = {
+  id: string
+  chapter: string
+  title: string
+  description: string
+  status: 'done' | 'current' | 'locked'
+  nodes: QuestMapNode[]
 }
 
 type JourneySummary = {
@@ -181,6 +191,7 @@ const knowledgePointLabels: Record<string, string> = {
 const questBlueprint = [
   {
     id: 'start',
+    islandId: 'harbor',
     title: 'はじまりの港',
     description: '英検3級の冒険を始めます。',
     reward: 'スタート',
@@ -188,6 +199,7 @@ const questBlueprint = [
   },
   {
     id: 'guardian',
+    islandId: 'harbor',
     title: '家族の門',
     description: '保護者確認で安全に学習を解放します。',
     reward: '盾バッジ',
@@ -195,6 +207,7 @@ const questBlueprint = [
   },
   {
     id: 'level-check',
+    islandId: 'harbor',
     title: '力だめしの丘',
     description: 'レベルチェックで今の得意と復習を見つけます。',
     reward: 'XP + コイン',
@@ -202,6 +215,7 @@ const questBlueprint = [
   },
   {
     id: 'review',
+    islandId: 'forest',
     title: '復習の森',
     description: '苦手な単元を短く復習します。',
     reward: '復習ルート',
@@ -209,20 +223,51 @@ const questBlueprint = [
   },
   {
     id: 'next-island',
+    islandId: 'cove',
     title: '次の島',
     description: '次のステージへ進む準備をします。',
     reward: '近日公開',
     action: '次の冒険は準備中です。',
   },
 ] satisfies Array<Omit<QuestMapNode, 'status'>>
+const questIslandBlueprint = [
+  {
+    id: 'harbor',
+    chapter: 'Chapter 1',
+    title: 'はじまりの島',
+    description: '家族連携と力だめしで冒険の準備を整えます。',
+  },
+  {
+    id: 'forest',
+    chapter: 'Chapter 2',
+    title: '復習の森',
+    description: '苦手ポイントを短く確認して、次の島への道を開きます。',
+  },
+  {
+    id: 'cove',
+    chapter: 'Chapter 3',
+    title: 'リスニング入り江',
+    description: '短い会話を聞き取り、新しい冒険の予告を体験します。',
+  },
+] as const
 const questMapNodes = computed<QuestMapNode[]>(() => questBlueprint.map((node, index) => {
   const stepNumber = index + 1
   const status = questStep.value >= stepNumber ? 'done' : questStep.value === index ? 'current' : 'locked'
   return { ...node, status }
 }))
+const questIslands = computed<QuestIsland[]>(() => questIslandBlueprint.map((island) => {
+  const nodes = questMapNodes.value.filter((node) => node.islandId === island.id)
+  const status = nodes.every((node) => node.status === 'done')
+    ? 'done'
+    : nodes.some((node) => node.status === 'current' || node.status === 'done')
+      ? 'current'
+      : 'locked'
+  return { ...island, nodes, status }
+}))
 const currentQuestNode = computed(() => questMapNodes.value.find((node) => node.status === 'current') ?? questMapNodes.value.at(-1)!)
 const selectedQuestNode = computed(() => questMapNodes.value.find((node) => node.id === selectedQuestNodeId.value) ?? currentQuestNode.value)
 const completedQuestCount = computed(() => questMapNodes.value.filter((node) => node.status === 'done').length)
+const currentQuestIsland = computed<QuestIsland>(() => questIslands.value.find((island) => island.nodes.some((node) => node.id === currentQuestNode.value.id)) ?? questIslands.value[0]!)
 const reviewQuestItems = computed(() => [...props.knowledgeItems]
   .sort((left, right) => left.masteryScore - right.masteryScore)
   .slice(0, 3))
@@ -511,42 +556,61 @@ watch(journeySummary, (summary) => {
         </div>
         <div class="quest-current">
           <span>現在の目標</span>
-          <strong>{{ currentQuestNode.title }}</strong>
+          <strong>{{ currentQuestIsland.title }} · {{ currentQuestNode.title }}</strong>
           <p>{{ currentQuestNode.action }}</p>
+        </div>
+        <div class="quest-island-overview">
+          <span>{{ currentQuestIsland.chapter }}</span>
+          <strong>{{ currentQuestIsland.title }}</strong>
+          <p>{{ currentQuestIsland.description }}</p>
         </div>
         <ol
           class="quest-map"
           aria-label="Quest Map"
         >
           <li
-            v-for="(node, index) in questMapNodes"
-            :key="node.id"
-            class="quest-node"
-            :class="node.status"
+            v-for="island in questIslands"
+            :key="island.id"
+            class="quest-island"
+            :class="island.status"
           >
-            <button
-              class="quest-node-button"
-              type="button"
-              :aria-pressed="selectedQuestNode.id === node.id"
-              @click="selectQuestNode(node)"
-            >
-              <span class="quest-pin">{{ node.status === 'done' ? '✓' : index + 1 }}</span>
-              <div>
-                <strong>
-                  {{ node.title }}
-                  <small class="quest-state-label">{{ questStatusLabel(node.status) }}</small>
-                </strong>
-                <small>{{ node.description }}</small>
-                <em>{{ node.reward }}</em>
-              </div>
-              <span
-                v-if="node.id === currentQuestNode.id"
-                class="quest-avatar"
-                aria-label="現在地"
+            <div class="quest-island-heading">
+              <span>{{ island.chapter }}</span>
+              <strong>{{ island.title }}</strong>
+              <small>{{ island.description }}</small>
+            </div>
+            <ol class="quest-island-nodes">
+              <li
+                v-for="node in island.nodes"
+                :key="node.id"
+                class="quest-node"
+                :class="node.status"
               >
-                LQ
-              </span>
-            </button>
+                <button
+                  class="quest-node-button"
+                  type="button"
+                  :aria-pressed="selectedQuestNode.id === node.id"
+                  @click="selectQuestNode(node)"
+                >
+                  <span class="quest-pin">{{ node.status === 'done' ? '✓' : questMapNodes.findIndex((item) => item.id === node.id) + 1 }}</span>
+                  <div>
+                    <strong>
+                      {{ node.title }}
+                      <small class="quest-state-label">{{ questStatusLabel(node.status) }}</small>
+                    </strong>
+                    <small>{{ node.description }}</small>
+                    <em>{{ node.reward }}</em>
+                  </div>
+                  <span
+                    v-if="node.id === currentQuestNode.id"
+                    class="quest-avatar"
+                    aria-label="現在地"
+                  >
+                    LQ
+                  </span>
+                </button>
+              </li>
+            </ol>
           </li>
         </ol>
         <section

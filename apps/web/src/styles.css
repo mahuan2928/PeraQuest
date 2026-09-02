@@ -85,7 +85,19 @@ h1 span { color: var(--green); }
 .quest-current span { color: var(--green); font-size: .7rem; font-weight: 900; letter-spacing: .12em; }
 .quest-current strong { font-size: 1.15rem; }
 .quest-current p { margin: 0 !important; font-size: .82rem; }
+.quest-island-overview { display: grid; gap: 4px; margin: 14px 0; padding: 12px; border: 2px dashed var(--green); background: #f7ffe2; }
+.quest-island-overview span, .quest-island-heading span { color: var(--green); font-size: .66rem; font-weight: 900; letter-spacing: .12em; }
+.quest-island-overview strong { font-size: 1rem; }
+.quest-island-overview p { margin: 0 !important; font-size: .8rem; }
 .quest-map { position: relative; display: grid; gap: 10px; margin: 18px 0 12px; padding: 0; list-style: none; }
+.quest-island { display: grid; gap: 8px; padding: 10px; border: 2px solid var(--line); background: rgb(255 255 255 / 52%); }
+.quest-island.done { border-color: var(--ink); background: #eef8ca; }
+.quest-island.current { border-color: var(--orange); background: #fffdf6; box-shadow: 3px 3px 0 var(--orange); }
+.quest-island.locked { color: #7f8985; }
+.quest-island-heading { display: grid; gap: 3px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.quest-island-heading strong { font-size: 1rem; }
+.quest-island-heading small { font-size: .74rem; line-height: 1.45; }
+.quest-island-nodes { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .quest-node { display: block; border: 2px solid var(--line); background: rgb(255 255 255 / 72%); }
 .quest-node.done { border-color: var(--ink); background: #eef8ca; box-shadow: 3px 3px 0 var(--ink); }
 .quest-node.current { border-color: var(--orange); background: white; box-shadow: 3px 3px 0 var(--orange); }

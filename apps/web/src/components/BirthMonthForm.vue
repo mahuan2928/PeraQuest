@@ -42,6 +42,26 @@ function submit() {
         <li>保護者は今日の学習成果と次のおすすめを確認できます。</li>
       </ul>
     </div>
+    <div
+      class="landing-value-grid"
+      aria-label="PeraQuest の特徴"
+    >
+      <article>
+        <span>For Students</span>
+        <strong>続けたくなる学習</strong>
+        <p>短い問題、復習クエスト、ごほうびで、毎日の英検3級学習を冒険に変えます。</p>
+      </article>
+      <article>
+        <span>For Guardians</span>
+        <strong>見守れるレポート</strong>
+        <p>得意、復習ポイント、次のおすすめを親子で話しやすい言葉にまとめます。</p>
+      </article>
+      <article>
+        <span>Best Fit</span>
+        <strong>親子で始める英検準備</strong>
+        <p>はじめて英検3級に挑戦する小中学生の、最初の習慣づくりに向いています。</p>
+      </article>
+    </div>
     <button
       class="primary-action demo-start-button"
       type="button"

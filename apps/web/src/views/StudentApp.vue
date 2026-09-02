@@ -86,6 +86,13 @@ type JourneySummary = {
   nextStep: string
 }
 
+type InventoryItem = {
+  id: string
+  title: string
+  detail: string
+  status: 'collected' | 'locked'
+}
+
 const props = defineProps<{
   session: DemoSessionResponse
   capabilities: CapabilityState | null
@@ -167,6 +174,49 @@ const displayedBadges = computed(() => {
   }
   return [...badges]
 })
+const inventoryItems = computed<InventoryItem[]>(() => [
+  {
+    id: 'xp',
+    title: 'XP クリスタル',
+    detail: `${displayedTotalXp.value} XP を集めました。`,
+    status: displayedTotalXp.value > 0 ? 'collected' : 'locked',
+  },
+  {
+    id: 'coins',
+    title: '冒険コイン',
+    detail: `${displayedActivityCoins.value} コインを持っています。`,
+    status: displayedActivityCoins.value > 0 ? 'collected' : 'locked',
+  },
+  {
+    id: 'route-map',
+    title: '島の航海図',
+    detail: `${completedQuestCount.value} / ${questMapNodes.value.length} スポットを記録しました。`,
+    status: completedQuestCount.value > 0 ? 'collected' : 'locked',
+  },
+])
+const badgeInventoryItems = computed<InventoryItem[]>(() => displayedBadges.value.map((badge) => ({
+  id: badge,
+  title: badgeLabels[badge] ?? badge,
+  detail: '冒険で手に入れたバッジです。',
+  status: 'collected' as const,
+})))
+const lockedInventoryHints = computed<InventoryItem[]>(() => [
+  {
+    id: 'review-hint',
+    badgeId: 'review_forest_cleared',
+    title: '復習の森クリア',
+    detail: '復習クエストを終えるとバッグに入ります。',
+    status: 'locked' as const,
+  },
+  {
+    id: 'listening-hint',
+    badgeId: 'listening_cove_trial',
+    title: 'リスニング入り江体験',
+    detail: '次の島の1問体験で手に入ります。',
+    status: 'locked' as const,
+  },
+].filter((item) => !displayedBadges.value.includes(item.badgeId)))
+const inventoryCollectionCount = computed(() => inventoryItems.value.filter((item) => item.status === 'collected').length + badgeInventoryItems.value.length)
 const badgeLabels: Record<string, string> = {
   guardian_shield: 'ガーディアンシールド',
   level_check_cleared: 'レベルチェッククリア',
@@ -639,6 +689,62 @@ watch(journeySummary, (summary) => {
             {{ badgeLabels[badge] ?? badge }}
           </span>
         </div>
+      </article>
+
+      <article class="action-card inventory-card">
+        <p class="card-kicker">
+          Collection
+        </p>
+        <h2>冒険バッグ</h2>
+        <p>学習で集めた XP、コイン、バッジをここにしまっておきます。</p>
+        <div class="inventory-count">
+          <strong>{{ inventoryCollectionCount }}</strong>
+          <span>コレクション</span>
+        </div>
+        <div class="inventory-resource-grid">
+          <div
+            v-for="item in inventoryItems"
+            :key="item.id"
+            class="inventory-item"
+            :class="item.status"
+          >
+            <span>{{ item.status === 'collected' ? '✓' : '?' }}</span>
+            <strong>{{ item.title }}</strong>
+            <small>{{ item.detail }}</small>
+          </div>
+        </div>
+        <section class="inventory-section">
+          <h3>バッジ</h3>
+          <p v-if="!badgeInventoryItems.length">
+            最初のバッジは保護者確認で手に入ります。
+          </p>
+          <div
+            v-else
+            class="inventory-badge-grid"
+          >
+            <span
+              v-for="badge in badgeInventoryItems"
+              :key="badge.id"
+            >
+              {{ badge.title }}
+            </span>
+          </div>
+        </section>
+        <section
+          v-if="lockedInventoryHints.length"
+          class="inventory-section locked"
+        >
+          <h3>次に集めるもの</h3>
+          <ul>
+            <li
+              v-for="item in lockedInventoryHints"
+              :key="item.id"
+            >
+              <strong>{{ item.title }}</strong>
+              <small>{{ item.detail }}</small>
+            </li>
+          </ul>
+        </section>
       </article>
 
       <article class="action-card">

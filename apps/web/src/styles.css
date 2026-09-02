@@ -123,6 +123,26 @@ h1 span { color: var(--green); }
 .quest-step { margin-top: 8px !important; font-size: .82rem; font-weight: 900; }
 .badge-list, .reward-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .badge-list span, .reward-summary span { display: inline-flex; padding: 6px 10px; border: 1px solid var(--ink); color: var(--ink); background: var(--lime); font-size: .72rem; font-weight: 900; }
+.inventory-card { background: linear-gradient(135deg, #fffdf6, #eef8ca); }
+.inventory-count { display: inline-grid; gap: 2px; width: fit-content; margin: 14px 0; padding: 10px 14px; border: 2px solid var(--ink); background: var(--lime); text-align: center; box-shadow: 3px 3px 0 var(--ink); }
+.inventory-count strong { font-size: 1.7rem; line-height: 1; }
+.inventory-count span { font-size: .68rem; font-weight: 900; }
+.inventory-resource-grid { display: grid; gap: 9px; }
+.inventory-item { display: grid; grid-template-columns: 34px 1fr; gap: 3px 9px; align-items: center; padding: 10px; border: 2px solid var(--line); background: white; }
+.inventory-item span { display: grid; grid-row: span 2; place-items: center; width: 30px; height: 30px; border: 2px solid var(--ink); border-radius: 50%; color: var(--ink); background: var(--paper); font-weight: 1000; }
+.inventory-item.collected { border-color: var(--ink); box-shadow: 3px 3px 0 var(--ink); }
+.inventory-item.collected span { color: white; background: var(--green); }
+.inventory-item.locked { color: #7f8985; background: rgb(255 255 255 / 62%); }
+.inventory-item strong, .inventory-item small { display: block; }
+.inventory-item small { font-size: .72rem; line-height: 1.4; }
+.inventory-section { display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.inventory-section h3 { margin: 0; font-size: 1rem; }
+.inventory-section p { margin: 0 !important; font-size: .82rem; }
+.inventory-badge-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.inventory-badge-grid span { display: inline-flex; padding: 7px 10px; border: 1px solid var(--ink); background: var(--lime); font-size: .72rem; font-weight: 900; }
+.inventory-section.locked ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.inventory-section.locked li { display: grid; gap: 3px; padding: 9px 10px; border: 1px dashed var(--orange); background: white; }
+.inventory-section.locked small { color: #59645f; font-size: .72rem; }
 .reward-celebration { position: sticky; bottom: calc(18px + var(--safe-bottom)); z-index: 8; display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; width: min(760px, 100%); margin: 22px auto; padding: 16px; border: 3px solid var(--ink); background: white; box-shadow: 8px 8px 0 var(--ink); }
 .reward-burst { display: grid; place-items: center; width: 62px; height: 62px; color: var(--ink); background: var(--lime); clip-path: polygon(50% 0,61% 34%,95% 20%,73% 50%,100% 68%,64% 66%,62% 100%,45% 72%,18% 95%,28% 59%,0 45%,37% 42%); font-size: 2rem; font-weight: 1000; }
 .reward-celebration span { color: var(--green); font-size: .7rem; font-weight: 900; letter-spacing: .12em; }

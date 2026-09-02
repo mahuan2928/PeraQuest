@@ -255,12 +255,13 @@ describe('minor onboarding vertical slice', () => {
     const wrapper = mount(App)
 
     await wrapper.get('[data-testid="start-product-demo"]').trigger('click')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('今日の学習を始めます'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('生徒アプリ'))
 
     expect(wrapper.text()).toContain('生徒として体験')
     expect(wrapper.text()).toContain('保護者として体験')
-    expect(wrapper.text()).toContain('Demo Guide')
+    expect(wrapper.text()).toContain('デモ進行ガイド')
     expect(wrapper.text()).toContain('保護者への確認依頼を作ります')
+    await wrapper.findAll('button').find((button) => button.text().includes('デモ進行ガイド'))!.trigger('click')
     expect(wrapper.text()).toContain('「招待コードを発行します」を押します。')
     expect(wrapper.text()).toContain('最初に、安全に学習を始めるための親子連携を見せます。')
     expect(wrapper.text()).toContain('招待コード')
@@ -504,6 +505,7 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('復習の森クリア')
     expect(wrapper.text()).toContain('次の冒険は準備中です')
 
+    await wrapper.findAll('button').find((button) => button.text().includes('近日公開の体験'))!.trigger('click')
     await wrapper.findAll('button').find((button) => button.text().includes('次の島をプレビューします'))!.trigger('click')
     expect(wrapper.text()).toContain('リスニング入り江')
     expect(wrapper.text()).toContain('短い会話を聞き取り、時間・理由・気持ちを選ぶ新しい冒険です。')
@@ -523,6 +525,7 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('28 コインを持っています。')
     expect(wrapper.text()).toContain('リスニング入り江を体験しました')
     expect(wrapper.text()).toContain('保護者レポートへ切り替えます')
+    await wrapper.findAll('button').find((button) => button.text().includes('デモ進行ガイド'))!.trigger('click')
     expect(wrapper.text()).toContain('上部の「保護者として体験」を押します。')
     expect(wrapper.text()).toContain('次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。')
     expect(wrapper.findAll('button').some((button) => button.text().includes('体験済みです'))).toBe(true)

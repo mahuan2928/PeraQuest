@@ -344,3 +344,71 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
   footer { flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+
+/* ---- 生徒アプリ: 商品化レイアウト ---- */
+.product-panel { width: min(1160px, 100%); }
+.product-hero.compact { margin-bottom: 16px; }
+.product-hero.compact h1 { margin: 0; font-size: clamp(1.7rem, 3.4vw, 2.6rem); }
+
+.mission-bar { position: sticky; top: 10px; z-index: 8; display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .42fr); gap: 20px; margin: 0 0 24px; padding: 20px 22px; border: 3px solid var(--ink); background: linear-gradient(135deg, #fff7d8, #f2ffdc); box-shadow: 6px 6px 0 var(--ink); }
+.mission-step { margin: 0 0 6px; color: var(--green); font-size: .72rem; font-weight: 900; letter-spacing: .14em; }
+.mission-bar h2 { margin: 0; font-size: clamp(1.3rem, 2.6vw, 1.85rem); line-height: 1.25; }
+.mission-detail { margin: 8px 0 14px; color: #4c5a55; font-size: .9rem; font-weight: 600; line-height: 1.6; }
+.mission-cta { margin: 0; }
+.mission-waiting { margin: 0; padding: 12px 14px; border-left: 5px solid var(--orange); background: white; font-size: .86rem; font-weight: 800; }
+.mission-code { margin-top: 14px; padding: 12px 14px; border: 2px dashed var(--ink); background: white; }
+.mission-code > span { display: block; color: var(--green); font-size: .7rem; font-weight: 900; letter-spacing: .1em; }
+.mission-code strong { display: block; margin: 4px 0; font-size: 1.02rem; letter-spacing: .05em; word-break: break-all; }
+.mission-code small { color: #5b6763; font-size: .76rem; }
+.mission-side { display: grid; gap: 14px; align-content: start; }
+.mission-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
+.mission-stats div { padding: 10px 8px; border: 2px solid var(--ink); background: var(--paper); text-align: center; }
+.mission-stats dt { color: var(--green); font-size: .64rem; font-weight: 900; letter-spacing: .08em; }
+.mission-stats dd { margin: 3px 0 0; font-size: 1.1rem; font-weight: 1000; }
+.mission-track { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.mission-track li { display: flex; gap: 9px; align-items: center; color: #77827d; font-size: .78rem; }
+.mission-track li span { display: grid; flex: 0 0 24px; place-items: center; height: 24px; border: 2px solid var(--line); border-radius: 50%; font-size: .7rem; font-weight: 900; }
+.mission-track li.done { color: var(--ink); }
+.mission-track li.done span { border-color: var(--green); color: white; background: var(--green); }
+.mission-track li.current { color: var(--ink); font-weight: 900; }
+.mission-track li.current span { border-color: var(--ink); background: var(--lime); }
+
+.student-layout { display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(272px, .88fr); gap: 20px; align-items: start; }
+.student-main { display: grid; gap: 18px; align-content: start; min-width: 0; }
+.student-side { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.side-card { padding: 16px 18px; }
+.side-card h2 { margin: 0 0 10px; font-size: 1.05rem; }
+.side-card > p { font-size: .84rem; }
+.safety-list.compact { max-width: none; margin: 0; }
+.safety-list.compact li { padding: 10px 0; font-size: .84rem; }
+.safety-list.compact li > span { flex: 0 0 30px; height: 30px; }
+.panel-empty { margin: 0; padding: 14px 16px; border: 2px dashed var(--line); background: rgb(255 255 255 / 60%); color: #5f6b66; font-size: .86rem; font-weight: 600; }
+
+.coming-soon, .demo-guide-fold { margin-top: 22px; border: 2px solid var(--line); background: rgb(255 255 255 / 55%); }
+.coming-soon-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; padding: 14px 18px; border: 0; background: transparent; text-align: left; }
+.coming-soon-toggle > span { padding: 4px 9px; border: 1px solid var(--ink); background: var(--paper); font-size: .68rem; font-weight: 900; white-space: nowrap; }
+.coming-soon-toggle > strong { min-width: 0; color: #4a5651; font-size: .9rem; font-weight: 800; }
+.coming-soon-toggle > small { color: var(--green); font-size: .76rem; font-weight: 900; white-space: nowrap; }
+.coming-soon-body, .demo-guide-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); gap: 14px; padding: 0 18px 18px; }
+.future-card { padding: 14px 16px; border: 2px solid var(--line); background: white; }
+.future-card.wide { grid-column: 1 / -1; }
+.future-card h3 { margin: 0 0 6px; font-size: 1rem; }
+.future-card p { margin: 0 0 10px; color: #5b6763; font-size: .84rem; line-height: 1.55; }
+.demo-guide-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.demo-guide-metrics article { padding: 12px 14px; border: 2px solid var(--line); background: white; }
+.demo-guide-metrics span { display: block; color: var(--green); font-size: .68rem; font-weight: 900; letter-spacing: .08em; }
+.demo-guide-metrics strong { display: block; margin: 4px 0; font-size: 1.25rem; }
+.demo-guide-metrics p { margin: 0; color: #5b6763; font-size: .78rem; line-height: 1.5; }
+
+@media (width <= 1080px) {
+  .student-layout { grid-template-columns: minmax(0, 1fr); }
+  .mission-bar { position: static; grid-template-columns: minmax(0, 1fr); }
+}
+.inventory-count.compact { margin: 0 0 12px; padding: 8px 12px; }
+.inventory-count.compact strong { font-size: 1.35rem; }
+.future-list { margin: 0 0 10px; padding-left: 18px; color: #5b6763; font-size: .8rem; line-height: 1.6; }
+.demo-guide-metrics h3 { grid-column: 1 / -1; margin: 0; font-size: .95rem; }
+.quest-detail.compact { display: grid; gap: 3px; margin-top: 12px; padding: 11px 14px; border-left: 5px solid var(--green); background: white; }
+.quest-detail.compact span { color: var(--green); font-size: .66rem; font-weight: 900; letter-spacing: .1em; }
+.quest-detail.compact strong { font-size: .95rem; }
+.quest-detail.compact p { margin: 0; color: #5b6763; font-size: .82rem; }

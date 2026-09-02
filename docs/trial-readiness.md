@@ -28,7 +28,7 @@ Use this note before inviting a small group of users to try the online demo.
 
 - Payment and subscription purchase are intentionally not enabled.
 - Review quest and listening cove rewards are frontend demo-only rewards.
-- Demo sessions are for walkthroughs, not long-term learning history.
+- Demo sessions can survive another API instance resolving the same token, but they are still short-lived walkthrough sessions.
 - Backend cold start can still take a few seconds; the welcome page has slow-start copy.
 
 ## Handoff

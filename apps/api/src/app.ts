@@ -309,7 +309,10 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     jwksTimeoutMs: config.AUTH_JWKS_TIMEOUT_MS,
   }
   const tokenVerifier = options.tokenVerifier ?? createJwksTokenVerifier(authConfig)
-  const authUserResolver = options.authUserResolver ?? { resolve: async () => null }
+  const repositoryAuthUserResolver = 'resolve' in repository && typeof repository.resolve === 'function'
+    ? repository as unknown as AuthUserResolver
+    : null
+  const authUserResolver = options.authUserResolver ?? repositoryAuthUserResolver ?? { resolve: async () => null }
   const now = options.now ?? (() => new Date())
   const demoSessions = new Map<string, { studentId: string; guardianId: string; expiresAt: Date }>()
 

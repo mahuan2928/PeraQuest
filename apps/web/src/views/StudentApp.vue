@@ -700,6 +700,154 @@ watch(() => props.knowledgeItems.length, (count) => {
 watch(journeySummary, (summary) => {
   emit('journeyUpdated', summary)
 }, { immediate: true })
+
+// --- 表示層のみ: 「いま何をすべきか」を1つに絞るためのミッション導線 ---
+type Mission = {
+  id: 'submit-answers' | 'invite' | 'await-guardian' | 'level-check' | 'review' | 'voice' | 'device' | 'done'
+  step: string
+  title: string
+  detail: string
+  ctaLabel: string | null
+  targetId: string | null
+}
+
+
+const nextMission = computed<Mission>(() => {
+  if (attempt.value && !resultSummary.value) {
+    return {
+      id: 'submit-answers',
+      step: 'レベルチェック中',
+      title: '答えを選んで提出します',
+      detail: answered.value ? 'すべて選べました。提出できます。' : `${attempt.value.items.length} 問すべてに答えると提出できます。`,
+      ctaLabel: answered.value ? '答えを提出します' : '問題を見ます',
+      targetId: 'level-check-panel',
+    }
+  }
+  if (!guardianReady.value && !props.invitationCode) {
+    return {
+      id: 'invite',
+      step: 'ステップ 1 / 4',
+      title: '保護者に確認を依頼します',
+      detail: '未成年の方は、学習を始める前に保護者の確認が必要です。',
+      ctaLabel: '招待コードを発行します',
+      targetId: null,
+    }
+  }
+  if (!guardianReady.value) {
+    return {
+      id: 'await-guardian',
+      step: 'ステップ 1 / 4',
+      title: '保護者の確認を待っています',
+      detail: '「保護者として体験」に切り替えて、招待コードを入力してください。',
+      ctaLabel: null,
+      targetId: null,
+    }
+  }
+  if (learnReady.value && !resultSummary.value) {
+    return {
+      id: 'level-check',
+      step: 'ステップ 2 / 4',
+      title: 'レベルチェックを受けます',
+      detail: '今の得意と、復習したいポイントを確認します。',
+      ctaLabel: 'レベルチェックを開始します',
+      targetId: 'level-check-panel',
+    }
+  }
+  if (reviewQuestReady.value && !reviewQuestCompleted.value) {
+    return {
+      id: 'review',
+      step: 'ステップ 3 / 4',
+      title: '今日の復習クエストに進みます',
+      detail: 'レベルチェックで見つかった苦手ポイントを短く確認します。',
+      ctaLabel: '復習クエストを始めます',
+      targetId: 'review-panel',
+    }
+  }
+  if (voiceEnabled.value && !voiceReady.value) {
+    return {
+      id: 'voice',
+      step: 'ステップ 4 / 4',
+      title: '音声練習を試します',
+      detail: '保護者の同意により、音声練習が利用できます。',
+      ctaLabel: '音声練習を提出します',
+      targetId: null,
+    }
+  }
+  if (!deviceReady.value) {
+    return {
+      id: 'device',
+      step: '仕上げ',
+      title: 'この端末を登録します',
+      detail: '次回もこの端末で続きから体験できるようにします。',
+      ctaLabel: '端末を登録します',
+      targetId: null,
+    }
+  }
+  return {
+    id: 'done',
+    step: '完了',
+    title: '今日の冒険は完了しました',
+    detail: '保護者アプリに切り替えると、今日の学習成果を確認できます。',
+    ctaLabel: null,
+    targetId: null,
+  }
+})
+
+// ミッション ID を「保護者の確認 / レベルチェック / 復習 / 音声練習」の4段トラックに対応させます。
+const missionTrackIndex: Record<Mission['id'], number> = {
+  invite: 0,
+  'await-guardian': 0,
+  'level-check': 1,
+  'submit-answers': 1,
+  review: 2,
+  voice: 3,
+  device: 4,
+  done: 4,
+}
+const missionStepIndex = computed(() => missionTrackIndex[nextMission.value.id])
+
+const missionBusy = computed(() => {
+  if (busy.value) return true
+  if (nextMission.value.id === 'invite') return Boolean(props.invitationCode)
+  if (nextMission.value.id === 'submit-answers') return false
+  return false
+})
+
+const focusTarget = (targetId: string | null) => {
+  if (!targetId) return
+  document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const runMission = () => {
+  const mission = nextMission.value
+  switch (mission.id) {
+    case 'submit-answers':
+      if (answered.value) void submitLevelCheck()
+      else focusTarget(mission.targetId)
+      return
+    case 'invite':
+      void createInvitation()
+      return
+    case 'level-check':
+      focusTarget(mission.targetId)
+      void startLevelCheck()
+      return
+    case 'review':
+      focusTarget(mission.targetId)
+      startReviewQuest()
+      return
+    case 'voice':
+      void prepareVoicePractice()
+      return
+    case 'device':
+      void registerDevice()
+      return
+    default:
+  }
+}
+
+const comingSoonOpen = ref(false)
+const demoGuideOpen = ref(false)
 </script>
 
 <template>
@@ -707,301 +855,599 @@ watch(journeySummary, (summary) => {
     class="product-panel"
     aria-labelledby="student-app-title"
   >
-    <header class="product-hero">
+    <header class="product-hero compact">
       <p class="eyebrow">
         生徒アプリ
       </p>
       <h1 id="student-app-title">
-        今日の学習を始めます
+        今日の学習
       </h1>
-      <p class="lead">
-        保護者の確認、学習プラン、音声練習の準備が整うと、レベルチェックと復習が進められます。
-      </p>
     </header>
 
-    <aside
-      class="demo-guide-card"
-      aria-label="Demo Guide"
-    >
-      <div>
-        <p class="card-kicker">
-          Demo Guide
-        </p>
-        <span>{{ demoGuide.step }}</span>
-        <strong>{{ demoGuide.title }}</strong>
-        <p>{{ demoGuide.detail }}</p>
-      </div>
-      <div class="demo-guide-script">
-        <p>{{ demoGuide.action }}</p>
-        <small>{{ demoGuide.talkTrack }}</small>
-        <ul>
-          <li
-            v-for="checkpoint in demoGuide.checkpoints"
-            :key="checkpoint"
-          >
-            {{ checkpoint }}
-          </li>
-        </ul>
-      </div>
-    </aside>
-
+    <!-- 今日のミッション: 画面上で唯一の主操作 -->
     <section
-      class="demo-metrics-card"
-      aria-label="標準デモの口径"
+      class="mission-bar"
+      :class="`mission-${nextMission.id}`"
+      aria-label="今日のミッション"
     >
-      <p class="card-kicker">
-        Demo Standard Outcome
-      </p>
-      <h2>標準デモの口径</h2>
-      <div>
-        <article
-          v-for="metric in demoMetrics"
-          :key="metric.label"
+      <div class="mission-main">
+        <p class="mission-step">
+          {{ nextMission.step }}
+        </p>
+        <h2>{{ nextMission.title }}</h2>
+        <p class="mission-detail">
+          {{ nextMission.detail }}
+        </p>
+        <button
+          v-if="nextMission.ctaLabel"
+          class="primary-action mission-cta"
+          type="button"
+          :disabled="missionBusy"
+          @click="runMission"
         >
-          <span>{{ metric.label }}</span>
-          <strong>{{ metric.value }}</strong>
-          <p>{{ metric.detail }}</p>
-        </article>
+          {{ nextMission.ctaLabel }}
+        </button>
+        <p
+          v-else
+          class="mission-waiting"
+          role="status"
+        >
+          {{ nextMission.id === 'await-guardian' ? '保護者の確認をお待ちください。' : '次の操作はありません。' }}
+        </p>
+        <div
+          v-if="invitationCode"
+          class="mission-code"
+        >
+          <span>招待コード</span>
+          <strong class="invitation-code">{{ invitationCode }}</strong>
+          <small>「保護者として体験」に切り替えて入力してください。</small>
+        </div>
+      </div>
+
+      <div class="mission-side">
+        <dl class="mission-stats">
+          <div>
+            <dt>XP</dt>
+            <dd>{{ displayedTotalXp }}</dd>
+          </div>
+          <div>
+            <dt>コイン</dt>
+            <dd>{{ displayedActivityCoins }}</dd>
+          </div>
+          <div>
+            <dt>スポット</dt>
+            <dd>{{ completedQuestCount }} / {{ questMapNodes.length }}</dd>
+          </div>
+        </dl>
+        <ol class="mission-track">
+          <li
+            v-for="(label, index) in ['保護者の確認', 'レベルチェック', '復習', '音声練習']"
+            :key="label"
+            :class="{ done: missionStepIndex > index, current: missionStepIndex === index }"
+          >
+            <span>{{ missionStepIndex > index ? '✓' : index + 1 }}</span>
+            <small>{{ label }}</small>
+          </li>
+        </ol>
       </div>
     </section>
 
-    <ul class="safety-list">
-      <li :class="{ done: guardianReady }">
-        <span>{{ guardianReady ? '✓' : '1' }}</span>
-        <div>
-          <strong>保護者の確認</strong>
-          <small>{{ guardianReady ? '保護者の確認が完了しました。' : '保護者の確認を待っています。' }}</small>
-        </div>
-      </li>
-      <li :class="{ done: learnReady }">
-        <span>{{ learnReady ? '✓' : '2' }}</span>
-        <div>
-          <strong>学習の解放</strong>
-          <small>{{ learnReady ? 'レベルチェックを開始できます。' : '確認後に学習が解放されます。' }}</small>
-        </div>
-      </li>
-      <li :class="{ done: voiceEnabled }">
-        <span>{{ voiceEnabled ? '✓' : '3' }}</span>
-        <div>
-          <strong>音声練習</strong>
-          <small>{{ voiceEnabled ? '音声練習を提出できます。' : '保護者の同意が必要です。' }}</small>
-        </div>
-      </li>
-    </ul>
-
-    <section class="student-grid">
-      <article class="action-card quest-card">
-        <p class="card-kicker">
-          Quest
-        </p>
-        <h2>Quest Map</h2>
-        <p>学習の成果が、冒険マップの進み具合に変わります。</p>
-        <div class="quest-stats">
-          <span><strong>{{ displayedTotalXp }}</strong> XP</span>
-          <span><strong>{{ displayedActivityCoins }}</strong> コイン</span>
-          <span><strong>{{ gameState?.questChapter ?? 0 }}</strong> 章</span>
-        </div>
-        <div class="quest-current">
-          <span>現在の目標</span>
-          <strong>{{ currentQuestIsland.title }} · {{ currentQuestNode.title }}</strong>
-          <p>{{ currentQuestNode.action }}</p>
-        </div>
-        <div class="quest-island-overview">
-          <span>{{ currentQuestIsland.chapter }}</span>
-          <strong>{{ currentQuestIsland.title }}</strong>
-          <p>{{ currentQuestIsland.description }}</p>
-        </div>
-        <ol
-          class="quest-map"
-          aria-label="Quest Map"
+    <div class="student-layout">
+      <div class="student-main">
+        <section
+          id="level-check-panel"
+          class="lesson-panel"
         >
-          <li
-            v-for="island in questIslands"
-            :key="island.id"
-            class="quest-island"
-            :class="island.status"
-          >
-            <div class="quest-island-heading">
-              <span>{{ island.chapter }}</span>
-              <strong>{{ island.title }}</strong>
-              <small>{{ island.description }}</small>
+          <header class="lesson-header">
+            <div>
+              <p class="eyebrow">
+                レベルチェック
+              </p>
+              <strong>英検3級 · レベルチェック</strong>
             </div>
-            <ol class="quest-island-nodes">
-              <li
-                v-for="node in island.nodes"
-                :key="node.id"
-                class="quest-node"
-                :class="node.status"
+            <p>{{ attempt ? `${attempt.items.length} 問` : learnReady ? '準備できました' : '保護者の確認後に開始できます' }}</p>
+          </header>
+
+          <p
+            v-if="!attempt && !learnReady"
+            class="panel-empty"
+          >
+            まだレベルチェックは始められません。保護者の確認が完了すると、ここから開始できます。
+          </p>
+
+          <button
+            v-else-if="!attempt"
+            class="primary-action"
+            type="button"
+            :disabled="busy"
+            @click="startLevelCheck"
+          >
+            レベルチェックを開始します
+          </button>
+
+          <article
+            v-else-if="!resultSummary"
+            class="question-card"
+          >
+            <div class="demo-answer-guide">
+              <div>
+                <span>Demo Stable Path</span>
+                <strong>デモ用の回答を入れて、同じ結果で説明できます。</strong>
+              </div>
+              <button
+                class="secondary-action"
+                type="button"
+                :disabled="busy"
+                @click="fillDemoLevelCheckAnswers"
               >
-                <button
-                  class="quest-node-button"
-                  type="button"
-                  :aria-pressed="selectedQuestNode.id === node.id"
-                  @click="selectQuestNode(node)"
+                デモ用の回答を入れます
+              </button>
+            </div>
+            <div
+              v-for="(item, index) in attempt.items"
+              :key="item.itemId"
+              class="stage-question"
+            >
+              <span class="ability-tag">問題 {{ index + 1 }}</span>
+              <h2>{{ item.prompt }}</h2>
+              <p class="question-support">
+                {{ item.support }}
+              </p>
+              <fieldset :disabled="busy">
+                <legend class="sr-only">
+                  答えを1つ選んでください
+                </legend>
+                <label
+                  v-for="option in item.options"
+                  :key="option.optionId"
+                  class="choice"
+                  :class="{ selected: selected[item.itemId] === option.optionId }"
                 >
-                  <span class="quest-pin">{{ node.status === 'done' ? '✓' : questMapNodes.findIndex((item) => item.id === node.id) + 1 }}</span>
-                  <div>
-                    <strong>
-                      {{ node.title }}
-                      <small class="quest-state-label">{{ questStatusLabel(node.status) }}</small>
-                    </strong>
-                    <small>{{ node.description }}</small>
-                    <em>{{ node.reward }}</em>
-                  </div>
-                  <span
-                    v-if="node.id === currentQuestNode.id"
-                    class="quest-avatar"
-                    aria-label="現在地"
+                  <input
+                    v-model="selected[item.itemId]"
+                    type="radio"
+                    :name="item.itemId"
+                    :value="option.optionId"
                   >
-                    LQ
-                  </span>
-                </button>
+                  <span>{{ option.text }}</span>
+                </label>
+              </fieldset>
+            </div>
+            <button
+              class="primary-action"
+              type="button"
+              :disabled="busy || !answered"
+              @click="submitLevelCheck"
+            >
+              答えを提出します
+            </button>
+          </article>
+
+          <article
+            v-else
+            class="result-card"
+          >
+            <strong>{{ resultSummary.passed ? '合格ラインに到達しました' : '復習から始めましょう' }}</strong>
+            <p>今回の結果をもとに、復習予定を更新しました。</p>
+            <p class="score-line">
+              {{ resultSummary.score }} / {{ resultSummary.maxScore }}
+            </p>
+            <div
+              v-if="earnedReward"
+              class="reward-summary"
+            >
+              <span>+{{ earnedReward.xpAwarded }} XP</span>
+              <span>+{{ earnedReward.activityCoinsAwarded }} コイン</span>
+              <span v-if="earnedReward.questStepDelta">
+                Quest +{{ earnedReward.questStepDelta }}
+              </span>
+            </div>
+          </article>
+        </section>
+
+        <article
+          id="review-panel"
+          class="action-card"
+        >
+          <p class="card-kicker">
+            復習予定
+          </p>
+          <h2>今日の復習</h2>
+          <p>{{ knowledgeItems.length ? `${knowledgeItems.length} 件の復習予定があります。` : 'レベルチェックが終わると、復習予定がここに表示されます。' }}</p>
+          <div
+            v-if="knowledgeItems.length"
+            class="mini-mastery"
+          >
+            <strong>{{ masteryAverage }}%</strong>
+            <span>平均習熟度</span>
+          </div>
+          <section
+            v-if="reviewQuestItems.length"
+            class="review-route"
+            aria-label="今日の復習クエスト"
+          >
+            <span>今日の復習クエスト</span>
+            <strong>復習の森ルート</strong>
+            <ol>
+              <li
+                v-for="item in reviewQuestItems"
+                :key="item.knowledgePointRef"
+              >
+                <span>{{ reviewStateLabel(item.state) }}</span>
+                <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
+                <small>習熟度 {{ Math.round(item.masteryScore * 100) }}%</small>
               </li>
             </ol>
-          </li>
-        </ol>
-        <section
-          class="quest-detail"
-          aria-live="polite"
-        >
-          <span>スポット詳細</span>
-          <strong>{{ selectedQuestNode.title }}</strong>
-          <p>{{ selectedQuestNode.description }}</p>
-          <em>{{ selectedQuestNode.action }}</em>
-        </section>
-        <div class="quest-trail">
-          <span :style="{ width: `${questProgress}%` }" />
-        </div>
-        <p class="quest-step">
-          {{ completedQuestCount }} / {{ questMapNodes.length }} スポット達成
-        </p>
-        <div
-          v-if="displayedBadges.length"
-          class="badge-list"
-        >
-          <span
-            v-for="badge in displayedBadges"
-            :key="badge"
+          </section>
+          <button
+            v-if="reviewQuestReady && !reviewQuestOpen"
+            class="primary-action"
+            type="button"
+            @click="startReviewQuest"
           >
-            {{ badgeLabels[badge] ?? badge }}
-          </span>
-        </div>
-      </article>
+            復習クエストを始めます
+          </button>
+          <section
+            v-if="reviewQuestOpen"
+            class="review-quest-panel"
+            aria-live="polite"
+          >
+            <span>森のルート</span>
+            <strong>{{ reviewQuestItems.length }}つのポイントを確認中</strong>
+            <p>声に出して例文を読み、間違えた理由を1つだけ思い出しましょう。</p>
+            <div class="review-task-list">
+              <label
+                class="review-task"
+                :class="{ done: reviewReadAloudDone }"
+              >
+                <input
+                  v-model="reviewReadAloudDone"
+                  type="checkbox"
+                  :disabled="reviewQuestCompleted"
+                >
+                <span>
+                  <strong>例文を声に出して読みました</strong>
+                  <small>今日の復習ポイントを1つ、ゆっくり読み上げます。</small>
+                </span>
+              </label>
+              <fieldset
+                class="review-focus-task"
+                :disabled="reviewQuestCompleted"
+              >
+                <legend>今日いちばん復習したいポイント</legend>
+                <label
+                  v-for="item in reviewQuestItems"
+                  :key="`focus-${item.knowledgePointRef}`"
+                  class="review-task"
+                  :class="{ done: reviewFocusRef === item.knowledgePointRef }"
+                >
+                  <input
+                    v-model="reviewFocusRef"
+                    type="radio"
+                    name="review-focus"
+                    :value="item.knowledgePointRef"
+                  >
+                  <span>
+                    <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
+                    <small>習熟度 {{ Math.round(item.masteryScore * 100) }}%</small>
+                  </span>
+                </label>
+              </fieldset>
+              <label
+                class="review-task rewrite"
+                :class="{ done: reviewRewriteText.trim().length >= 6 }"
+              >
+                <span>
+                  <strong>短い英文を1つ書き直しました</strong>
+                  <small>例: I finished my homework.</small>
+                </span>
+                <input
+                  v-model="reviewRewriteText"
+                  class="review-rewrite-input"
+                  type="text"
+                  placeholder="I finished my homework."
+                  :disabled="reviewQuestCompleted"
+                >
+              </label>
+            </div>
+            <p class="review-task-progress">
+              {{ reviewTaskProgress }} / 3 タスク完了
+            </p>
+            <button
+              class="secondary-action"
+              type="button"
+              :disabled="reviewQuestCompleted || !reviewQuestCanComplete"
+              @click="completeReviewQuest"
+            >
+              {{ reviewQuestCompleted ? '復習済みです' : '今日の復習を完了します' }}
+            </button>
+            <p
+              v-if="reviewQuestCompleted"
+              class="review-complete"
+            >
+              今日の復習を完了しました。次は「次の島」の準備へ進みます。
+            </p>
+          </section>
+        </article>
 
-      <article class="action-card inventory-card">
-        <p class="card-kicker">
-          Collection
-        </p>
-        <h2>冒険バッグ</h2>
-        <p>学習で集めた XP、コイン、バッジをここにしまっておきます。</p>
-        <div class="inventory-count">
-          <strong>{{ inventoryCollectionCount }}</strong>
-          <span>コレクション</span>
-        </div>
-        <div class="inventory-resource-grid">
-          <div
-            v-for="item in inventoryItems"
-            :key="item.id"
-            class="inventory-item"
-            :class="item.status"
-          >
-            <span>{{ item.status === 'collected' ? '✓' : '?' }}</span>
-            <strong>{{ item.title }}</strong>
-            <small>{{ item.detail }}</small>
-          </div>
-        </div>
-        <section class="inventory-section">
-          <h3>バッジ</h3>
-          <p v-if="!badgeInventoryItems.length">
-            最初のバッジは保護者確認で手に入ります。
+        <article class="action-card quest-card">
+          <p class="card-kicker">
+            Quest
           </p>
-          <div
-            v-else
-            class="inventory-badge-grid"
-          >
-            <span
-              v-for="badge in badgeInventoryItems"
-              :key="badge.id"
-            >
-              {{ badge.title }}
-            </span>
+          <h2>Quest Map</h2>
+          <div class="quest-current">
+            <span>現在の目標</span>
+            <strong>{{ currentQuestIsland.title }} · {{ currentQuestNode.title }}</strong>
+            <p>{{ currentQuestNode.action }}</p>
           </div>
-        </section>
-        <section
-          v-if="lockedInventoryHints.length"
-          class="inventory-section locked"
-        >
-          <h3>次に集めるもの</h3>
-          <ul>
+          <div class="quest-trail">
+            <span :style="{ width: `${questProgress}%` }" />
+          </div>
+          <p class="quest-step">
+            {{ completedQuestCount }} / {{ questMapNodes.length }} スポット達成
+          </p>
+          <ol
+            class="quest-map"
+            aria-label="Quest Map"
+          >
             <li
-              v-for="item in lockedInventoryHints"
-              :key="item.id"
+              v-for="island in questIslands"
+              :key="island.id"
+              class="quest-island"
+              :class="island.status"
             >
-              <strong>{{ item.title }}</strong>
-              <small>{{ item.detail }}</small>
+              <div class="quest-island-heading">
+                <span>{{ island.chapter }}</span>
+                <strong>{{ island.title }}</strong>
+                <small>{{ island.status === 'locked' ? 'ここから先は、次の目標を達成すると開きます。' : island.description }}</small>
+              </div>
+              <ol
+                v-if="island.status !== 'locked'"
+                class="quest-island-nodes"
+              >
+                <li
+                  v-for="node in island.nodes"
+                  :key="node.id"
+                  class="quest-node"
+                  :class="node.status"
+                >
+                  <button
+                    class="quest-node-button"
+                    type="button"
+                    :aria-pressed="selectedQuestNode.id === node.id"
+                    @click="selectQuestNode(node)"
+                  >
+                    <span class="quest-pin">{{ node.status === 'done' ? '✓' : questMapNodes.findIndex((item) => item.id === node.id) + 1 }}</span>
+                    <div>
+                      <strong>
+                        {{ node.title }}
+                        <small class="quest-state-label">{{ questStatusLabel(node.status) }}</small>
+                      </strong>
+                      <small>{{ node.description }}</small>
+                      <em>{{ node.reward }}</em>
+                    </div>
+                    <span
+                      v-if="node.id === currentQuestNode.id"
+                      class="quest-avatar"
+                      aria-label="現在地"
+                    >
+                      LQ
+                    </span>
+                  </button>
+                </li>
+              </ol>
+            </li>
+          </ol>
+          <section
+            class="quest-detail compact"
+            aria-live="polite"
+          >
+            <span>スポット詳細</span>
+            <strong>{{ selectedQuestNode.title }}</strong>
+            <p>{{ selectedQuestNode.action }}</p>
+          </section>
+        </article>
+
+        <section
+          v-if="journeySummaryVisible"
+          class="journey-summary-card"
+          aria-label="学習旅程サマリー"
+        >
+          <p class="card-kicker">
+            Journey Summary
+          </p>
+          <h2>今日の冒険まとめ</h2>
+          <div class="journey-score-grid">
+            <div>
+              <strong>{{ completedQuestCount }}</strong>
+              <span>達成スポット</span>
+            </div>
+            <div>
+              <strong>{{ displayedTotalXp }}</strong>
+              <span>XP</span>
+            </div>
+            <div>
+              <strong>{{ displayedActivityCoins }}</strong>
+              <span>コイン</span>
+            </div>
+            <div>
+              <strong>{{ masteryAverage }}%</strong>
+              <span>平均習熟度</span>
+            </div>
+          </div>
+          <ul class="journey-highlight-list">
+            <li
+              v-for="highlight in journeyHighlights"
+              :key="highlight"
+            >
+              {{ highlight }}
             </li>
           </ul>
+          <div
+            v-if="latestBadgeLabels.length"
+            class="journey-badges"
+          >
+            <span>獲得バッジ</span>
+            <strong>{{ latestBadgeLabels.join(' / ') }}</strong>
+          </div>
+          <p class="journey-next-step">
+            {{ journeyNextStep }}
+          </p>
         </section>
-      </article>
+      </div>
 
-      <article class="action-card">
-        <p class="card-kicker">
-          家族連携
-        </p>
-        <h2>保護者に確認を依頼します</h2>
-        <p>保護者アプリで入力する招待コードを発行します。</p>
-        <button
-          class="primary-action"
-          type="button"
-          :disabled="busy || Boolean(invitationCode)"
-          @click="createInvitation"
-        >
-          {{ invitationCode ? '招待コードを発行済みです' : '招待コードを発行します' }}
-        </button>
-        <p
-          v-if="invitationCode"
-          class="invitation-code"
-        >
-          {{ invitationCode }}
-        </p>
-      </article>
+      <aside class="student-side">
+        <article class="action-card side-card">
+          <p class="card-kicker">
+            ステータス
+          </p>
+          <h2>準備の状況</h2>
+          <ul class="safety-list compact">
+            <li :class="{ done: guardianReady }">
+              <span>{{ guardianReady ? '✓' : '1' }}</span>
+              <div>
+                <strong>保護者の確認</strong>
+                <small>{{ guardianReady ? '完了しました。' : '確認を待っています。' }}</small>
+              </div>
+            </li>
+            <li :class="{ done: learnReady }">
+              <span>{{ learnReady ? '✓' : '2' }}</span>
+              <div>
+                <strong>学習の解放</strong>
+                <small>{{ learnReady ? 'レベルチェックを開始できます。' : '確認後に解放されます。' }}</small>
+              </div>
+            </li>
+            <li :class="{ done: voiceEnabled }">
+              <span>{{ voiceEnabled ? '✓' : '3' }}</span>
+              <div>
+                <strong>音声練習</strong>
+                <small>{{ voiceEnabled ? '利用できます。' : '保護者の同意が必要です。' }}</small>
+              </div>
+            </li>
+          </ul>
+          <button
+            v-if="voiceEnabled"
+            class="secondary-action"
+            type="button"
+            :disabled="busy || voiceReady"
+            @click="prepareVoicePractice"
+          >
+            {{ voiceReady ? '提出準備が完了しました' : '音声練習を提出します' }}
+          </button>
+        </article>
 
-      <article class="action-card">
-        <p class="card-kicker">
-          学習プラン
-        </p>
-        <h2>学習プラン</h2>
-        <p>正式なお支払い機能は準備中です。現在の体験では、保護者確認後にレベルチェックへ進めます。</p>
-        <span class="plan-badge">近日公開</span>
-      </article>
+        <article class="action-card side-card inventory-card">
+          <p class="card-kicker">
+            Collection
+          </p>
+          <h2>冒険バッグ</h2>
+          <div class="inventory-count compact">
+            <strong>{{ inventoryCollectionCount }}</strong>
+            <span>コレクション</span>
+          </div>
+          <div class="inventory-resource-grid">
+            <div
+              v-for="item in inventoryItems"
+              :key="item.id"
+              class="inventory-item"
+              :class="item.status"
+            >
+              <span>{{ item.status === 'collected' ? '✓' : '?' }}</span>
+              <strong>{{ item.title }}</strong>
+              <small>{{ item.detail }}</small>
+            </div>
+          </div>
+          <section class="inventory-section">
+            <h3>バッジ</h3>
+            <p v-if="!badgeInventoryItems.length">
+              最初のバッジは保護者確認で手に入ります。
+            </p>
+            <div
+              v-else
+              class="inventory-badge-grid"
+            >
+              <span
+                v-for="badge in badgeInventoryItems"
+                :key="badge.id"
+              >
+                {{ badge.title }}
+              </span>
+            </div>
+          </section>
+          <section
+            v-if="lockedInventoryHints.length"
+            class="inventory-section locked"
+          >
+            <h3>次に集めるもの</h3>
+            <ul>
+              <li
+                v-for="item in lockedInventoryHints"
+                :key="item.id"
+              >
+                <strong>{{ item.title }}</strong>
+                <small>{{ item.detail }}</small>
+              </li>
+            </ul>
+          </section>
+        </article>
 
-      <article class="action-card next-island-card">
-        <p class="card-kicker">
-          次の冒険
-        </p>
-        <h2>次の島プレビュー</h2>
-        <p>{{ nextIslandReady ? '復習の森を越えました。次のステージの予告を確認できます。' : '復習クエストを完了すると、次の島の予告が開きます。' }}</p>
-        <div class="next-island-lock">
-          <span>{{ nextIslandReady ? '解放済み' : '解放条件' }}</span>
-          <strong>{{ nextIslandReady ? '新しい島への航路を確認できます' : '復習の森をクリアしましょう' }}</strong>
-        </div>
-        <button
-          class="primary-action"
-          type="button"
-          :disabled="!nextIslandReady"
-          @click="openNextIslandPreview"
-        >
-          {{ nextIslandReady ? '次の島をプレビューします' : '復習後にプレビューできます' }}
-        </button>
-        <section
+        <article class="action-card side-card">
+          <p class="card-kicker">
+            端末設定
+          </p>
+          <h2>端末の登録</h2>
+          <p>{{ deviceReady ? '端末登録が完了しました。' : 'この端末で続きから体験できます。' }}</p>
+          <button
+            class="secondary-action"
+            type="button"
+            :disabled="busy || deviceReady"
+            @click="registerDevice"
+          >
+            {{ deviceReady ? '登録済みです' : '端末を登録します' }}
+          </button>
+        </article>
+      </aside>
+    </div>
+
+    <section class="coming-soon">
+      <button
+        class="coming-soon-toggle"
+        type="button"
+        :aria-expanded="comingSoonOpen"
+        @click="comingSoonOpen = !comingSoonOpen"
+      >
+        <span>近日公開の体験</span>
+        <strong>学習プラン ・ 次の島 ・ リスニング入り江</strong>
+        <small>{{ comingSoonOpen ? '閉じる' : '開く' }}</small>
+      </button>
+      <div
+        v-if="comingSoonOpen"
+        class="coming-soon-body"
+      >
+        <article class="future-card">
+          <h3>学習プラン</h3>
+          <p>正式なお支払い機能は準備中です。現在の体験では、保護者確認後にレベルチェックへ進めます。</p>
+          <span class="plan-badge">近日公開</span>
+        </article>
+        <article class="future-card">
+          <h3>次の島</h3>
+          <p>{{ nextIslandReady ? '復習の森を越えました。次のステージの予告を確認できます。' : '復習クエストを完了すると、次の島の予告が開きます。' }}</p>
+          <button
+            class="secondary-action"
+            type="button"
+            :disabled="!nextIslandReady"
+            @click="openNextIslandPreview"
+          >
+            {{ nextIslandReady ? '次の島をプレビューします' : '復習後にプレビューできます' }}
+          </button>
+        </article>
+        <article
           v-if="nextIslandPreviewOpen"
-          class="next-island-preview"
-          aria-live="polite"
+          class="future-card wide"
         >
-          <span>Coming Soon</span>
-          <strong>リスニング入り江</strong>
+          <h3>リスニング入り江</h3>
           <p>短い会話を聞き取り、時間・理由・気持ちを選ぶ新しい冒険です。</p>
-          <ul>
+          <ul class="future-list">
             <li>3分で挑戦できる短い会話</li>
             <li>復習の森で見つけた苦手ポイントを反映</li>
             <li>保護者レポートに次のおすすめとして表示予定</li>
@@ -1060,156 +1506,54 @@ watch(journeySummary, (summary) => {
               {{ listeningDemoCorrect ? '正解です。library は「図書館」です。' : '惜しいです。library という場所の言葉を聞き取りましょう。' }}
             </p>
           </section>
-        </section>
-      </article>
+        </article>
+      </div>
     </section>
 
-    <section
-      v-if="journeySummaryVisible"
-      class="journey-summary-card"
-      aria-label="学習旅程サマリー"
-    >
-      <p class="card-kicker">
-        Journey Summary
-      </p>
-      <h2>今日の冒険まとめ</h2>
-      <p>今日の学習で進んだ場所と、次に向かうルートをまとめました。</p>
-      <div class="journey-score-grid">
-        <div>
-          <strong>{{ completedQuestCount }}</strong>
-          <span>達成スポット</span>
-        </div>
-        <div>
-          <strong>{{ displayedTotalXp }}</strong>
-          <span>XP</span>
-        </div>
-        <div>
-          <strong>{{ displayedActivityCoins }}</strong>
-          <span>コイン</span>
-        </div>
-        <div>
-          <strong>{{ masteryAverage }}%</strong>
-          <span>平均習熟度</span>
-        </div>
-      </div>
-      <ul class="journey-highlight-list">
-        <li
-          v-for="highlight in journeyHighlights"
-          :key="highlight"
-        >
-          {{ highlight }}
-        </li>
-      </ul>
-      <div
-        v-if="latestBadgeLabels.length"
-        class="journey-badges"
-      >
-        <span>獲得バッジ</span>
-        <strong>{{ latestBadgeLabels.join(' / ') }}</strong>
-      </div>
-      <p class="journey-next-step">
-        {{ journeyNextStep }}
-      </p>
-    </section>
-
-    <section class="lesson-panel">
-      <header class="lesson-header">
-        <div>
-          <p class="eyebrow">
-            レベルチェック
-          </p>
-          <strong>英検3級 · レベルチェック</strong>
-        </div>
-        <p>{{ attempt ? `${attempt.items.length} 問` : '未開始' }}</p>
-      </header>
+    <section class="demo-guide-fold">
       <button
-        v-if="!attempt"
-        class="primary-action"
+        class="coming-soon-toggle"
         type="button"
-        :disabled="busy || !learnReady"
-        @click="startLevelCheck"
+        :aria-expanded="demoGuideOpen"
+        @click="demoGuideOpen = !demoGuideOpen"
       >
-        レベルチェックを開始します
+        <span>デモ進行ガイド</span>
+        <strong>{{ demoGuide.title }}</strong>
+        <small>{{ demoGuideOpen ? '閉じる' : '開く' }}</small>
       </button>
-
-      <article
-        v-else-if="!resultSummary"
-        class="question-card"
+      <div
+        v-if="demoGuideOpen"
+        class="demo-guide-body"
       >
-        <div class="demo-answer-guide">
-          <div>
-            <span>Demo Stable Path</span>
-            <strong>デモ用の回答を入れて、同じ結果で説明できます。</strong>
-          </div>
-          <button
-            class="secondary-action"
-            type="button"
-            :disabled="busy"
-            @click="fillDemoLevelCheckAnswers"
-          >
-            デモ用の回答を入れます
-          </button>
+        <div>
+          <span>{{ demoGuide.step }}</span>
+          <strong>{{ demoGuide.title }}</strong>
+          <p>{{ demoGuide.detail }}</p>
         </div>
-        <div
-          v-for="(item, index) in attempt.items"
-          :key="item.itemId"
-          class="stage-question"
-        >
-          <span class="ability-tag">問題 {{ index + 1 }}</span>
-          <h2>{{ item.prompt }}</h2>
-          <p class="question-support">
-            {{ item.support }}
-          </p>
-          <fieldset :disabled="busy">
-            <legend class="sr-only">
-              答えを1つ選んでください
-            </legend>
-            <label
-              v-for="option in item.options"
-              :key="option.optionId"
-              class="choice"
-              :class="{ selected: selected[item.itemId] === option.optionId }"
+        <div class="demo-guide-script">
+          <p>{{ demoGuide.action }}</p>
+          <small>{{ demoGuide.talkTrack }}</small>
+          <ul>
+            <li
+              v-for="checkpoint in demoGuide.checkpoints"
+              :key="checkpoint"
             >
-              <input
-                v-model="selected[item.itemId]"
-                type="radio"
-                :name="item.itemId"
-                :value="option.optionId"
-              >
-              <span>{{ option.text }}</span>
-            </label>
-          </fieldset>
+              {{ checkpoint }}
+            </li>
+          </ul>
         </div>
-        <button
-          class="primary-action"
-          type="button"
-          :disabled="busy || !answered"
-          @click="submitLevelCheck"
-        >
-          答えを提出します
-        </button>
-      </article>
-
-      <article
-        v-else
-        class="result-card"
-      >
-        <strong>{{ resultSummary.passed ? '合格ラインに到達しました' : '復習から始めましょう' }}</strong>
-        <p>今回の結果をもとに、復習予定を更新しました。</p>
-        <p class="score-line">
-          {{ resultSummary.score }} / {{ resultSummary.maxScore }}
-        </p>
-        <div
-          v-if="earnedReward"
-          class="reward-summary"
-        >
-          <span>+{{ earnedReward.xpAwarded }} XP</span>
-          <span>+{{ earnedReward.activityCoinsAwarded }} コイン</span>
-          <span v-if="earnedReward.questStepDelta">
-            Quest +{{ earnedReward.questStepDelta }}
-          </span>
+        <div class="demo-guide-metrics">
+          <h3>標準デモの口径</h3>
+          <article
+            v-for="metric in demoMetrics"
+            :key="metric.label"
+          >
+            <span>{{ metric.label }}</span>
+            <strong>{{ metric.value }}</strong>
+            <p>{{ metric.detail }}</p>
+          </article>
         </div>
-      </article>
+      </div>
     </section>
 
     <aside
@@ -1245,162 +1589,6 @@ watch(journeySummary, (summary) => {
         閉じる
       </button>
     </aside>
-
-    <section class="student-grid">
-      <article class="action-card">
-        <p class="card-kicker">
-          音声練習
-        </p>
-        <h2>音声練習</h2>
-        <p>{{ voiceEnabled ? '保護者の同意により利用できます。' : '現在は利用できません。' }}</p>
-        <button
-          class="primary-action"
-          type="button"
-          :disabled="busy || !voiceEnabled || voiceReady"
-          @click="prepareVoicePractice"
-        >
-          {{ voiceReady ? '提出準備が完了しました' : '音声練習を提出します' }}
-        </button>
-      </article>
-
-      <article class="action-card">
-        <p class="card-kicker">
-          復習予定
-        </p>
-        <h2>復習予定</h2>
-        <p>{{ knowledgeItems.length ? `${knowledgeItems.length} 件の復習予定があります。` : 'レベルチェック後に復習予定が表示されます。' }}</p>
-        <div
-          v-if="knowledgeItems.length"
-          class="mini-mastery"
-        >
-          <strong>{{ masteryAverage }}%</strong>
-          <span>平均習熟度</span>
-        </div>
-        <section
-          v-if="reviewQuestItems.length"
-          class="review-route"
-          aria-label="今日の復習クエスト"
-        >
-          <span>今日の復習クエスト</span>
-          <strong>復習の森ルート</strong>
-          <ol>
-            <li
-              v-for="item in reviewQuestItems"
-              :key="item.knowledgePointRef"
-            >
-              <span>{{ reviewStateLabel(item.state) }}</span>
-              <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
-              <small>習熟度 {{ Math.round(item.masteryScore * 100) }}%</small>
-            </li>
-          </ol>
-        </section>
-        <button
-          class="primary-action"
-          type="button"
-          :disabled="!reviewQuestReady"
-          @click="startReviewQuest"
-        >
-          {{ reviewQuestReady ? '復習クエストを始めます' : 'レベルチェック後に始められます' }}
-        </button>
-        <section
-          v-if="reviewQuestOpen"
-          class="review-quest-panel"
-          aria-live="polite"
-        >
-          <span>森のルート</span>
-          <strong>{{ reviewQuestItems.length }}つのポイントを確認中</strong>
-          <p>声に出して例文を読み、間違えた理由を1つだけ思い出しましょう。</p>
-          <div class="review-task-list">
-            <label
-              class="review-task"
-              :class="{ done: reviewReadAloudDone }"
-            >
-              <input
-                v-model="reviewReadAloudDone"
-                type="checkbox"
-                :disabled="reviewQuestCompleted"
-              >
-              <span>
-                <strong>例文を声に出して読みました</strong>
-                <small>今日の復習ポイントを1つ、ゆっくり読み上げます。</small>
-              </span>
-            </label>
-            <fieldset
-              class="review-focus-task"
-              :disabled="reviewQuestCompleted"
-            >
-              <legend>今日いちばん復習したいポイント</legend>
-              <label
-                v-for="item in reviewQuestItems"
-                :key="`focus-${item.knowledgePointRef}`"
-                class="review-task"
-                :class="{ done: reviewFocusRef === item.knowledgePointRef }"
-              >
-                <input
-                  v-model="reviewFocusRef"
-                  type="radio"
-                  name="review-focus"
-                  :value="item.knowledgePointRef"
-                >
-                <span>
-                  <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
-                  <small>習熟度 {{ Math.round(item.masteryScore * 100) }}%</small>
-                </span>
-              </label>
-            </fieldset>
-            <label
-              class="review-task rewrite"
-              :class="{ done: reviewRewriteText.trim().length >= 6 }"
-            >
-              <span>
-                <strong>短い英文を1つ書き直しました</strong>
-                <small>例: I finished my homework.</small>
-              </span>
-              <input
-                v-model="reviewRewriteText"
-                class="review-rewrite-input"
-                type="text"
-                placeholder="I finished my homework."
-                :disabled="reviewQuestCompleted"
-              >
-            </label>
-          </div>
-          <p class="review-task-progress">
-            {{ reviewTaskProgress }} / 3 タスク完了
-          </p>
-          <button
-            class="secondary-action"
-            type="button"
-            :disabled="reviewQuestCompleted || !reviewQuestCanComplete"
-            @click="completeReviewQuest"
-          >
-            {{ reviewQuestCompleted ? '復習済みです' : '今日の復習を完了します' }}
-          </button>
-          <p
-            v-if="reviewQuestCompleted"
-            class="review-complete"
-          >
-            今日の復習を完了しました。次は「次の島」の準備へ進みます。
-          </p>
-        </section>
-      </article>
-
-      <article class="action-card">
-        <p class="card-kicker">
-          端末設定
-        </p>
-        <h2>端末設定</h2>
-        <p>{{ deviceReady ? '端末登録が完了しました。' : 'この端末で続きから体験できます。' }}</p>
-        <button
-          class="primary-action"
-          type="button"
-          :disabled="busy || deviceReady"
-          @click="registerDevice"
-        >
-          {{ deviceReady ? '登録済みです' : '端末を登録します' }}
-        </button>
-      </article>
-    </section>
 
     <p
       v-if="message"

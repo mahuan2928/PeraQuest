@@ -105,13 +105,13 @@ describe('live API demo session', () => {
   it('resolves persisted demo identities when a token reaches another API instance', async () => {
     const repository = new MemoryStudentRepository()
     const now = new Date('2026-08-30T12:00:00.000Z')
-    const firstInstance = buildApp({ repository, config: demoConfig, authUserResolver: repository, now: () => now })
+    const firstInstance = buildApp({ repository, config: demoConfig, now: () => now })
     const session = await firstInstance.inject({ method: 'POST', url: '/v1/demo/session', payload: {} })
     expect(session.statusCode).toBe(201)
     const body = session.json<{ studentToken: string }>()
     await firstInstance.close()
 
-    const secondInstance = buildApp({ repository, config: demoConfig, authUserResolver: repository, now: () => now })
+    const secondInstance = buildApp({ repository, config: demoConfig, now: () => now })
     const invite = await secondInstance.inject({
       method: 'POST',
       url: '/v1/me/guardian-link/invitations',

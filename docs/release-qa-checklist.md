@@ -46,6 +46,7 @@ VITE_API_BASE_URL=https://peraquest-api-dev.onrender.com npm run build:cloudflar
 - Welcome page shows `続けたくなる学習`, `見守れるレポート`, and `親子で始める英検準備`.
 - `デモを体験する` opens the product demo without exposing tokens, endpoints, HTTP status, or JSON.
 - Student page shows `Demo Guide`, `Quest Map`, and `冒険バッグ`.
+- Student page shows `標準デモの口径`.
 - `招待コードを発行します` switches to the guardian experience with a prefilled code.
 - `連携を確認します` completes guardian verification.
 - Student page unlocks `レベルチェックを開始します`.
@@ -79,4 +80,5 @@ VITE_API_BASE_URL=https://peraquest-api-dev.onrender.com npm run build:cloudflar
 - Guardian value: parents see progress, next recommendation, and a concrete encouragement cue.
 - Product safety: guardian verification gates the formal learning flow.
 - Product stability: the demo answer button keeps the level check result explainable.
+- Product language: use the terms and reward numbers in `docs/demo-data-language.md`.
 - Scope control: payment is intentionally not presented as ready.

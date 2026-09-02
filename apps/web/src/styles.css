@@ -97,6 +97,13 @@ h1 span { color: var(--green); }
 .demo-guide-script small { color: #59645f; font-size: .74rem; font-weight: 800; line-height: 1.45; }
 .demo-guide-script ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .demo-guide-script li { padding: 4px 7px; border: 1px solid var(--ink); background: var(--lime); font-size: .64rem; font-weight: 900; }
+.demo-metrics-card { display: grid; gap: 10px; margin: 0 0 24px; padding: 14px 16px; border: 2px solid var(--ink); background: white; box-shadow: 4px 4px 0 var(--ink); }
+.demo-metrics-card h2 { margin: 0; font-size: 1.05rem; }
+.demo-metrics-card > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.demo-metrics-card article { display: grid; gap: 4px; padding: 9px; border: 1px solid var(--line); background: #fffdf6; }
+.demo-metrics-card span { color: var(--orange); font-size: .62rem; font-weight: 900; letter-spacing: .08em; }
+.demo-metrics-card strong { font-size: .84rem; line-height: 1.35; }
+.demo-metrics-card p { margin: 0; color: #59645f; font-size: .68rem; font-weight: 800; line-height: 1.45; }
 .student-grid, .guardian-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 24px 0; }
 .action-card, .guardian-card, .future-card { padding: clamp(18px, 3vw, 26px); border: 2px solid var(--ink); background: var(--paper); box-shadow: 6px 6px 0 var(--ink); }
 .action-card h2, .guardian-card h2, .future-card h2 { margin: 4px 0 10px; font-size: clamp(1.25rem, 3vw, 1.9rem); }
@@ -314,6 +321,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
   .demo-session-actions button { width: 100%; }
   .landing-value-grid { grid-template-columns: 1fr; }
   .demo-guide-card { grid-template-columns: 1fr; }
+  .demo-metrics-card > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .demo-answer-guide { align-items: stretch; flex-direction: column; }
   .student-grid, .guardian-grid { grid-template-columns: 1fr; }
   .quest-node-button { grid-template-columns: 34px 1fr; padding: 9px; }

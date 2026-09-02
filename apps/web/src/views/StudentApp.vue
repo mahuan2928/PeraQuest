@@ -102,6 +102,12 @@ type DemoGuide = {
   checkpoints: string[]
 }
 
+type DemoMetric = {
+  label: string
+  value: string
+  detail: string
+}
+
 const props = defineProps<{
   session: DemoSessionResponse
   capabilities: CapabilityState | null
@@ -163,6 +169,28 @@ const listeningDemoCompletionReward: GameReward = {
   questChapterUnlocked: null,
   badgesAwarded: ['listening_cove_trial'],
 }
+const demoMetrics: DemoMetric[] = [
+  {
+    label: '保護者確認',
+    value: '+20 XP',
+    detail: 'ガーディアンシールドを獲得し、学習が解放されます。',
+  },
+  {
+    label: 'Level Check',
+    value: '+100 XP / +50 コイン',
+    detail: '標準デモではクリア結果として説明します。',
+  },
+  {
+    label: '復習クエスト',
+    value: '+15 XP / +5 コイン',
+    detail: '復習の森クリアが冒険バッグに入ります。',
+  },
+  {
+    label: 'リスニング体験',
+    value: '+10 XP / +3 コイン',
+    detail: 'リスニング入り江体験バッジを紹介します。',
+  },
+]
 const questStep = computed(() => {
   const rawStep = gameState.value?.questStep ?? 0
   const badges = new Set(gameState.value?.badges ?? [])
@@ -716,6 +744,26 @@ watch(journeySummary, (summary) => {
         </ul>
       </div>
     </aside>
+
+    <section
+      class="demo-metrics-card"
+      aria-label="標準デモの口径"
+    >
+      <p class="card-kicker">
+        Demo Standard Outcome
+      </p>
+      <h2>標準デモの口径</h2>
+      <div>
+        <article
+          v-for="metric in demoMetrics"
+          :key="metric.label"
+        >
+          <span>{{ metric.label }}</span>
+          <strong>{{ metric.value }}</strong>
+          <p>{{ metric.detail }}</p>
+        </article>
+      </div>
+    </section>
 
     <ul class="safety-list">
       <li :class="{ done: guardianReady }">

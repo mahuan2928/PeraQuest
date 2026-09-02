@@ -88,6 +88,7 @@ const resultSummary = ref<{ passed?: boolean; score?: number; maxScore?: number;
 const gameState = ref<GameState | null>(null)
 const voiceReady = ref(false)
 const deviceReady = ref(false)
+const selectedQuestNodeId = ref<string | null>(null)
 
 const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const learnReady = computed(() => props.capabilities?.canLearn === true)
@@ -156,11 +157,15 @@ const questMapNodes = computed<QuestMapNode[]>(() => questBlueprint.map((node, i
   return { ...node, status }
 }))
 const currentQuestNode = computed(() => questMapNodes.value.find((node) => node.status === 'current') ?? questMapNodes.value.at(-1)!)
+const selectedQuestNode = computed(() => questMapNodes.value.find((node) => node.id === selectedQuestNodeId.value) ?? currentQuestNode.value)
 const completedQuestCount = computed(() => questMapNodes.value.filter((node) => node.status === 'done').length)
 const questStatusLabel = (status: QuestMapNode['status']) => {
   if (status === 'done') return '達成'
   if (status === 'current') return '次の目標'
   return 'ロック中'
+}
+const selectQuestNode = (node: QuestMapNode) => {
+  selectedQuestNodeId.value = node.id
 }
 
 function toUserMessage() {
@@ -253,6 +258,10 @@ watch(
     void refreshGameState()
   },
 )
+
+watch(currentQuestNode, (node) => {
+  selectedQuestNodeId.value = node.id
+}, { immediate: true })
 </script>
 
 <template>
@@ -323,17 +332,40 @@ watch(
             class="quest-node"
             :class="node.status"
           >
-            <span class="quest-pin">{{ node.status === 'done' ? '✓' : index + 1 }}</span>
-            <div>
-              <strong>
-                {{ node.title }}
-                <small class="quest-state-label">{{ questStatusLabel(node.status) }}</small>
-              </strong>
-              <small>{{ node.description }}</small>
-              <em>{{ node.reward }}</em>
-            </div>
+            <button
+              class="quest-node-button"
+              type="button"
+              :aria-pressed="selectedQuestNode.id === node.id"
+              @click="selectQuestNode(node)"
+            >
+              <span class="quest-pin">{{ node.status === 'done' ? '✓' : index + 1 }}</span>
+              <div>
+                <strong>
+                  {{ node.title }}
+                  <small class="quest-state-label">{{ questStatusLabel(node.status) }}</small>
+                </strong>
+                <small>{{ node.description }}</small>
+                <em>{{ node.reward }}</em>
+              </div>
+              <span
+                v-if="node.id === currentQuestNode.id"
+                class="quest-avatar"
+                aria-label="現在地"
+              >
+                LQ
+              </span>
+            </button>
           </li>
         </ol>
+        <section
+          class="quest-detail"
+          aria-live="polite"
+        >
+          <span>スポット詳細</span>
+          <strong>{{ selectedQuestNode.title }}</strong>
+          <p>{{ selectedQuestNode.description }}</p>
+          <em>{{ selectedQuestNode.action }}</em>
+        </section>
         <div class="quest-trail">
           <span :style="{ width: `${questProgress}%` }" />
         </div>

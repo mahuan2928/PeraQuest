@@ -647,13 +647,20 @@ async function submitLevelCheck() {
     const result = await fetchDemoStageAttemptResult(props.session.studentToken, attempt.value!.attemptId)
     if (!result.ok) throw new Error('stage attempt result failed')
     resultSummary.value = result.body as { passed?: boolean; score?: number; maxScore?: number; rewards?: GameReward }
-    const knowledge = await fetchDemoStudentKnowledge(props.session.studentToken)
-    if (knowledge.ok) emit('knowledgeUpdated', ((knowledge.body as { items?: KnowledgeItem[] }).items ?? []))
-    await refreshGameState()
+    let progressRefreshOk = true
+    try {
+      const knowledge = await fetchDemoStudentKnowledge(props.session.studentToken)
+      if (knowledge.ok) emit('knowledgeUpdated', ((knowledge.body as { items?: KnowledgeItem[] }).items ?? []))
+      await refreshGameState()
+    } catch {
+      progressRefreshOk = false
+    }
     const reward = resultSummary.value.rewards ?? rewardFromGameStateDelta(previousGameState, gameState.value)
     earnedReward.value = hasRewardValue(reward) ? reward : null
     rewardCelebrationOpen.value = Boolean(earnedReward.value)
-    message.value = 'レベルチェックの結果を保存しました。Quest 進捗と復習予定を更新しました。'
+    message.value = progressRefreshOk
+      ? 'レベルチェックの結果を保存しました。Quest 進捗と復習予定を更新しました。'
+      : 'レベルチェックの結果を保存しました。進捗は少し待ってから更新されます。'
   })
 }
 

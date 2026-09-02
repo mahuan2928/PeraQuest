@@ -450,6 +450,61 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).not.toContain('報酬を獲得しました')
   })
 
+  it('keeps the submitted level check result when progress refresh fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/v1/me/game-state') {
+        return jsonResponse({ studentId: 'student-1', totalXp: 20, activityCoins: 0, questChapter: 0, questStep: 2, badges: ['guardian_shield'], updatedAt: '2026-08-31T12:00:00.000Z' })
+      }
+      if (url.includes('/api/v1/stage-exams/') && url.endsWith('/attempts')) {
+        return jsonResponse({
+          attemptId: 'attempt-1',
+          items: [{
+            itemId: 'item-1',
+            prompt: 'Yesterday, I ___ my homework.',
+            support: '最も自然な過去形を選んでください。',
+            options: [{ optionId: 'option-1', text: 'finished' }],
+          }],
+        }, 201)
+      }
+      if (url === '/api/v1/stage-attempts/attempt-1/submit') return jsonResponse({ accepted: true })
+      if (url === '/api/v1/stage-attempts/attempt-1/result') {
+        return jsonResponse({
+          passed: true,
+          score: 1,
+          maxScore: 1,
+          rewards: { xpAwarded: 100, activityCoinsAwarded: 50, badgesAwarded: ['level_check_challenger'] },
+        })
+      }
+      if (url === '/api/v1/student-knowledge') throw new Error('temporary refresh failure')
+      throw new Error(`Unexpected request: ${url}`)
+    }))
+    const wrapper = mount(StudentApp, {
+      props: {
+        session: {
+          studentId: 'student-1',
+          studentToken: 'student-token',
+          guardianToken: 'guardian-token',
+          expiresAt: '2026-08-31T12:10:00.000Z',
+        },
+        capabilities: { canLearn: true, canUploadVoice: false, guardianLinkStatus: 'verified', voiceConsentStatus: 'missing' },
+        invitationCode: '',
+        knowledgeItems: [],
+      },
+    })
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Quest Map'))
+    await wrapper.get('.lesson-panel .primary-action').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Yesterday, I ___ my homework.'))
+    await wrapper.findAll('button').find((button) => button.text().includes('デモ用の回答を入れます'))!.trigger('click')
+    await wrapper.get('.question-card .primary-action').trigger('click')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('レベルチェックの結果を保存しました。進捗は少し待ってから更新されます。'))
+    expect(wrapper.text()).toContain('1 / 1')
+    expect(wrapper.text()).toContain('報酬を獲得しました')
+    expect(wrapper.text()).not.toContain('接続を確認して、もう一度お試しください。')
+  })
+
   it('opens a review quest from the review forest after level check progress', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)

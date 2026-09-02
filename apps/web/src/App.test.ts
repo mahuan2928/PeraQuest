@@ -366,6 +366,10 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('リスニング入り江を体験しました')
     expect(wrapper.text()).toContain('リスニング入り江体験')
     expect(wrapper.text()).toContain('次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。')
+    expect(wrapper.text()).toContain('家庭サポートメモ')
+    expect(wrapper.text()).toContain('今日の成果')
+    expect(wrapper.text()).toContain('4 / 5 スポットまで進みました。')
+    expect(wrapper.text()).toContain('声かけ例')
   })
 
   it('shows and dismisses a reward celebration from game-state progress after the level check', async () => {

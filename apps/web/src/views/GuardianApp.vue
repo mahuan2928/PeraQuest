@@ -60,6 +60,12 @@ type StudentJourneySummary = {
   nextStep: string
 }
 
+type GuardianSupportMemo = {
+  progress: string
+  focus: string
+  encouragement: string
+}
+
 const props = defineProps<{
   session: DemoSessionResponse
   invitationCode: string
@@ -122,6 +128,21 @@ const guardianJourneySummary = computed<StudentJourneySummary | null>(() => {
     badges,
     nextStep,
   }
+})
+const guardianSupportMemo = computed<GuardianSupportMemo | null>(() => {
+  const journey = guardianJourneySummary.value
+  if (!journey && !learningSummary.value) return null
+  const reviewFocus = learningSummary.value?.reviewFocus[0]?.label
+  const progress = journey
+    ? `${journey.completedQuestCount} / ${journey.totalQuestCount} スポットまで進みました。`
+    : learningSummary.value?.quest.summary ?? '今日の学習状況を確認しています。'
+  const focus = reviewFocus
+    ? `次は「${reviewFocus}」を短く復習すると効果的です。`
+    : journey?.nextStep ?? learningSummary.value?.nextRecommendation ?? '次のおすすめを確認しましょう。'
+  const encouragement = journey?.badges.length
+    ? '「今日のバッジ、よく集めたね」と声をかけて、次の一歩を一緒に確認しましょう。'
+    : '「まずは始められたね」と声をかけて、安心して続けられる雰囲気を作りましょう。'
+  return { progress, focus, encouragement }
 })
 
 watch(() => props.invitationCode, (value) => {
@@ -412,6 +433,31 @@ function badgeLabel(badge: string) {
           <p class="guardian-journey-next">
             {{ guardianJourneySummary.nextStep }}
           </p>
+        </section>
+
+        <section
+          v-if="guardianSupportMemo"
+          class="guardian-support-memo"
+          aria-label="家庭サポートメモ"
+        >
+          <p class="card-kicker">
+            Family Support
+          </p>
+          <h3>家庭サポートメモ</h3>
+          <ul>
+            <li>
+              <span>今日の成果</span>
+              <strong>{{ guardianSupportMemo.progress }}</strong>
+            </li>
+            <li>
+              <span>次のおすすめ</span>
+              <strong>{{ guardianSupportMemo.focus }}</strong>
+            </li>
+            <li>
+              <span>声かけ例</span>
+              <strong>{{ guardianSupportMemo.encouragement }}</strong>
+            </li>
+          </ul>
         </section>
 
         <section

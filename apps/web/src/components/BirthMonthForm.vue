@@ -62,6 +62,17 @@ function submit() {
         <p>はじめて英検3級に挑戦する小中学生の、最初の習慣づくりに向いています。</p>
       </article>
     </div>
+    <div
+      class="trial-readiness-note"
+      aria-label="安心して試せること"
+    >
+      <strong>安心して試せること</strong>
+      <ul>
+        <li>氏名・学校名・地域は入力しません。</li>
+        <li>状態が残った場合は体験セッションを最初からやり直せます。</li>
+        <li>正式なお支払い機能はまだ表示しません。</li>
+      </ul>
+    </div>
     <button
       class="primary-action demo-start-button"
       type="button"

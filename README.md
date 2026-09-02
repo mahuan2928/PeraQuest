@@ -25,6 +25,7 @@ Copy `.env.example` to `.env`. Voice feature flags are off by default.
 
 - Online product demo runbook: `docs/demo-runbook.md`
 - Demo data and language guide: `docs/demo-data-language.md`
+- Trial readiness notes: `docs/trial-readiness.md`
 - Release QA checklist: `docs/release-qa-checklist.md`
 - Current demo entry: `https://peraquest-dev.larkjapandemo.workers.dev`
 

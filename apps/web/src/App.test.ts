@@ -119,6 +119,9 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('続けたくなる学習')
     expect(wrapper.text()).toContain('見守れるレポート')
     expect(wrapper.text()).toContain('親子で始める英検準備')
+    expect(wrapper.text()).toContain('安心して試せること')
+    expect(wrapper.text()).toContain('氏名・学校名・地域は入力しません。')
+    expect(wrapper.text()).toContain('正式なお支払い機能はまだ表示しません。')
 
     await wrapper.get('form').trigger('submit')
     expect(wrapper.get('[role="alert"]').text()).toContain('正しい生年月')

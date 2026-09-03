@@ -253,6 +253,8 @@ async function toggleConsent() {
 }
 
 function stateLabel(state: string, masteryScore: number) {
+  // まだ 4 回に満たない項目は、判定していないことをそのまま伝えます。
+  if (state === 'unassessed') return 'これから確かめます'
   if (state === 'mastered') return '安定しています'
   // 一度も正解していない項目を「伸びています」と伝えると、
   // 保護者が支払いを判断する材料として誤解を招きます。

@@ -472,6 +472,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     return 'ロック中'
   }
   const reviewStateLabel = (state: string) => {
+    if (state === 'unassessed') return 'これから'
     if (state === 'mastered') return '安定'
     if (state === 'due') return '復習優先'
     if (state === 'learning') return '練習中'

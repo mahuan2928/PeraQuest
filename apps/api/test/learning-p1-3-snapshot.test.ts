@@ -2,6 +2,7 @@ import { PGlite } from '@electric-sql/pglite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
 import { PostgresStudentRepository } from '../src/repository.js'
+import { recordAnswers } from './support/knowledgeHistory.js'
 
 const databases: PGlite[] = []
 
@@ -395,7 +396,7 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       applied_count: number
     }>(`
       SELECT sk.raw_correct_total::text, sk.raw_attempt_total::text, sk.mastery_score::text,
-             sk.state, sk.due_at = sk.last_occurred_at + interval '14 days' AS due_matches,
+             sk.state, sk.due_at = sk.last_occurred_at + interval '1 day' AS due_matches,
              (SELECT count(*)::int FROM student_knowledge_applied_evidence WHERE student_id = sk.student_id) AS applied_count
       FROM student_knowledge sk
       WHERE sk.student_id = $1 AND sk.knowledge_point_ref = 'vocab-alpha'
@@ -404,16 +405,19 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       raw_correct_total: '1.000000',
       raw_attempt_total: '1.000000',
       mastery_score: '1.000000',
-      state: 'mastered',
+      state: 'unassessed',
       due_matches: true,
       applied_count: 1,
     }])
     await expect(database.query(`
       UPDATE knowledge_evidence SET earned_score = 0 WHERE attempt_id = $1
     `, [ids.attemptOne])).rejects.toThrow(/append-only/)
-    await expect(database.query(`
-      UPDATE student_knowledge SET mastery_score = 0 WHERE student_id = $1
-    `, [ids.student])).rejects.toThrow(/approved mastery/)
+    // 習熟度は台帳から導かれるので、偽の値を書いても保存されず、正しい値に直されます。
+    await database.query('UPDATE student_knowledge SET mastery_score = 0 WHERE student_id = $1', [ids.student])
+    const corrected = await database.query<{ mastery_score: string }>(
+      'SELECT mastery_score::text FROM student_knowledge WHERE student_id = $1', [ids.student],
+    )
+    expect(corrected.rows[0]?.mastery_score).toBe('1.000000')
 
     await startAttempt(database, ids.attemptTwo, ids.versionOne)
     const secondSnapshot = await database.query<{ item_snapshot_id: string }>(`
@@ -470,68 +474,71 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       FROM student_knowledge
       WHERE student_id = $1 AND knowledge_point_ref = 'vocab-gamma'
     `, [ids.student])
-    expect(learning.rows).toEqual([{ mastery_score: '0.000000', state: 'learning', due_matches: true }])
+    expect(learning.rows).toEqual([{ mastery_score: '0.000000', state: 'unassessed', due_matches: true }])
   })
 
-  it('keeps mastery threshold, partial score, rounding, and due rules deterministic', async () => {
+  it('keeps the window thresholds, the ladder, and the due rules deterministic', async () => {
     const database = await createDatabase()
     const rules = await database.query<{
-      learning_score: string
-      learning_state: string
-      learning_due_matches: boolean
-      review_score: string
-      review_state: string
-      review_due_matches: boolean
-      mastered_score: string
-      mastered_state: string
-      mastered_due_matches: boolean
-      rounded_score: string
+      too_few: string
+      learning: string
+      review: string
+      not_mastered_without_interval: string
+      mastered: string
+      ladder: string
+      unassessed_due: boolean
+      mastered_due: boolean
     }>(`
       SELECT
-        calculate_student_knowledge_mastery(1, 2)::numeric(7,6)::text AS learning_score,
-        calculate_student_knowledge_state(0.500000) AS learning_state,
-        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 0.500000)
-          = TIMESTAMPTZ '2026-08-28 00:00:00+00' AS learning_due_matches,
-        calculate_student_knowledge_mastery(3, 5)::numeric(7,6)::text AS review_score,
-        calculate_student_knowledge_state(0.600000) AS review_state,
-        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 0.600000)
-          = TIMESTAMPTZ '2026-08-30 00:00:00+00' AS review_due_matches,
-        calculate_student_knowledge_mastery(4, 5)::numeric(7,6)::text AS mastered_score,
-        calculate_student_knowledge_state(0.800000) AS mastered_state,
-        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 0.800000)
-          = TIMESTAMPTZ '2026-09-10 00:00:00+00' AS mastered_due_matches,
-        calculate_student_knowledge_mastery(2, 3)::numeric(7,6)::text AS rounded_score
+        calculate_knowledge_state(3, 3, 5) AS too_few,
+        calculate_knowledge_state(4, 8, 5) AS learning,
+        calculate_knowledge_state(6, 8, 5) AS review,
+        -- 正答率が足りていても、間隔を越えた証拠がなければ習得にしません。
+        calculate_knowledge_state(7, 8, 2) AS not_mastered_without_interval,
+        calculate_knowledge_state(7, 8, 3) AS mastered,
+        array_to_string(ARRAY(SELECT knowledge_ladder_days(s) FROM generate_series(0, 5) AS s), ',') AS ladder,
+        calculate_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 'unassessed', 5, NULL)
+          = TIMESTAMPTZ '2026-08-28 00:00:00+00' AS unassessed_due,
+        calculate_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 'mastered', 5, NULL)
+          = TIMESTAMPTZ '2026-09-26 00:00:00+00' AS mastered_due
     `)
 
     expect(rules.rows).toEqual([{
-      learning_score: '0.500000',
-      learning_state: 'learning',
-      learning_due_matches: true,
-      review_score: '0.600000',
-      review_state: 'review',
-      review_due_matches: true,
-      mastered_score: '0.800000',
-      mastered_state: 'mastered',
-      mastered_due_matches: true,
-      rounded_score: '0.666667',
+      too_few: 'unassessed',
+      learning: 'learning',
+      review: 'review',
+      not_mastered_without_interval: 'review',
+      mastered: 'mastered',
+      ladder: '1,2,4,7,14,30',
+      unassessed_due: true,
+      mastered_due: true,
     }])
   })
 
   it('lists materialized mastery projections for only the requested student by due date', async () => {
     const database = await createDatabase()
     await seedPublishedExam(database)
-    await database.query(`
-      INSERT INTO student_knowledge
-        (student_id, knowledge_point_ref, raw_correct_total, raw_attempt_total,
-         mastery_score, state, last_occurred_at, due_at)
-      VALUES
-        ($1, 'vocab-late', 1, 1, 1.000000, 'mastered',
-         TIMESTAMPTZ '2026-08-27 00:00:00+00', TIMESTAMPTZ '2026-09-10 00:00:00+00'),
-        ($1, 'vocab-early', 3, 5, 0.600000, 'review',
-         TIMESTAMPTZ '2026-08-27 00:00:00+00', TIMESTAMPTZ '2026-08-30 00:00:00+00'),
-        ($2, 'other-student', 1, 2, 0.500000, 'learning',
-         TIMESTAMPTZ '2026-08-27 00:00:00+00', TIMESTAMPTZ '2026-08-28 00:00:00+00')
-    `, [ids.student, ids.guardian])
+    // 投影は台帳からしか作れないので、履歴を積んで作らせます。
+    // vocab-early は苦手（1日間隔）、vocab-late は安定（14日間隔）にして順序を検証します。
+    await recordAnswers(database, ids.student, 'vocab-early', [
+      { correct: false, at: '2026-08-20T00:00:00Z' },
+      { correct: false, at: '2026-08-21T00:00:00Z' },
+      { correct: true, at: '2026-08-22T00:00:00Z' },
+      { correct: false, at: '2026-08-27T00:00:00Z' },
+    ])
+    await recordAnswers(database, ids.student, 'vocab-late', [
+      { correct: true, at: '2026-08-01T00:00:00Z' },
+      { correct: true, at: '2026-08-03T00:00:00Z' },
+      { correct: true, at: '2026-08-07T00:00:00Z' },
+      { correct: true, at: '2026-08-14T00:00:00Z' },
+      { correct: true, at: '2026-08-19T00:00:00Z' },
+      { correct: true, at: '2026-08-23T00:00:00Z' },
+      { correct: true, at: '2026-08-25T00:00:00Z' },
+      { correct: true, at: '2026-08-27T00:00:00Z' },
+    ])
+    await recordAnswers(database, ids.guardian, 'other-student', [
+      { correct: false, at: '2026-08-27T00:00:00Z' },
+    ])
     const repository = new PostgresStudentRepository(database as unknown as ConstructorParameters<typeof PostgresStudentRepository>[0])
 
     const projections = await repository.listStudentKnowledgeProjections(ids.student)
@@ -540,20 +547,22 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       {
         studentId: ids.student,
         knowledgePointRef: 'vocab-early',
-        rawCorrectTotal: 3,
-        rawAttemptTotal: 5,
-        masteryScore: 0.6,
-        state: 'review',
+        rawCorrectTotal: 1,
+        rawAttemptTotal: 4,
+        // 直近 4 回で 1 正解 → 0.25。苦手なので 1 日間隔で戻ってきます。
+        masteryScore: 0.25,
+        state: 'learning',
         lastOccurredAt: '2026-08-27T00:00:00.000Z',
-        dueAt: '2026-08-30T00:00:00.000Z',
+        dueAt: '2026-08-28T00:00:00.000Z',
         updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       },
       {
         studentId: ids.student,
         knowledgePointRef: 'vocab-late',
-        rawCorrectTotal: 1,
-        rawAttemptTotal: 1,
+        rawCorrectTotal: 8,
+        rawAttemptTotal: 8,
         masteryScore: 1,
+        // 満窓 8/8 に加えて、実際の間隔を 4 段ぶん越えているので習得。
         state: 'mastered',
         lastOccurredAt: '2026-08-27T00:00:00.000Z',
         dueAt: '2026-09-10T00:00:00.000Z',

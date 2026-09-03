@@ -151,9 +151,13 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0017_daily_loop_and_lives.sql',
           '0018_daily_loop_rewards_and_mastery.sql',
           '0019_daily_target_for_exam_coverage.sql',
+          '0020_windowed_mastery_and_ladder.sql',
+      '0020_windowed_mastery_and_ladder.sql',
       '0019_daily_target_for_exam_coverage.sql',
+      '0020_windowed_mastery_and_ladder.sql',
       '0018_daily_loop_rewards_and_mastery.sql',
       '0019_daily_target_for_exam_coverage.sql',
+      '0020_windowed_mastery_and_ladder.sql',
         ],
         [],
       ])
@@ -182,6 +186,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0017_daily_loop_and_lives.sql', count: '1' },
         { name: '0018_daily_loop_rewards_and_mastery.sql', count: '1' },
         { name: '0019_daily_target_for_exam_coverage.sql', count: '1' },
+        { name: '0020_windowed_mastery_and_ladder.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])

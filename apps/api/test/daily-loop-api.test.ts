@@ -205,8 +205,10 @@ describe('daily loop repository', () => {
     expect(knowledge.rows).toHaveLength(1)
     expect(Number(knowledge.rows[0]!.mastery_score)).toBe(1)
     expect(Number(knowledge.rows[0]!.raw_attempt_total)).toBe(1)
-    // 満点なので次の復習は 14 日後。復習キューが前に進んでいることの確認です。
-    expect(knowledge.rows[0]!.due_at.getTime()).toBeGreaterThan(Date.now() + 13 * 24 * 60 * 60 * 1000)
+    // 1 回正解しただけでは判定しません（窓は 4 回から）。翌日また出ます。
+    const dueAt = knowledge.rows[0]!.due_at.getTime()
+    expect(dueAt).toBeGreaterThan(Date.now())
+    expect(dueAt).toBeLessThan(Date.now() + 2 * 24 * 60 * 60 * 1000)
   })
 
   it('keeps a timed-out answer out of the mastery calculation', async () => {

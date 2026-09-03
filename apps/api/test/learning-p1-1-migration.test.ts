@@ -145,6 +145,7 @@ describe('learning P1.1 migration', () => {
       '0017_daily_loop_and_lives.sql',
       '0018_daily_loop_rewards_and_mastery.sql',
       '0019_daily_target_for_exam_coverage.sql',
+      '0020_windowed_mastery_and_ladder.sql',
     ])
     const rows = await database.query<{ id: string }>('SELECT id FROM trial_attempts ORDER BY id')
     expect(rows.rows).toEqual([{ id: '00000000-0000-0000-0000-000000000121' }])
@@ -420,37 +421,4 @@ describe('learning P1.1 migration', () => {
     expect(indexes.rows).toHaveLength(9)
   })
 
-  it('applies approved mastery rounding, state thresholds, and due intervals', async () => {
-    const database = await createDatabase()
-    const rules = await database.query<{
-      rounded: string
-      learning_state: string
-      review_state: string
-      mastered_state: string
-      learning_due: boolean
-      review_due: boolean
-      mastered_due: boolean
-    }>(`
-      SELECT
-        calculate_student_knowledge_mastery(2, 3)::text AS rounded,
-        calculate_student_knowledge_state(0.599999) AS learning_state,
-        calculate_student_knowledge_state(0.600000) AS review_state,
-        calculate_student_knowledge_state(0.800000) AS mastered_state,
-        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-01-01T00:00:00Z', 0.599999) =
-          TIMESTAMPTZ '2026-01-02T00:00:00Z' AS learning_due,
-        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-01-01T00:00:00Z', 0.600000) =
-          TIMESTAMPTZ '2026-01-04T00:00:00Z' AS review_due,
-        calculate_student_knowledge_due_at(TIMESTAMPTZ '2026-01-01T00:00:00Z', 0.800000) =
-          TIMESTAMPTZ '2026-01-15T00:00:00Z' AS mastered_due
-    `)
-    expect(rules.rows).toEqual([{
-      rounded: '0.666667',
-      learning_state: 'learning',
-      review_state: 'review',
-      mastered_state: 'mastered',
-      learning_due: true,
-      review_due: true,
-      mastered_due: true,
-    }])
-  })
 })

@@ -164,6 +164,9 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
   // 8 回の窓で測ると標準誤差は 0.153（95% 区間の幅が ±30pt）。
   // 1 項目のパーセントは正確でも動きもしないので、画面には出さず件数で伝えます。
   const masteredCount = computed(() => props.knowledgeItems.filter((item) => item.state === 'mastered').length)
+  // 「安定してきた」は習得と復習を合わせた数です。証拠が古くなった習得項目は
+  // 読み取り時に復習へ落ちるので、この数はそこでは動きません。動かすと、
+  // 何も答えていないのに数字が減ることになります。
   const steadyCount = computed(() => props.knowledgeItems.filter((item) => item.state === 'mastered' || item.state === 'review').length)
 
   const masteryAverage = computed(() => {

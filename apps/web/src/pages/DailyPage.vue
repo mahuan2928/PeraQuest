@@ -98,7 +98,9 @@ async function answer(response: string | string[] | null, timedOut = false) {
     if (plan.value) plan.value = { ...plan.value, lives: body.lives, session: body.session }
     // 生命値が減ったときだけ、回復予定時刻を取り直します
     // （採点の応答には次の回復時刻が含まれないため）。
-    if (spent) await loadPlan()
+    // 関卡が終わった瞬間も取り直します。採点の応答に連続日数は入っていないので、
+    // 取り直さないと今日ぶんを終えたのに「今日はまだ」と出たままになります。
+    if (spent || body.session.status === 'completed') await loadPlan()
   } catch {
     error.value = '答えを送れませんでした。もう一度お試しください。'
   } finally {

@@ -98,7 +98,9 @@ const voiceAllowed = computed(() => props.capabilities?.voiceConsentStatus === '
 const displayKnowledgeItems = computed(() => guardianKnowledgeItems.value.length ? guardianKnowledgeItems.value : props.knowledgeItems)
 // 8 回の窓では標準誤差が 0.153 あり、項目ごとのパーセントは正確でも動きもしません。
 // 支払いを判断する側には、単調に増える件数のほうが誠実です。
-const masteredCount = computed(() => displayKnowledgeItems.value.filter((item) => item.state === 'mastered').length)
+// 見出しは習得だけを数えません。証拠が古くなった習得項目は読み取り時に復習へ落ちるので、
+// 習得だけを数えると、何も答えていない週に数字が減ります。減った理由は項目ごとの
+// 三段階に出ます。見出しで黙って減らすのがいちばん不親切です。
 const steadyCount = computed(() => displayKnowledgeItems.value.filter((item) => item.state === 'mastered' || item.state === 'review').length)
 const guardianJourneySummary = computed<StudentJourneySummary | null>(() => {
   if (props.studentJourneySummary) return props.studentJourneySummary
@@ -352,8 +354,8 @@ function stateLabel(state: string, masteryScore: number, leech = false) {
           {{ pendingKnowledge || pendingSummary ? '更新しています…' : '最新のレポートを表示します' }}
         </button>
         <div class="mini-mastery">
-          <strong>{{ masteredCount }}</strong>
-          <span>習得した項目</span>
+          <strong>{{ steadyCount }}</strong>
+          <span>学習が定着してきた項目</span>
         </div>
       </div>
       <p v-if="!learningSummary && !displayKnowledgeItems.length">
@@ -395,8 +397,8 @@ function stateLabel(state: string, masteryScore: number, leech = false) {
           <p>今日どこまで進み、何が身についたかをまとめました。</p>
           <div class="guardian-journey-grid">
             <div>
-              <strong>{{ masteredCount }}</strong>
-              <span>習得した項目</span>
+              <strong>{{ steadyCount }}</strong>
+              <span>学習が定着してきた項目</span>
             </div>
           </div>
           <ul class="guardian-journey-list">

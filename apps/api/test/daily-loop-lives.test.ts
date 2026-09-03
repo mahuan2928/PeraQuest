@@ -130,13 +130,14 @@ describe('daily loop and lives', () => {
     ).rejects.toThrowError(/append-only/)
   })
 
-  it('allows one session a day and keeps a level between twelve and fifteen items', async () => {
+  it('allows one session a day and keeps a level between twelve and twenty items', async () => {
     const database = await freshDatabase()
     await createSession(database, '2026-09-03')
     await expect(createSession(database, '2026-09-03')).rejects.toThrowError(/duplicate key/)
-    await createSession(database, '2026-09-04', 15)
+    // 1 日 19 問が目標。3 か月で英検 3 級を一周するのに必要な量です。
+    await createSession(database, '2026-09-04', 19)
     await expect(createSession(database, '2026-09-05', 11)).rejects.toThrowError(/target_count/)
-    await expect(createSession(database, '2026-09-06', 16)).rejects.toThrowError(/target_count/)
+    await expect(createSession(database, '2026-09-06', 21)).rejects.toThrowError(/target_count/)
   })
 
   it('treats a timeout as skipped rather than a knowledge error', async () => {

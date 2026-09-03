@@ -150,7 +150,10 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0016_content_items_licence_ledger.sql',
           '0017_daily_loop_and_lives.sql',
           '0018_daily_loop_rewards_and_mastery.sql',
+          '0019_daily_target_for_exam_coverage.sql',
+      '0019_daily_target_for_exam_coverage.sql',
       '0018_daily_loop_rewards_and_mastery.sql',
+      '0019_daily_target_for_exam_coverage.sql',
         ],
         [],
       ])
@@ -178,6 +181,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0016_content_items_licence_ledger.sql', count: '1' },
         { name: '0017_daily_loop_and_lives.sql', count: '1' },
         { name: '0018_daily_loop_rewards_and_mastery.sql', count: '1' },
+        { name: '0019_daily_target_for_exam_coverage.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])

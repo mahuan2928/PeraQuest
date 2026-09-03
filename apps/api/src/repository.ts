@@ -1236,7 +1236,9 @@ export class PostgresStudentRepository implements StudentRepository {
       // 復習は上限まで、残りを新規で埋めます（PRD: 復習は普通の関卡に混ぜる）。
       const cap = await client.query<{ daily_review_cap: number }>('SELECT daily_review_cap($1)', [studentId])
       const reviewCap = Number(cap.rows[0]!.daily_review_cap)
-      const target = 12
+      // 1 日 19 問。120 知識ポイント × 12 回 ÷ 77 学習日 から逆算した数です。
+      // 題庫が足りないうちは、公開済みの数だけで関卡を作ります（最低 12 問）。
+      const target = 19
 
       const reviews = await client.query<DailyItemRow>(`
         SELECT ci.id, ci.item_kind, ci.knowledge_point_ref, ci.payload

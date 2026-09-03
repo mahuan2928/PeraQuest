@@ -45,12 +45,17 @@ describe('daily loop repository', () => {
     expect(plan).toMatchObject({ lives: 5, maxLives: 5, nextLifeAt: null, reviewCap: 20, session: null })
   })
 
-  it('starts a level of twelve items and never sends the answers', async () => {
-    const { repository } = await setup()
+  it('fills the level with what the bank can offer and never sends the answers', async () => {
+    const { database, repository } = await setup()
+    const published = await database.query<{ count: string }>(
+      "SELECT count(*) AS count FROM content_items WHERE status = 'published'",
+    )
+    const available = Number(published.rows[0]!.count)
     const started = await repository.startDailySession(STUDENT)
     expect(started).not.toBeNull()
-    expect(started!.session.targetCount).toBe(12)
-    expect(started!.items).toHaveLength(12)
+    // 1 日の目標は 19 問。題庫がそこまで無い間は、公開済みの数だけで組みます。
+    expect(started!.session.targetCount).toBe(Math.min(19, available))
+    expect(started!.items).toHaveLength(Math.min(19, available))
     for (const item of started!.items) {
       const serialised = JSON.stringify(item.prompt)
       expect(serialised).not.toContain('"answer"')
@@ -126,7 +131,7 @@ describe('daily loop repository', () => {
         response: null, timedOut: true,
       })
     }
-    expect(last!.session.completedCount).toBe(12)
+    expect(last!.session.completedCount).toBe(started!.items.length)
     expect(last!.session.status).toBe('completed')
   })
 

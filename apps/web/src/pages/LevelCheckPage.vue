@@ -102,7 +102,12 @@ const { busy, attempt, selected, resultSummary, earnedReward, learnReady, answer
       <strong>{{ resultSummary.passed ? '合格ラインに到達しました' : '復習から始めましょう' }}</strong>
       <p>今回の結果をもとに、復習予定を更新しました。</p>
       <p class="score-line">
-        {{ resultSummary.score }} / {{ resultSummary.maxScore }}
+        {{ resultSummary.maxScore }} 問中
+        <strong>{{ resultSummary.rawScore }} 問</strong>
+        正解
+      </p>
+      <p class="score-rate">
+        正答率 {{ Math.round((resultSummary.score ?? 0) * 100) }}%
       </p>
       <div
         v-if="earnedReward"

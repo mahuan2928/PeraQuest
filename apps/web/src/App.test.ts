@@ -539,7 +539,9 @@ describe('minor onboarding vertical slice', () => {
     await wrapper.get('.question-card .primary-action').trigger('click')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('レベルチェックの結果を保存しました。進捗は少し待ってから更新されます。'))
-    expect(wrapper.text()).toContain('1 / 1')
+    // 正答率ではなく「何問中何問」を出します。1/1 は「1問中1問正解」で満点。
+    expect(wrapper.text()).toContain('1 問中')
+    expect(wrapper.text()).toContain('正答率 100%')
     expect(wrapper.text()).toContain('報酬を獲得しました')
     expect(wrapper.text()).not.toContain('接続を確認して、もう一度お試しください。')
   })
@@ -593,39 +595,25 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).toContain('3 / 3 タスク完了')
     await wrapper.get('.review-quest-panel .secondary-action').trigger('click')
     expect(wrapper.text()).toContain('今日の復習を完了しました')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('4 / 5 スポット達成'))
+    // 復習クエストはサーバに記録されないため、クエストの進み具合も XP も動きません。
+    // 以前はクライアントで 4 まで進めて +15 XP を表示していましたが、再読み込みで消えていました。
+    expect(wrapper.text()).toContain('今日の復習を完了しました')
+    expect(wrapper.text()).not.toContain('+15 XP')
     expect(wrapper.text()).toContain('今日の冒険まとめ')
     expect(wrapper.text()).toContain('レベルチェックを完了しました')
-    expect(wrapper.text()).toContain('復習の森をクリアしました')
-    expect(wrapper.text()).toContain('+15 XP')
-    expect(wrapper.text()).toContain('+5 コイン')
+    expect(wrapper.text()).not.toContain('+5 コイン')
+    // 復習クエストはサーバに記録を作らないので、現在の目標は「復習の森」のままです。
+    expect(wrapper.text()).toContain('3 / 5 スポット達成')
+    expect(wrapper.text()).toContain('復習の森 次の目標')
+    // 得ていないバッジは「次に集めるもの」に残ります。
+    expect(wrapper.text()).toContain('次に集めるもの')
     expect(wrapper.text()).toContain('復習の森クリア')
-    expect(wrapper.text()).toContain('次の冒険は準備中です')
 
+    // 「次の島」はサーバがクエストを進めたときだけ開きます。
+    // 以前はクライアントが進捗を捏造していたため、ここで開けてしまっていました。
     await wrapper.findAll('button').find((button) => button.text().includes('近日公開'))!.trigger('click')
-    await wrapper.findAll('button').find((button) => button.text().includes('次の島をプレビューします'))!.trigger('click')
-    expect(wrapper.text()).toContain('リスニング入り江')
-    expect(wrapper.text()).toContain('短い会話を聞き取り、時間・理由・気持ちを選ぶ新しい冒険です。')
-    expect(wrapper.text()).toContain('保護者レポートに次のおすすめとして表示予定')
-    expect(wrapper.text()).toContain('Chapter 3')
-
-    await wrapper.findAll('button').find((button) => button.text().includes('1問ためしてみる'))!.trigger('click')
-    expect(wrapper.text()).toContain('どこで会いますか？')
-    expect(wrapper.text()).toContain("Let's meet at the library after school.")
-    await wrapper.get('input[value="library"]').setValue(true)
-    await wrapper.findAll('button').find((button) => button.text().includes('答えを確認します'))!.trigger('click')
-    expect(wrapper.text()).toContain('正解です。library は「図書館」です。')
-    expect(wrapper.text()).toContain('+10 XP')
-    expect(wrapper.text()).toContain('+3 コイン')
-    expect(wrapper.text()).toContain('リスニング入り江体験')
-    expect(wrapper.text()).toContain('85 XP を集めました。')
-    expect(wrapper.text()).toContain('28 コインを持っています。')
-    expect(wrapper.text()).toContain('リスニング入り江を体験しました')
-    expect(wrapper.text()).toContain('保護者レポートへ切り替えます')
-    await wrapper.findAll('button').find((button) => button.text().includes('進行ガイド'))!.trigger('click')
-    expect(wrapper.text()).toContain('上部の「保護者として体験」を押します。')
-    expect(wrapper.text()).toContain('次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。')
-    expect(wrapper.findAll('button').some((button) => button.text().includes('ためしました'))).toBe(true)
+    const previewButton = wrapper.findAll('button').find((button) => button.text().includes('復習後にプレビューできます'))
+    expect(previewButton?.attributes('disabled')).toBeDefined()
   })
 
   it('keeps demo practice unavailable without emitting or calling an API', async () => {

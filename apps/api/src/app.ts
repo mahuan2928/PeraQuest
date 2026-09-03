@@ -384,7 +384,12 @@ export const buildApp = (options: BuildAppOptions = {}) => {
   const corsHeaders = {
     'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
-    'access-control-allow-headers': 'content-type,authorization,x-client-platform,idempotency-key',
+    // 許可ヘッダは、サーバが実際に受け付けるものと一致させます。
+    // 本番では ALLOW_LEGACY_TEST_HEADERS が強制的に false になるため、
+    // 旧ヘッダは広告されず、送られても認証されません。
+    'access-control-allow-headers': config.ALLOW_LEGACY_TEST_HEADERS
+      ? 'content-type,authorization,x-client-platform,idempotency-key,x-student-id,x-guardian-id'
+      : 'content-type,authorization,x-client-platform,idempotency-key',
     vary: 'Origin',
   }
 

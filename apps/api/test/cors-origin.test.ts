@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { MemoryStudentRepository } from '../src/repository.js'
+import { loadConfig } from '../src/config.js'
 
 describe('Origin enforcement', () => {
   const apps: ReturnType<typeof buildApp>[] = []
@@ -66,4 +67,34 @@ describe('Origin enforcement', () => {
   })
 
 
+})
+
+describe('legacy header advertisement', () => {
+  it('advertises the legacy headers only while they are accepted', async () => {
+    const withLegacy = buildApp({ config: loadConfig({ NODE_ENV: 'test', ALLOW_LEGACY_TEST_HEADERS: 'true' }) })
+    const allowed = await withLegacy.inject({
+      method: 'OPTIONS',
+      url: '/v1/me/capabilities',
+      headers: { origin: 'http://localhost:5173' },
+    })
+    expect(allowed.headers['access-control-allow-headers']).toContain('x-student-id')
+    await withLegacy.close()
+
+    // 本番では ALLOW_LEGACY_TEST_HEADERS が強制的に false になります。
+    const production = buildApp({
+      config: loadConfig({
+        NODE_ENV: 'production', ALLOW_LEGACY_TEST_HEADERS: 'true',
+        AUTH_ISSUER: 'https://issuer.example.test', AUTH_AUDIENCE: 'peraquest-api',
+        AUTH_JWKS_URL: 'https://issuer.example.test/.well-known/jwks.json',
+        AUTH_PROVIDER: 'email_magic_link', CORS_ORIGIN: 'https://app.example.test',
+      }),
+    })
+    const denied = await production.inject({
+      method: 'OPTIONS',
+      url: '/v1/me/capabilities',
+      headers: { origin: 'https://app.example.test' },
+    })
+    expect(denied.headers['access-control-allow-headers']).not.toContain('x-student-id')
+    await production.close()
+  })
 })

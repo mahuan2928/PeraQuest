@@ -402,6 +402,19 @@ const applyGameReward = async (database: Queryable, studentId: string, reward: G
   return reward
 }
 
+// 毎日の関卡を終えたときの報酬。1 回きりのレベルチェック(100/50)より小さくし、
+// 毎日積み上がることに意味を持たせます。
+const dailySessionReward = (sessionId: string): GameRewardGrantDto => ({
+  source: 'daily_session',
+  sourceRef: sessionId,
+  reason: 'daily_session_completed',
+  xpAwarded: 30,
+  activityCoinsAwarded: 10,
+  questStepDelta: 0,
+  questChapterUnlocked: null,
+  badgesAwarded: ['daily_session_cleared'],
+})
+
 const stageAttemptRewardFor = (result: StageAttemptResultResponse): GameRewardGrantDto => ({
   source: 'stage_attempt',
   sourceRef: result.attemptId,
@@ -1276,6 +1289,16 @@ export class PostgresStudentRepository implements StudentRepository {
         WHERE ds.id = $1
         RETURNING ds.id, ds.session_date, ds.status, ds.target_count, ds.completed_count, ds.review_count
       `, [input.sessionId])
+      // 解答するたびに習熟度と復習期日を進めます。関数は適用済み台帳で冪等です。
+      await client.query('SELECT apply_daily_session_mastery_due($1, $2)', [input.sessionId, input.studentId])
+
+      // 関卡を終えたときだけ報酬を出します。source_ref がセッション ID なので 1 日 1 回です。
+      const updatedSession = toDailySession(updated.rows[0]!)
+      let rewards: GameRewardGrantDto | undefined
+      if (updatedSession.status === 'completed') {
+        const granted = await applyGameReward(client, input.studentId, dailySessionReward(input.sessionId))
+        if (granted.xpAwarded > 0 || granted.activityCoinsAwarded > 0) rewards = granted
+      }
       await client.query('COMMIT')
 
       return {
@@ -1283,7 +1306,8 @@ export class PostgresStudentRepository implements StudentRepository {
         timedOut: input.timedOut,
         explanation: String(payload.explanation ?? ''),
         lives,
-        session: toDailySession(updated.rows[0]!),
+        session: updatedSession,
+        ...(rewards ? { rewards } : {}),
       }
     } catch (error) {
       await client.query('ROLLBACK')

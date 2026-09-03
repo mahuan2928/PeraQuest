@@ -49,6 +49,7 @@ describe('database migrations', () => {
       '0015_game_rewards_mvp.sql',
       '0016_content_items_licence_ledger.sql',
       '0017_daily_loop_and_lives.sql',
+      '0018_daily_loop_rewards_and_mastery.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -87,6 +88,7 @@ describe('database migrations', () => {
       'stage_exams',
       'student_game_state',
       'student_knowledge',
+      'student_knowledge_applied_daily_answers',
       'student_knowledge_applied_evidence',
       'student_lives',
       'subscription_entitlements',

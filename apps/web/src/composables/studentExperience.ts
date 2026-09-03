@@ -137,7 +137,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
   const error = ref('')
   const attempt = ref<StageAttempt | null>(null)
   const selected = ref<Record<string, string>>({})
-  const resultSummary = ref<{ passed?: boolean; score?: number; maxScore?: number; rewards?: GameReward } | null>(null)
+  const resultSummary = ref<{ passed?: boolean; score?: number; rawScore?: number; maxScore?: number; rewards?: GameReward } | null>(null)
   const gameState = ref<GameState | null>(null)
   const voiceReady = ref(false)
   const deviceReady = ref(false)
@@ -146,7 +146,6 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
   const rewardCelebrationOpen = ref(false)
   const reviewQuestOpen = ref(false)
   const reviewQuestCompleted = ref(false)
-  const reviewQuestReward = ref<GameReward | null>(null)
   const reviewReadAloudDone = ref(false)
   const reviewFocusRef = ref('')
   const reviewRewriteText = ref('')
@@ -154,7 +153,6 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
   const listeningDemoOpen = ref(false)
   const listeningDemoAnswer = ref('')
   const listeningDemoSubmitted = ref(false)
-  const listeningDemoReward = ref<GameReward | null>(null)
 
   const guardianReady = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
   const learnReady = computed(() => props.capabilities?.canLearn === true)
@@ -164,20 +162,6 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     if (!props.knowledgeItems.length) return 0
     return Math.round((props.knowledgeItems.reduce((sum, item) => sum + item.masteryScore, 0) / props.knowledgeItems.length) * 100)
   })
-  const reviewCompletionReward: GameReward = {
-    xpAwarded: 15,
-    activityCoinsAwarded: 5,
-    questStepDelta: 1,
-    questChapterUnlocked: null,
-    badgesAwarded: ['review_forest_cleared'],
-  }
-  const listeningDemoCompletionReward: GameReward = {
-    xpAwarded: 10,
-    activityCoinsAwarded: 3,
-    questStepDelta: 0,
-    questChapterUnlocked: null,
-    badgesAwarded: ['listening_cove_trial'],
-  }
   const demoMetrics: DemoMetric[] = [
     {
       label: '保護者確認',
@@ -200,29 +184,13 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
       detail: 'リスニング入り江体験バッジを紹介します。',
     },
   ]
-  const questStep = computed(() => {
-    const rawStep = gameState.value?.questStep ?? 0
-    const badges = new Set(gameState.value?.badges ?? [])
-    const earnedStep = reviewQuestCompleted.value
-      ? 4
-      : badges.has('level_check_cleared') || badges.has('level_check_challenger') || props.knowledgeItems.length > 0
-        ? 3
-        : badges.has('guardian_shield') || (gameState.value?.totalXp ?? 0) >= 20
-          ? 2
-          : 0
-    return Math.max(rawStep, earnedStep)
-  })
+  // クエストの進み具合はサーバの唯一の記録から読みます。
+  // 以前はバッジから推測した値と Math.max していたため、再読み込みで巻き戻っていました。
+  const questStep = computed(() => gameState.value?.questStep ?? 0)
   const questProgress = computed(() => Math.min(100, Math.round((questStep.value / questMapNodes.value.length) * 100)))
-  const localRewards = computed(() => [reviewQuestReward.value, listeningDemoReward.value].filter((reward): reward is GameReward => Boolean(reward)))
-  const displayedTotalXp = computed(() => (gameState.value?.totalXp ?? 0) + localRewards.value.reduce((sum, reward) => sum + reward.xpAwarded, 0))
-  const displayedActivityCoins = computed(() => (gameState.value?.activityCoins ?? 0) + localRewards.value.reduce((sum, reward) => sum + reward.activityCoinsAwarded, 0))
-  const displayedBadges = computed(() => {
-    const badges = new Set(gameState.value?.badges ?? [])
-    for (const reward of localRewards.value) {
-      for (const badge of reward.badgesAwarded) badges.add(badge)
-    }
-    return [...badges]
-  })
+  const displayedTotalXp = computed(() => gameState.value?.totalXp ?? 0)
+  const displayedActivityCoins = computed(() => gameState.value?.activityCoins ?? 0)
+  const displayedBadges = computed(() => gameState.value?.badges ?? [])
   const inventoryItems = computed<InventoryItem[]>(() => [
     {
       id: 'xp',
@@ -542,7 +510,6 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     selectedQuestNodeId.value = 'review'
     reviewQuestOpen.value = true
     reviewQuestCompleted.value = false
-    reviewQuestReward.value = null
     reviewReadAloudDone.value = false
     reviewFocusRef.value = ''
     reviewRewriteText.value = ''
@@ -551,9 +518,6 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
   const completeReviewQuest = () => {
     if (!reviewQuestCanComplete.value) return
     reviewQuestCompleted.value = true
-    reviewQuestReward.value = reviewCompletionReward
-    earnedReward.value = reviewCompletionReward
-    rewardCelebrationOpen.value = true
     message.value = '今日の復習クエストを完了しました。次の冒険へ進む準備ができています。'
   }
   const openNextIslandPreview = () => {
@@ -567,15 +531,11 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     listeningDemoOpen.value = true
     listeningDemoSubmitted.value = false
     listeningDemoAnswer.value = ''
-    listeningDemoReward.value = null
     message.value = 'リスニング入り江の体験を開始しました。会話の内容を選びましょう。'
   }
   const submitListeningDemo = () => {
     if (!listeningDemoAnswer.value || listeningDemoSubmitted.value) return
     listeningDemoSubmitted.value = true
-    listeningDemoReward.value = listeningDemoCompletionReward
-    earnedReward.value = listeningDemoCompletionReward
-    rewardCelebrationOpen.value = true
     message.value = listeningDemoCorrect.value
       ? '正解です。短い会話から待ち合わせ場所を聞き取れました。リスニング入り江の体験バッジを獲得しました。'
       : '場所を表す言葉に注目できました。リスニング入り江の体験バッジを獲得しました。'
@@ -655,7 +615,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
       const result = await fetchDemoStageAttemptResult(props.session.studentToken, attempt.value!.attemptId)
       if (!submitted.ok && !result.ok) throw new Error('stage attempt submit failed')
       if (!result.ok) throw new Error('stage attempt result failed')
-      resultSummary.value = result.body as { passed?: boolean; score?: number; maxScore?: number; rewards?: GameReward }
+      resultSummary.value = result.body as { passed?: boolean; score?: number; rawScore?: number; maxScore?: number; rewards?: GameReward }
       let progressRefreshOk = true
       try {
         const knowledge = await fetchDemoStudentKnowledge(props.session.studentToken)
@@ -919,7 +879,6 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     rewardCelebrationOpen,
     reviewQuestOpen,
     reviewQuestCompleted,
-    reviewQuestReward,
     reviewReadAloudDone,
     reviewFocusRef,
     reviewRewriteText,
@@ -927,18 +886,14 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     listeningDemoOpen,
     listeningDemoAnswer,
     listeningDemoSubmitted,
-    listeningDemoReward,
     guardianReady,
     learnReady,
     voiceEnabled,
     answered,
     masteryAverage,
-    reviewCompletionReward,
-    listeningDemoCompletionReward,
     demoMetrics,
     questStep,
     questProgress,
-    localRewards,
     displayedTotalXp,
     displayedActivityCoins,
     displayedBadges,

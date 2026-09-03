@@ -157,4 +157,85 @@ describe('daily loop repository', () => {
     const repository = new PostgresStudentRepository({ query: database.query.bind(database), connect: async () => client } as unknown as Pool)
     expect(await repository.startDailySession(STUDENT)).toBeNull()
   })
+
+  it('grants XP and coins once when the level is completed', async () => {
+    const { database, repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    let last = null
+    for (const item of started!.items) {
+      last = await repository.submitDailyAnswer({
+        studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+        response: null, timedOut: true,
+      })
+    }
+    expect(last!.session.status).toBe('completed')
+    expect(last!.rewards).toMatchObject({ xpAwarded: 30, activityCoinsAwarded: 10, badgesAwarded: ['daily_session_cleared'] })
+
+    const state = await database.query<{ total_xp: number; activity_coins: number }>(
+      'SELECT total_xp, activity_coins FROM student_game_state WHERE student_id = $1', [STUDENT],
+    )
+    expect(state.rows[0]).toMatchObject({ total_xp: 30, activity_coins: 10 })
+
+    const ledger = await database.query<{ count: string }>(
+      "SELECT count(*) AS count FROM game_reward_ledger WHERE source_type = 'daily_session'",
+    )
+    expect(Number(ledger.rows[0]?.count)).toBe(1)
+  })
+
+  it('advances mastery and the review date as answers come in', async () => {
+    const { database, repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    const item = started!.items.find((entry) => entry.itemKind === 'word_order')!
+    const stored = await database.query<{ payload: { answers: string[][] } }>(
+      'SELECT payload FROM content_items WHERE id = $1', [item.contentItemId],
+    )
+    await repository.submitDailyAnswer({
+      studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+      response: stored.rows[0]!.payload.answers[0]!, timedOut: false,
+    })
+    const knowledge = await database.query<{ mastery_score: string; due_at: Date; raw_attempt_total: string }>(
+      'SELECT mastery_score, due_at, raw_attempt_total FROM student_knowledge WHERE student_id = $1 AND knowledge_point_ref = $2',
+      [STUDENT, item.knowledgePointRef],
+    )
+    expect(knowledge.rows).toHaveLength(1)
+    expect(Number(knowledge.rows[0]!.mastery_score)).toBe(1)
+    expect(Number(knowledge.rows[0]!.raw_attempt_total)).toBe(1)
+    // 満点なので次の復習は 14 日後。復習キューが前に進んでいることの確認です。
+    expect(knowledge.rows[0]!.due_at.getTime()).toBeGreaterThan(Date.now() + 13 * 24 * 60 * 60 * 1000)
+  })
+
+  it('keeps a timed-out answer out of the mastery calculation', async () => {
+    const { database, repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    const item = started!.items.find((entry) => entry.itemKind === 'article')!
+    await repository.submitDailyAnswer({
+      studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+      response: null, timedOut: true,
+    })
+    const knowledge = await database.query(
+      'SELECT 1 FROM student_knowledge WHERE student_id = $1 AND knowledge_point_ref = $2',
+      [STUDENT, item.knowledgePointRef],
+    )
+    expect(knowledge.rows).toHaveLength(0)
+  })
+
+  it('does not pay the reward twice when the last answer is retried', async () => {
+    const { database, repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    for (const item of started!.items) {
+      await repository.submitDailyAnswer({
+        studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+        response: null, timedOut: true,
+      })
+    }
+    const retry = await repository.submitDailyAnswer({
+      studentId: STUDENT, sessionId: started!.session.sessionId,
+      contentItemId: started!.items.at(-1)!.contentItemId, response: null, timedOut: true,
+    })
+    expect(retry!.rewards).toBeUndefined()
+    const state = await database.query<{ total_xp: number }>(
+      'SELECT total_xp FROM student_game_state WHERE student_id = $1', [STUDENT],
+    )
+    expect(state.rows[0]?.total_xp).toBe(30)
+  })
 })

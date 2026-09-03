@@ -201,8 +201,8 @@ export interface StageAttemptResultItemDto {
   maxScore: number
 }
 
-export type GameRewardSource = 'stage_attempt' | 'guardian_verification'
-export type GameRewardReason = 'stage_attempt_passed' | 'stage_attempt_completed' | 'guardian_link_verified'
+export type GameRewardSource = 'stage_attempt' | 'guardian_verification' | 'daily_session'
+export type GameRewardReason = 'stage_attempt_passed' | 'stage_attempt_completed' | 'guardian_link_verified' | 'daily_session_completed'
 
 export interface GameRewardGrantDto {
   source: GameRewardSource
@@ -552,4 +552,6 @@ export interface DailyAnswerResponse {
   explanation: string
   lives: number
   session: DailySessionDto
+  /** 関卡を終えたときだけ入ります。 */
+  rewards?: GameRewardGrantDto
 }

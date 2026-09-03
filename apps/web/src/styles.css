@@ -554,3 +554,4 @@ footer a { color: var(--muted-ink); font-size: .78rem; }
 .katakana-word { margin: 10px 0 16px; font-size: clamp(1.5rem, 4vw, 2.2rem); font-weight: 1000; letter-spacing: .04em; }
 
 @media (prefers-reduced-motion: reduce) { .article-timer span { transition: none; } }
+.score-rate { margin: 4px 0 0; color: var(--muted-ink); font-size: .82rem; font-weight: 700; }

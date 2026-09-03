@@ -9,7 +9,7 @@ const { questProgress, questMapNodes, questIslands, currentQuestNode, selectedQu
 <template>
   <article class="action-card quest-card">
     <p class="card-kicker">
-      冒険
+      記録
     </p>
     <h2>冒険マップ</h2>
     <div class="quest-current">

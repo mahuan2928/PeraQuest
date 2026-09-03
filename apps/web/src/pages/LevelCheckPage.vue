@@ -10,11 +10,12 @@ const { busy, attempt, selected, resultSummary, earnedReward, learnReady, answer
   <section
     id="level-check-panel"
     class="lesson-panel"
+    :aria-busy="busy"
   >
     <header class="lesson-header">
       <div>
         <p class="eyebrow">
-          レベルチェック
+          学習
         </p>
         <strong>英検3級 · レベルチェック</strong>
       </div>
@@ -27,6 +28,18 @@ const { busy, attempt, selected, resultSummary, earnedReward, learnReady, answer
     >
       まだレベルチェックは始められません。保護者の確認が完了すると、ここから開始できます。
     </p>
+
+    <div
+      v-else-if="busy && !attempt"
+      class="skeleton-block"
+      aria-hidden="true"
+    >
+      <span class="skeleton-line wide" />
+      <span class="skeleton-line" />
+      <span class="skeleton-line short" />
+      <span class="skeleton-line wide" />
+      <span class="skeleton-line" />
+    </div>
 
     <button
       v-else-if="!attempt"

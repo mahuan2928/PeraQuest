@@ -10,7 +10,7 @@ const { busy, voiceReady, guardianReady, learnReady, voiceEnabled, inventoryItem
   <div class="collection-grid">
     <article class="action-card side-card inventory-card">
       <p class="card-kicker">
-        コレクション
+        記録
       </p>
       <h2>冒険バッグ</h2>
       <div class="inventory-count compact">
@@ -65,7 +65,7 @@ const { busy, voiceReady, guardianReady, learnReady, voiceEnabled, inventoryItem
 
     <article class="action-card side-card">
       <p class="card-kicker">
-        ステータス
+        状況
       </p>
       <h2>準備の状況</h2>
       <ul class="safety-list compact">

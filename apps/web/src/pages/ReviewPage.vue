@@ -12,7 +12,7 @@ const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDo
     class="action-card"
   >
     <p class="card-kicker">
-      復習予定
+      学習
     </p>
     <h2>今日の復習</h2>
     <p>{{ knowledgeItems.length ? `${knowledgeItems.length} 件の復習予定があります。` : 'レベルチェックが終わると、復習予定がここに表示されます。' }}</p>

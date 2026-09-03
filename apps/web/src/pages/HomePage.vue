@@ -29,10 +29,10 @@ async function copyInvitationCode() {
 }
 
 const entries = [
-  { to: '/level-check', kicker: '力だめし', title: 'レベルチェック', body: '今の得意と、復習したいところを確かめます。' },
-  { to: '/review', kicker: '毎日の学習', title: '今日の復習', body: '苦手なところを短く確認します。' },
-  { to: '/map', kicker: '冒険', title: '冒険マップ', body: '学習の成果が、冒険の進み具合になります。' },
-  { to: '/collection', kicker: 'コレクション', title: '冒険バッグ', body: '集めた XP・コイン・バッジを確認します。' },
+  { to: '/level-check', kicker: '学習', title: 'レベルチェック', body: '今の得意と、復習したいところを確かめます。' },
+  { to: '/review', kicker: '学習', title: '今日の復習', body: '苦手なところを短く確認します。' },
+  { to: '/map', kicker: '記録', title: '冒険マップ', body: '学習の成果が、冒険の進み具合になります。' },
+  { to: '/collection', kicker: '記録', title: '冒険バッグ', body: '集めた XP・コイン・バッジを確認します。' },
 ]
 </script>
 
@@ -164,7 +164,7 @@ const entries = [
       aria-label="学習旅程サマリー"
     >
       <p class="card-kicker">
-        今日のまとめ
+        記録
       </p>
       <h2>今日の冒険まとめ</h2>
       <div class="journey-score-grid">

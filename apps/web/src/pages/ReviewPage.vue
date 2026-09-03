@@ -3,7 +3,7 @@ import { inject } from 'vue'
 import { studentExperienceKey } from '../composables/studentExperience'
 
 const experience = inject(studentExperienceKey)!
-const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDone, reviewFocusRef, reviewRewriteText, reviewRewriteLooksEnglish, masteryAverage, reviewQuestItems, reviewQuestReady, reviewTaskProgress, reviewQuestCanComplete, knowledgePointLabel, reviewStateLabel, startReviewQuest, completeReviewQuest } = experience
+const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDone, reviewFocusRef, reviewRewriteText, reviewRewriteLooksEnglish, steadyCount, reviewQuestItems, reviewQuestReady, reviewTaskProgress, reviewQuestCanComplete, knowledgePointLabel, reviewStateLabel, startReviewQuest, completeReviewQuest } = experience
 </script>
 
 <template>
@@ -20,8 +20,8 @@ const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDo
       v-if="knowledgeItems.length"
       class="mini-mastery"
     >
-      <strong>{{ masteryAverage }}%</strong>
-      <span>平均習熟度</span>
+      <strong>{{ steadyCount }}</strong>
+      <span>安定してきたポイント</span>
     </div>
     <section
       v-if="reviewQuestItems.length"
@@ -37,7 +37,7 @@ const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDo
         >
           <span>{{ reviewStateLabel(item.state) }}</span>
           <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
-          <small>習熟度 {{ Math.round(item.masteryScore * 100) }}%</small>
+          <small>{{ reviewStateLabel(item.state) }}</small>
         </li>
       </ol>
     </section>
@@ -91,7 +91,7 @@ const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDo
             >
             <span>
               <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
-              <small>習熟度 {{ Math.round(item.masteryScore * 100) }}%</small>
+              <small>{{ reviewStateLabel(item.state) }}</small>
             </span>
           </label>
         </fieldset>

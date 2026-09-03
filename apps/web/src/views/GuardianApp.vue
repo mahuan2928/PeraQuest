@@ -55,7 +55,6 @@ type StudentJourneySummary = {
   totalQuestCount: number
   totalXp: number
   activityCoins: number
-  masteryAverage: number
   highlights: string[]
   badges: string[]
   nextStep: string
@@ -95,10 +94,10 @@ const learningSummary = ref<LearningSummary | null>(null)
 const verified = computed(() => props.capabilities?.guardianLinkStatus === 'verified')
 const voiceAllowed = computed(() => props.capabilities?.voiceConsentStatus === 'granted' && props.capabilities?.canUploadVoice === true)
 const displayKnowledgeItems = computed(() => guardianKnowledgeItems.value.length ? guardianKnowledgeItems.value : props.knowledgeItems)
-const masteryAverage = computed(() => {
-  if (!displayKnowledgeItems.value.length) return 0
-  return Math.round((displayKnowledgeItems.value.reduce((sum, item) => sum + item.masteryScore, 0) / displayKnowledgeItems.value.length) * 100)
-})
+// 8 回の窓では標準誤差が 0.153 あり、項目ごとのパーセントは正確でも動きもしません。
+// 支払いを判断する側には、単調に増える件数のほうが誠実です。
+const masteredCount = computed(() => displayKnowledgeItems.value.filter((item) => item.state === 'mastered').length)
+const steadyCount = computed(() => displayKnowledgeItems.value.filter((item) => item.state === 'mastered' || item.state === 'review').length)
 const guardianJourneySummary = computed<StudentJourneySummary | null>(() => {
   if (props.studentJourneySummary) return props.studentJourneySummary
   if (!learningSummary.value) return null
@@ -124,7 +123,6 @@ const guardianJourneySummary = computed<StudentJourneySummary | null>(() => {
     totalQuestCount: 5,
     totalXp: learningSummary.value.quest.totalXp,
     activityCoins: learningSummary.value.quest.activityCoins,
-    masteryAverage: learningSummary.value.overview.averageMasteryPercent,
     highlights,
     badges,
     nextStep,
@@ -136,7 +134,7 @@ const guardianSupportMemo = computed<GuardianSupportMemo | null>(() => {
   const reviewFocus = learningSummary.value?.reviewFocus[0]?.label
   // 保護者には学習の中身を伝えます。クエストの進行度は生徒側だけの指標です。
   const progress = journey
-    ? `平均の定着率は ${journey.masteryAverage}% です。`
+    ? `安定してきた項目が ${steadyCount.value} 件あります。`
     : learningSummary.value?.quest.summary ?? '今日の学習状況を確認しています。'
   const focus = reviewFocus
     ? `次は「${reviewFocus}」を短く復習すると効果的です。`
@@ -349,8 +347,8 @@ function stateLabel(state: string, masteryScore: number) {
           {{ pendingKnowledge || pendingSummary ? '更新しています…' : '最新のレポートを表示します' }}
         </button>
         <div class="mini-mastery">
-          <strong>{{ learningSummary?.overview.averageMasteryPercent ?? masteryAverage }}%</strong>
-          <span>平均習熟度</span>
+          <strong>{{ masteredCount }}</strong>
+          <span>習得した項目</span>
         </div>
       </div>
       <p v-if="!learningSummary && !displayKnowledgeItems.length">
@@ -392,8 +390,8 @@ function stateLabel(state: string, masteryScore: number) {
           <p>今日どこまで進み、何が身についたかをまとめました。</p>
           <div class="guardian-journey-grid">
             <div>
-              <strong>{{ guardianJourneySummary.masteryAverage }}%</strong>
-              <span>平均習熟度</span>
+              <strong>{{ masteredCount }}</strong>
+              <span>習得した項目</span>
             </div>
           </div>
           <ul class="guardian-journey-list">
@@ -511,13 +509,13 @@ function stateLabel(state: string, masteryScore: number) {
                   class="mastery-meter"
                   role="progressbar"
                   :aria-label="`${knowledgePointLabel(item.knowledgePointRef)}の習熟度`"
-                  :aria-valuenow="Math.round(item.masteryScore * 100)"
+                  :aria-valuetext="stateLabel(item.state, item.masteryScore)"
                   aria-valuemin="0"
                   aria-valuemax="100"
                 >
                   <span :style="{ width: `${Math.round(item.masteryScore * 100)}%` }" />
                 </div>
-                <strong>{{ Math.round(item.masteryScore * 100) }}%</strong>
+                <strong>{{ stateLabel(item.state, item.masteryScore) }}</strong>
               </div>
             </div>
           </li>

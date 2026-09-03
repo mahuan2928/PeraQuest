@@ -7,7 +7,7 @@ const experience = inject(studentExperienceKey)!
 const {
   nextMission, missionBusy, missionStepIndex, runMission, invitationCode, session,
   displayedTotalXp, displayedActivityCoins, displayedBadges, completedQuestCount,
-  questMapNodes, masteryAverage, knowledgeItems, resultSummary, learnReady,
+  questMapNodes, masteredCount, knowledgeItems, resultSummary, learnReady,
   journeySummaryVisible, journeyHighlights, latestBadgeLabels, journeyNextStep,
   comingSoonOpen,
   nextIslandReady, nextIslandPreviewOpen, openNextIslandPreview,
@@ -160,7 +160,7 @@ const entries = [
         <span>達成スポット</span><strong>{{ completedQuestCount }} <small>/ {{ questMapNodes.length }}</small></strong>
       </article>
       <article>
-        <span>平均習熟度</span><strong>{{ masteryAverage }}<small>%</small></strong>
+        <span>習得したポイント</span><strong>{{ masteredCount }}<small>個</small></strong>
       </article>
       <article>
         <span>復習予定</span><strong>{{ knowledgeItems.length }} <small>件</small></strong>
@@ -213,8 +213,8 @@ const entries = [
           <span>コイン</span>
         </div>
         <div>
-          <strong>{{ masteryAverage }}%</strong>
-          <span>平均習熟度</span>
+          <strong>{{ masteredCount }}</strong>
+          <span>習得したポイント</span>
         </div>
       </div>
       <ul class="journey-highlight-list">

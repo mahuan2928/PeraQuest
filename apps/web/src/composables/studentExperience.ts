@@ -159,6 +159,11 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
   const learnReady = computed(() => props.capabilities?.canLearn === true)
   const voiceEnabled = computed(() => props.capabilities?.canUploadVoice === true)
   const answered = computed(() => attempt.value?.items.every((item) => selected.value[item.itemId]) === true)
+  // 8 回の窓で測ると標準誤差は 0.153（95% 区間の幅が ±30pt）。
+  // 1 項目のパーセントは正確でも動きもしないので、画面には出さず件数で伝えます。
+  const masteredCount = computed(() => props.knowledgeItems.filter((item) => item.state === 'mastered').length)
+  const steadyCount = computed(() => props.knowledgeItems.filter((item) => item.state === 'mastered' || item.state === 'review').length)
+
   const masteryAverage = computed(() => {
     if (!props.knowledgeItems.length) return 0
     return Math.round((props.knowledgeItems.reduce((sum, item) => sum + item.masteryScore, 0) / props.knowledgeItems.length) * 100)
@@ -884,6 +889,8 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     voiceEnabled,
     answered,
     masteryAverage,
+    masteredCount,
+    steadyCount,
     demoMetrics,
     questStep,
     questProgress,

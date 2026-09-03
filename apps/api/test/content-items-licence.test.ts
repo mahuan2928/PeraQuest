@@ -158,6 +158,8 @@ describe('content item publication ledger', () => {
     const database = await freshDatabase()
     const id = await insertItem(database, completeLedger, 'published')
     await expect(database.query('DELETE FROM content_items WHERE id = $1', [id])).rejects.toThrowError(/retired, not deleted/)
-    await expect(database.query('TRUNCATE content_items')).rejects.toThrowError(/retired, not truncated/)
+    // 0017 で daily_answers から参照されたため、TRUNCATE は外部キーの段階で拒否されます。
+    // どちらの経路でも「切り捨てさせない」という保証は変わりません。
+    await expect(database.query('TRUNCATE content_items')).rejects.toThrowError(/retired, not truncated|foreign key constraint/)
   })
 })

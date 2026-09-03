@@ -48,6 +48,7 @@ describe('database migrations', () => {
       '0014_payment_webhook_events.sql',
       '0015_game_rewards_mvp.sql',
       '0016_content_items_licence_ledger.sql',
+      '0017_daily_loop_and_lives.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -61,11 +62,14 @@ describe('database migrations', () => {
       'auth_identities',
       'consent_records',
       'content_items',
+      'daily_answers',
+      'daily_sessions',
       'game_reward_ledger',
       'guardian_links',
       'idempotency_records',
       'knowledge_evidence',
       'learning_audit_events',
+      'life_ledger',
       'line_links',
       'payment_webhook_events',
       'schema_migrations',
@@ -84,6 +88,7 @@ describe('database migrations', () => {
       'student_game_state',
       'student_knowledge',
       'student_knowledge_applied_evidence',
+      'student_lives',
       'subscription_entitlements',
       'trial_attempts',
       'trial_redemptions',

@@ -419,6 +419,7 @@ export interface ConsentProjection {
 export const stableErrorCodes = [
   'DAILY_SESSION_NOT_AVAILABLE',
   'COSMETIC_NOT_FOUND',
+  'STAGE_ATTEMPT_COOLDOWN',
   'COSMETIC_NOT_OWNED',
   'INSUFFICIENT_COINS',
   'AUTH_REQUIRED',

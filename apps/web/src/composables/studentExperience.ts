@@ -592,10 +592,31 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     })
   }
 
+  const retakeCooldown = ref('')
+
+  // API は理由を `daily_sessions:2,days:6` の形で返します。ここで日本語にします。
+  function retakeCooldownReason(body: unknown): string {
+    const detail = (body as { error?: { code?: string; details?: { reason?: string } } })?.error
+    if (detail?.code !== 'STAGE_ATTEMPT_COOLDOWN') return ''
+    const match = /daily_sessions:(\d+),days:(\d+)/.exec(detail.details?.reason ?? '')
+    if (!match) return 'もう少し学習してから、もう一度受けられます。'
+    const sessions = Number(match[1])
+    const days = Number(match[2])
+    if (sessions === 0) return 'もう一度受けられます。画面を更新してください。'
+    return `今日の学習をあと ${sessions} 回おえると、もう一度受けられます（待つ場合はあと ${days} 日）。`
+  }
+
   async function startLevelCheck() {
     await runAction(async () => {
       const response = await startDemoStageAttempt(props.session.studentToken, demoStageExamId, `student-start-${props.session.studentId}`)
+      // 同じ問題をすぐ解き直しても点が上がるだけです。断るときは、
+      // 「あと何回の学習で受け直せるか」まで言います。待つのは目的ではありません。
+      if (response.status === 409 && retakeCooldownReason(response.body)) {
+        retakeCooldown.value = retakeCooldownReason(response.body)
+        return
+      }
       if (!response.ok || !isStageAttempt(response.body)) throw new Error('stage attempt start failed')
+      retakeCooldown.value = ''
       attempt.value = response.body
       selected.value = {}
       resultSummary.value = null
@@ -945,6 +966,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     toUserMessage,
     runAction,
     refreshGameState,
+    retakeCooldown,
     createInvitation,
     startLevelCheck,
     submitLevelCheck,

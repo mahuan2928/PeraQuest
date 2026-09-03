@@ -67,6 +67,16 @@ const takeExam = async (repository: PostgresStudentRepository, key: string) => {
   return submitted.result
 }
 
+/** 再受験の閘門を、待たずに開ける側（補強課題）で開けます。 */
+const completeDailySessions = async (database: PGlite, count: number) => {
+  for (let index = 0; index < count; index += 1) {
+    await database.query(`
+      INSERT INTO daily_sessions (student_id, session_date, target_count, status)
+      VALUES ($1, ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date - $2::int), 12, 'completed')
+    `, [STUDENT, index])
+  }
+}
+
 describe('stage attempt retake reward', () => {
   afterEach(async () => {
     await Promise.all(databases.map((database) => database.close()))
@@ -78,6 +88,10 @@ describe('stage attempt retake reward', () => {
 
     const first = await takeExam(repository, 'one')
     expect(first.rewards?.xpAwarded).toBeGreaterThan(0)
+
+    // 0024 以降、提出直後の再受験は閘門で断られます。ここで見たいのは報酬の冪等性なので、
+    // 補強課題（毎日の関卡 3 回）を先に済ませて、正しく再受験できる状態にします。
+    await completeDailySessions(database, 3)
 
     // 同じ試験は毎回同じスナップショットを出すため、覚えて回せば無限に稼げていました。
     const second = await takeExam(repository, 'two')

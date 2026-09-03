@@ -819,6 +819,12 @@ export const buildApp = (options: BuildAppOptions = {}) => {
         return sendError(reply, 404, 'STAGE_EXAM_NOT_AVAILABLE')
       case 'already_open':
         return sendError(reply, 409, 'STAGE_ATTEMPT_ALREADY_OPEN')
+      case 'cooldown':
+        // 断るだけでなく、どちらの道があと何回・何日かを返します。
+        return sendError(reply, 409, 'STAGE_ATTEMPT_COOLDOWN', {
+          resource: 'stage_attempt',
+          reason: `daily_sessions:${result.sessionsRemaining},days:${result.daysRemaining}`,
+        })
       case 'request_in_progress':
         return sendError(reply, 409, 'IDEMPOTENCY_REQUEST_IN_PROGRESS')
       case 'key_reused':

@@ -50,6 +50,7 @@ export type PaymentWebhookProcessResult = { status: 'processed' } | { status: 'd
 export type StageAttemptStartResult =
   | { status: 'created' | 'replayed'; httpStatus: number; attempt: StartStageAttemptResponse }
   | { status: 'exam_not_available' | 'already_open' | 'request_in_progress' | 'key_reused' }
+  | { status: 'cooldown'; daysRemaining: number; sessionsRemaining: number }
 export type StageAttemptSubmitResult =
   | { status: 'submitted' | 'replayed'; httpStatus: number; result: StageAttemptResultResponse }
   | { status: 'attempt_not_found' | 'already_finalized' | 'expired' | 'invalid_submission' | 'request_in_progress' | 'key_reused' }
@@ -886,6 +887,20 @@ export class PostgresStudentRepository implements StudentRepository {
       if (existingOpen.rows[0]) {
         await client.query('ROLLBACK')
         return { status: 'already_open' }
+      }
+
+      // 再受験のゲート。同じスナップショットを続けて解いても、点は上がるのに力は増えません。
+      const gate = await client.query<{ allowed: boolean; days_remaining: number; sessions_remaining: number }>(
+        'SELECT allowed, days_remaining, sessions_remaining FROM stage_retake_gate($1, $2)',
+        [input.studentId, input.stageExamId],
+      )
+      if (!gate.rows[0]!.allowed) {
+        await client.query('ROLLBACK')
+        return {
+          status: 'cooldown',
+          daysRemaining: Number(gate.rows[0]!.days_remaining),
+          sessionsRemaining: Number(gate.rows[0]!.sessions_remaining),
+        }
       }
 
       const version = await client.query<{ id: string; duration_seconds: number } & Record<string, unknown>>(`

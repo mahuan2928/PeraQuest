@@ -3,7 +3,7 @@ import { inject } from 'vue'
 import { studentExperienceKey } from '../composables/studentExperience'
 
 const experience = inject(studentExperienceKey)!
-const { busy, attempt, selected, resultSummary, earnedReward, learnReady, answered, startLevelCheck, submitLevelCheck } = experience
+const { busy, attempt, selected, resultSummary, earnedReward, learnReady, answered, retakeCooldown, startLevelCheck, submitLevelCheck } = experience
 </script>
 
 <template>
@@ -23,7 +23,15 @@ const { busy, attempt, selected, resultSummary, earnedReward, learnReady, answer
     </header>
 
     <p
-      v-if="!attempt && !learnReady"
+      v-if="retakeCooldown"
+      class="panel-empty"
+      role="status"
+    >
+      {{ retakeCooldown }}
+    </p>
+
+    <p
+      v-else-if="!attempt && !learnReady"
       class="panel-empty"
     >
       まだレベルチェックは始められません。保護者の確認が完了すると、ここから開始できます。

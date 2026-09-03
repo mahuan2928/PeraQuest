@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 説明者用のツールバー。製品画面の外側に置き、アプリ本体には
 // デモ用の語彙・操作を一切残さないための枠です。
-import { inject, ref } from 'vue'
+import { inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { studentExperienceKey } from '../composables/studentExperience'
 
 defineProps<{ sessionExpiresAt?: string }>()
@@ -12,12 +12,39 @@ const { attempt, resultSummary, busy, fillDemoLevelCheckAnswers, demoGuide, demo
 
 const visible = ref(true)
 const guideOpen = ref(false)
+
+// 下に続くヘッダーが重ならないよう、このバーの高さを CSS 変数で共有します。
+const barRef = ref<HTMLElement | null>(null)
+let observer: ResizeObserver | null = null
+
+const publishHeight = () => {
+  const height = visible.value && barRef.value ? barRef.value.getBoundingClientRect().height : 0
+  document.documentElement.style.setProperty('--presenter-h', `${Math.round(height)}px`)
+}
+
+const observeBar = async () => {
+  await nextTick()
+  observer?.disconnect()
+  if (barRef.value) {
+    observer = new ResizeObserver(publishHeight)
+    observer.observe(barRef.value)
+  }
+  publishHeight()
+}
+
+onMounted(observeBar)
+watch(visible, observeBar)
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  document.documentElement.style.removeProperty('--presenter-h')
+})
 </script>
 
 <template>
   <Teleport to="body">
     <div
       v-if="visible"
+      ref="barRef"
       class="presenter-bar"
       role="toolbar"
       aria-label="説明者用ツール"

@@ -137,6 +137,87 @@
         }
       }
     },
+    "/api/v1/me/exam-date": {
+      "get": {
+        "operationId": "getExamDate",
+        "summary": "Read the target Eiken sitting.",
+        "description": "Student-only formal API. While it is set, review intervals contract towards the date and never fall after it.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Target sitting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExamDateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "put": {
+        "operationId": "setExamDate",
+        "summary": "Set or clear the target Eiken sitting.",
+        "description": "A past date is rejected. Existing projections are not rewritten; the new date applies from the next answer, because the projection is derived on write.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExamDateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved sitting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExamDateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A date in the past, or a malformed date",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StableError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/v1/me/game-state": {
       "get": {
         "operationId": "getStudentGameState",
@@ -3348,6 +3429,47 @@
           },
           "session": {
             "$ref": "#/components/schemas/DailySessionDto"
+          }
+        }
+      },
+      "ExamDateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "examDate"
+        ],
+        "properties": {
+          "examDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Target sitting. Null clears it."
+          }
+        }
+      },
+      "ExamDateResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "examDate",
+          "daysRemaining"
+        ],
+        "properties": {
+          "examDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "daysRemaining": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Days until the sitting, cut in Asia/Tokyo. Null while unset."
           }
         }
       }

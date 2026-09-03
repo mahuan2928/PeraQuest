@@ -528,6 +528,17 @@ export interface DailySessionDto {
   reviewCount: number
 }
 
+/** 受験予定日。設定すると復習間隔が試験日に向けて詰まります。 */
+export interface ExamDateRequest {
+  examDate: string | null
+}
+
+export interface ExamDateResponse {
+  examDate: string | null
+  /** 試験日までの残り日数。未設定なら null。 */
+  daysRemaining: number | null
+}
+
 export interface DailyPlanResponse {
   sessionDate: string
   lives: number

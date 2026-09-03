@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { DailyAnswerResponse, DailyHintResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
+import type { ExamDateResponse, DailyAnswerResponse, DailyHintResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -141,6 +141,8 @@ export interface StudentRepository {
   listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
   getStudentGameState(studentId: string): Promise<StudentGameStateResponse>
   listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
+  getExamDate(studentId: string): Promise<ExamDateResponse>
+  setExamDate(studentId: string, examDate: string | null): Promise<ExamDateResponse | null>
   getDailyPlan(studentId: string): Promise<DailyPlanResponse>
   startDailySession(studentId: string): Promise<DailySessionStartResponse | null>
   getDailyHint(studentId: string, sessionId: string, contentItemId: string): Promise<DailyHintResponse | null>
@@ -1389,6 +1391,28 @@ export class PostgresStudentRepository implements StudentRepository {
       client.release()
     }
   }
+
+  async getExamDate(studentId: string): Promise<ExamDateResponse> {
+    const result = await this.pool.query<{ exam_date: string | null; days_remaining: number | null }>(`
+      SELECT exam_date::text,
+             CASE WHEN exam_date IS NULL THEN NULL
+                  ELSE exam_date - (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date END AS days_remaining
+      FROM users WHERE id = $1
+    `, [studentId])
+    const row = result.rows[0]
+    return { examDate: row?.exam_date ?? null, daysRemaining: row?.days_remaining ?? null }
+  }
+
+  async setExamDate(studentId: string, examDate: string | null): Promise<ExamDateResponse | null> {
+    const updated = await this.pool.query(
+      "UPDATE users SET exam_date = $2::date WHERE id = $1 AND role = 'student' AND deleted_at IS NULL RETURNING id",
+      [studentId, examDate],
+    )
+    if (!updated.rows[0]) return null
+    // 復習予定は次の解答から新しい試験日で計算されます。
+    // 既存行を書き直さないのは、投影がトリガで導出されるためです。
+    return this.getExamDate(studentId)
+  }
 }
 
 export class MemoryStudentRepository implements StudentRepository, AuthUserResolver {
@@ -1635,6 +1659,17 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
 
   async submitDailyAnswer(input: { studentId: string; sessionId: string; contentItemId: string; response: string | string[] | null; timedOut: boolean }): Promise<DailyAnswerResponse | null> {
     void input
+    return null
+  }
+
+  async getExamDate(studentId: string): Promise<ExamDateResponse> {
+    void studentId
+    return { examDate: null, daysRemaining: null }
+  }
+
+  async setExamDate(studentId: string, examDate: string | null): Promise<ExamDateResponse | null> {
+    void studentId
+    void examDate
     return null
   }
 }

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, inject, onMounted, ref } from 'vue'
+import { fetchExamDate, saveExamDate } from '../api/demoFlow'
 import { studentExperienceKey } from '../composables/studentExperience'
 
 const experience = inject(studentExperienceKey)!
 const {
-  nextMission, missionBusy, missionStepIndex, runMission, invitationCode,
+  nextMission, missionBusy, missionStepIndex, runMission, invitationCode, session,
   displayedTotalXp, displayedActivityCoins, displayedBadges, completedQuestCount,
   questMapNodes, masteryAverage, knowledgeItems, resultSummary, learnReady,
   journeySummaryVisible, journeyHighlights, latestBadgeLabels, journeyNextStep,
@@ -15,6 +16,36 @@ const {
 } = experience
 
 const codeCopied = ref(false)
+
+// 受験予定日。入れると復習の間隔が試験日に向けて詰まります。
+const examDate = ref('')
+const examDaysRemaining = ref<number | null>(null)
+const examSaving = ref(false)
+const today = new Date().toISOString().slice(0, 10)
+
+async function loadExamDate() {
+  const result = await fetchExamDate(session.value.studentToken)
+  if (!result.ok) return
+  const body = result.body as { examDate: string | null; daysRemaining: number | null }
+  examDate.value = body.examDate ?? ''
+  examDaysRemaining.value = body.daysRemaining
+}
+
+async function storeExamDate() {
+  if (examSaving.value) return
+  examSaving.value = true
+  try {
+    const result = await saveExamDate(session.value.studentToken, examDate.value || null)
+    if (result.ok) {
+      const body = result.body as { examDate: string | null; daysRemaining: number | null }
+      examDaysRemaining.value = body.daysRemaining
+    }
+  } finally {
+    examSaving.value = false
+  }
+}
+
+onMounted(loadExamDate)
 // コードは生成時点で 5 文字ずつ区切られています。そのまま表示します。
 const groupedInvitationCode = computed(() => invitationCode.value)
 
@@ -205,6 +236,31 @@ const entries = [
         {{ journeyNextStep }}
       </p>
     </section>
+
+    <article class="action-card exam-date-card">
+      <p class="card-kicker">
+        学習
+      </p>
+      <h2>受験予定日</h2>
+      <p>入れておくと、試験が近づくにつれて復習の間隔が自動で詰まります。</p>
+      <label class="exam-date-field">
+        <span>受験予定日</span>
+        <input
+          v-model="examDate"
+          type="date"
+          :min="today"
+          :disabled="examSaving"
+          @change="storeExamDate"
+        >
+      </label>
+      <p
+        v-if="examDaysRemaining !== null"
+        class="exam-date-note"
+        aria-live="polite"
+      >
+        試験まであと {{ examDaysRemaining }} 日です。
+      </p>
+    </article>
 
     <section class="coming-soon">
       <button

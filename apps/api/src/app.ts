@@ -6,6 +6,7 @@ import type {
   CapabilityResponse,
   DailyAnswerResponse,
   DailyHintResponse,
+  ExamDateResponse,
   DailyPlanResponse,
   DailySessionStartResponse,
   ClientPlatform,
@@ -464,7 +465,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
   }
 
-  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/api/v1/me/game-state') || url.startsWith('/api/v1/me/daily-') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification') || url.startsWith('/v1/guardian-links/')
+  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/api/v1/me/game-state') || url.startsWith('/api/v1/me/daily-') || url.startsWith('/api/v1/me/exam-date') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification') || url.startsWith('/v1/guardian-links/')
   const protectedPath = (url: string): boolean => formalProtectedPath(url) || url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return
@@ -905,6 +906,28 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const student = await repository.findById(actor.id)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     return repository.getStudentGameState(actor.id)
+  })
+
+  app.get('/api/v1/me/exam-date', async (request, reply): Promise<ExamDateResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    return repository.getExamDate(actor.id)
+  })
+
+  app.put('/api/v1/me/exam-date', async (request, reply): Promise<ExamDateResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const parsed = z.object({
+      // 受験日は日付だけ。過去日は受け付けません。
+      examDate: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/).nullable(),
+    }).strict().safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'exam_date', reason: 'invalid' })
+    if (parsed.data.examDate !== null && new Date(`${parsed.data.examDate}T00:00:00Z`).getTime() < now().getTime() - 86_400_000) {
+      return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'exam_date', reason: 'invalid' })
+    }
+    const result = await repository.setExamDate(actor.id, parsed.data.examDate)
+    if (!result) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
+    return result
   })
 
   app.get('/api/v1/me/daily-plan', async (request, reply): Promise<DailyPlanResponse | void> => {

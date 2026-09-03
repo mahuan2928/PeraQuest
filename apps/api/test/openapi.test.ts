@@ -17,6 +17,7 @@ describe('OpenAPI document', () => {
       '/api/v1/me/daily-plan',
       '/api/v1/me/daily-sessions',
       '/api/v1/me/daily-sessions/{sessionId}/answers',
+      '/api/v1/me/exam-date',
       '/api/v1/me/game-state',
       '/api/v1/stage-attempts/{stageAttemptId}',
       '/api/v1/stage-attempts/{stageAttemptId}/result',
@@ -120,6 +121,8 @@ describe('OpenAPI document', () => {
         // 再送しても同じセッションが返り、生命値は二度減りません。
         'startDailySession',
         'submitDailyAnswer',
+        // 受験日は 1 学生 1 値の冪等な上書きです。
+        'setExamDate',
       ].includes(operation.operationId ?? ''))
     expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey' || parameter.$ref === '#/components/parameters/FormalIdempotencyKey'))).toBe(true)
     const createDemoSessionOperation = document.paths['/v1/demo/session']?.post

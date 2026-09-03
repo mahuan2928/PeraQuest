@@ -575,3 +575,9 @@ footer a { color: var(--muted-ink); font-size: .78rem; }
 .daily-hint { margin-bottom: 12px; }
 .daily-hint p { margin: 0; padding: 10px 12px; border: 2px dashed var(--green); background: white; font-size: .86rem; font-weight: 700; }
 .daily-hint .secondary-action { min-height: 44px; }
+
+/* 受験予定日。入っていれば復習間隔が試験日に向けて収束します。 */
+.exam-date-field { display: grid; gap: 6px; margin: 14px 0 10px; }
+.exam-date-field span { color: var(--green); font-size: .75rem; font-weight: 900; letter-spacing: .08em; }
+.exam-date-field input { min-height: 48px; padding: 10px 12px; border: 2px solid var(--ink); background: white; }
+.exam-date-note { margin: 0; color: var(--muted-ink); font-size: .84rem; font-weight: 700; }

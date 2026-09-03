@@ -190,3 +190,15 @@ export async function fetchDailyHint(
     body: JSON.stringify({ contentItemId }),
   })
 }
+
+export async function fetchExamDate(studentToken: string): Promise<DemoRequestResult> {
+  return requestJson('/api/v1/me/exam-date', { headers: bearerHeaders(studentToken) })
+}
+
+export async function saveExamDate(studentToken: string, examDate: string | null): Promise<DemoRequestResult> {
+  return requestJson('/api/v1/me/exam-date', {
+    method: 'PUT',
+    headers: bearerHeaders(studentToken, { 'content-type': 'application/json' }),
+    body: JSON.stringify({ examDate }),
+  })
+}

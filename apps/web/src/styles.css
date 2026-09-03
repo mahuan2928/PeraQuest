@@ -581,3 +581,7 @@ footer a { color: var(--muted-ink); font-size: .78rem; }
 .exam-date-field span { color: var(--green); font-size: .75rem; font-weight: 900; letter-spacing: .08em; }
 .exam-date-field input { min-height: 48px; padding: 10px 12px; border: 2px solid var(--ink); background: white; }
 .exam-date-note { margin: 0; color: var(--muted-ink); font-size: .84rem; font-weight: 700; }
+.mastery-state { display: inline-flex; padding: 5px 12px; border: 2px solid var(--line); border-radius: 999px; font-size: .8rem; font-weight: 800; }
+.mastery-state--mastered { border-color: var(--green); color: var(--green); }
+.mastery-state--review { border-color: var(--ink); }
+.mastery-state--learning, .mastery-state--unassessed { border-color: var(--muted-ink); color: var(--muted-ink); }

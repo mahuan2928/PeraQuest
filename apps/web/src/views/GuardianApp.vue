@@ -505,17 +505,11 @@ function stateLabel(state: string, masteryScore: number) {
                 </span>
               </div>
               <div class="mastery-meter-row">
-                <div
-                  class="mastery-meter"
-                  role="progressbar"
-                  :aria-label="`${knowledgePointLabel(item.knowledgePointRef)}の習熟度`"
-                  :aria-valuetext="stateLabel(item.state, item.masteryScore)"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                >
-                  <span :style="{ width: `${Math.round(item.masteryScore * 100)}%` }" />
-                </div>
-                <strong>{{ stateLabel(item.state, item.masteryScore) }}</strong>
+                <!-- バーも同じ数字の見た目違いなので、三段階そのものを出します。 -->
+                <span
+                  class="mastery-state"
+                  :class="`mastery-state--${item.state}`"
+                >{{ stateLabel(item.state, item.masteryScore) }}</span>
               </div>
             </div>
           </li>

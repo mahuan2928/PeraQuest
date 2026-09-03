@@ -54,6 +54,7 @@ describe('database migrations', () => {
       '0020_windowed_mastery_and_ladder.sql',
     '0021_leech_and_effective_state.sql',
     '0022_cosmetic_shop_and_coin_sink.sql',
+    '0023_daily_streak.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 

@@ -14,7 +14,8 @@ type DailyItem = {
   prompt: Record<string, unknown>
 }
 type DailySession = { sessionId: string; sessionDate: string; status: string; targetCount: number; completedCount: number; reviewCount: number }
-type DailyPlan = { sessionDate: string; lives: number; maxLives: number; supportMode: boolean; nextLifeAt: string | null; reviewCap: number; session: DailySession | null }
+type DailyStreak = { days: number; countedToday: boolean; freezeAvailable: boolean; lastStudyDate: string | null }
+type DailyPlan = { sessionDate: string; lives: number; maxLives: number; supportMode: boolean; nextLifeAt: string | null; reviewCap: number; session: DailySession | null; streak: DailyStreak }
 type Feedback = { correct: boolean; timedOut: boolean; explanation: string }
 
 const experience = inject(studentExperienceKey)!
@@ -35,6 +36,14 @@ const finished = computed(() => items.value.length > 0 && index.value >= items.v
 const progress = computed(() => (items.value.length ? Math.round((index.value / items.value.length) * 100) : 0))
 // 体力が尽きても学習は止めません。ヒントを出せる「ゆっくりモード」に切り替えます。
 const supportMode = computed(() => plan.value?.supportMode === true)
+
+// 「3日連続」とだけ出すと、今日やっていないのに達成したように読めます。
+// 今日ぶんが入っているかどうかを、そのまま言い分けます。
+const streakLabel = computed(() => {
+  const streak = plan.value?.streak
+  if (!streak || streak.days === 0) return ''
+  return streak.countedToday ? `${streak.days} 日れんぞく` : `${streak.days} 日れんぞく・今日はまだ`
+})
 
 const nextLifeLabel = computed(() => {
   if (!plan.value?.nextLifeAt) return ''
@@ -151,6 +160,15 @@ onMounted(async () => {
         <small v-if="nextLifeLabel">{{ nextLifeLabel }}</small>
       </div>
     </header>
+
+    <p
+      v-if="streakLabel"
+      class="streak-line"
+    >
+      <strong>{{ streakLabel }}</strong>
+      <!-- 全部失う設計にはしません。1 日の見逃しは埋められると先に伝えます。 -->
+      <small>{{ plan?.streak.freezeAvailable ? '1 日休んでも、れんぞくは切れません。' : '今週のお休みは 1 回使いました。' }}</small>
+    </p>
 
     <p
       v-if="notAvailable"

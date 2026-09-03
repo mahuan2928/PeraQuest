@@ -595,3 +595,6 @@ footer a { color: var(--muted-ink); font-size: .78rem; }
 .shop-list li button { grid-column: 3; grid-row: 1 / span 2; min-height: 44px; white-space: nowrap; }
 .shop-kind { grid-row: 1 / span 2; padding: 4px 8px; border-radius: 999px; background: var(--line); font-size: .7rem; font-weight: 800; }
 .shop-message { margin: 12px 0 0; color: var(--green); font-weight: 700; font-size: max(.8rem, .85em); }
+.streak-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 14px; }
+.streak-line strong { font-size: 1.05rem; }
+.streak-line small { color: var(--muted-ink); font-size: max(.75rem, .8em); }

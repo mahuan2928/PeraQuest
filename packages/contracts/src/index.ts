@@ -580,6 +580,17 @@ export interface DailyPlanResponse {
   nextLifeAt: string | null
   reviewCap: number
   session: DailySessionDto | null
+  streak: DailyStreakDto
+}
+
+export interface DailyStreakDto {
+  /** 連続学習日数。今日ぶんは、今日の関卡を終えてから数えます。 */
+  days: number
+  /** 今日はもう数えられているか。まだなら画面で「今日はまだ」と言えます。 */
+  countedToday: boolean
+  /** 見逃しを 1 日ぶん埋められるか。前回の freeze から 7 日あくと戻ります。 */
+  freezeAvailable: boolean
+  lastStudyDate: string | null
 }
 
 export interface DailySessionStartResponse {

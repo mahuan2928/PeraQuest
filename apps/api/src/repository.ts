@@ -1217,9 +1217,20 @@ export class PostgresStudentRepository implements StudentRepository {
         SELECT id, session_date, status, target_count, completed_count, review_count
         FROM daily_sessions WHERE student_id = $1 AND session_date = $2::date
       `, [studentId, row.session_date])
+      const streak = await client.query<{ current_days: number; freeze_available: boolean; last_study_date: string | null }>(
+        'SELECT current_days, freeze_available, last_study_date::text FROM daily_streak($1)', [studentId],
+      )
       await client.query('COMMIT')
       return {
         sessionDate: row.session_date,
+        streak: {
+          days: Number(streak.rows[0]!.current_days),
+          // 今日ぶんが数に入っているかどうかは画面で言い分けます。
+          // 「3日連続」と出したあとで今日サボれる状態は、B-1 で消した誤解と同じ種類です。
+          countedToday: streak.rows[0]!.last_study_date === row.session_date,
+          freezeAvailable: streak.rows[0]!.freeze_available,
+          lastStudyDate: streak.rows[0]!.last_study_date,
+        },
         lives: Number(row.lives),
         maxLives: 5,
         supportMode: Number(row.lives) <= 0,
@@ -1758,7 +1769,11 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
 
   async getDailyPlan(studentId: string): Promise<DailyPlanResponse> {
     void studentId
-    return { sessionDate: new Date().toISOString().slice(0, 10), lives: 5, maxLives: 5, supportMode: false, nextLifeAt: null, reviewCap: 20, session: null }
+    return {
+      sessionDate: new Date().toISOString().slice(0, 10), lives: 5, maxLives: 5, supportMode: false,
+      nextLifeAt: null, reviewCap: 20, session: null,
+      streak: { days: 0, countedToday: false, freezeAvailable: true, lastStudyDate: null },
+    }
   }
 
   async startDailySession(studentId: string): Promise<DailySessionStartResponse | null> {

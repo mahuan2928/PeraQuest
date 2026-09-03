@@ -25,8 +25,16 @@ export interface DemoRuntime {
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<DemoRequestResult<T>> {
   const response = await fetch(buildApiUrl(path), init)
-  const body = await response.json() as T
-  return { status: response.status, body, ok: response.ok }
+  const text = await response.text()
+  let body: unknown = {}
+  if (text.trim()) {
+    try {
+      body = JSON.parse(text)
+    } catch {
+      body = { message: text }
+    }
+  }
+  return { status: response.status, body: body as T, ok: response.ok }
 }
 
 const bearerHeaders = (token: string, extra?: HeadersInit): HeadersInit => ({

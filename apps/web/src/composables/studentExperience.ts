@@ -34,6 +34,12 @@ export type StageAttempt = {
   items: StageQuestion[]
 }
 
+function isStageAttempt(value: unknown): value is StageAttempt {
+  if (!value || typeof value !== 'object') return false
+  const attempt = value as Partial<StageAttempt>
+  return typeof attempt.attemptId === 'string' && Array.isArray(attempt.items)
+}
+
 export type KnowledgeItem = {
   knowledgePointRef: string
   masteryScore: number
@@ -627,8 +633,8 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
   async function startLevelCheck() {
     await runAction(async () => {
       const response = await startDemoStageAttempt(props.session.studentToken, demoStageExamId, `student-start-${props.session.studentId}`)
-      if (!response.ok) throw new Error('stage attempt start failed')
-      attempt.value = response.body as StageAttempt
+      if (!response.ok || !isStageAttempt(response.body)) throw new Error('stage attempt start failed')
+      attempt.value = response.body
       selected.value = {}
       resultSummary.value = null
       earnedReward.value = null

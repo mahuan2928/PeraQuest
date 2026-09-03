@@ -47,6 +47,7 @@ describe('database migrations', () => {
       '0013_voice_consent_withdrawal_jobs.sql',
       '0014_payment_webhook_events.sql',
       '0015_game_rewards_mvp.sql',
+      '0016_content_items_licence_ledger.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -59,6 +60,7 @@ describe('database migrations', () => {
     expect(tables.rows.map(({ table_name }) => table_name)).toEqual([
       'auth_identities',
       'consent_records',
+      'content_items',
       'game_reward_ledger',
       'guardian_links',
       'idempotency_records',

@@ -11,6 +11,7 @@ import TrialResult from './components/TrialResult.vue'
 import KnowledgeMastery from './components/KnowledgeMastery.vue'
 import StudentExperienceProvider from './providers/StudentExperienceProvider.vue'
 import PresenterBar from './providers/PresenterBar.vue'
+import CreditsPage from './pages/CreditsPage.vue'
 import { guardianContextKey } from './providers/guardianContext'
 import { routes } from './router'
 
@@ -67,6 +68,7 @@ const route = useRoute()
 const router = useRouter()
 const navItems = computed(() => routes.filter((item) => item.meta?.nav))
 const isGuardianView = computed(() => route.path === '/guardian')
+const isCreditsView = computed(() => route.path === '/credits')
 
 provide(guardianContextKey, {
   session: toRef(() => demoSession.value),
@@ -297,8 +299,10 @@ function onStudentJourneyUpdated(summary: DemoJourneySummary) {
       class="stage"
       tabindex="-1"
     >
+      <CreditsPage v-if="isCreditsView" />
+
       <BirthMonthForm
-        v-if="step === 'onboarding'"
+        v-else-if="step === 'onboarding'"
         :submitting="onboardingPending"
         :demo-submitting="demoPending"
         :demo-slow-start="demoSlowStart"
@@ -377,6 +381,10 @@ function onStudentJourneyUpdated(summary: DemoJourneySummary) {
       />
       <KnowledgeMastery v-else />
     </div>
-    <footer><span>© LingoQuest JP</span><span>安全とプライバシーを最優先に設計しています</span></footer>
+    <footer>
+      <span>© LingoQuest JP</span><RouterLink to="/credits">
+        出典と権利表示
+      </RouterLink>
+    </footer>
   </main>
 </template>

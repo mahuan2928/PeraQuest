@@ -5,6 +5,7 @@ import ReviewPage from '../pages/ReviewPage.vue'
 import MapPage from '../pages/MapPage.vue'
 import CollectionPage from '../pages/CollectionPage.vue'
 import GuardianPage from '../pages/GuardianPage.vue'
+import CreditsPage from '../pages/CreditsPage.vue'
 
 export const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomePage, meta: { title: 'ホーム', nav: true } },
@@ -13,6 +14,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/map', name: 'map', component: MapPage, meta: { title: '冒険マップ', nav: true } },
   { path: '/collection', name: 'collection', component: CollectionPage, meta: { title: '冒険バッグ', nav: true } },
   { path: '/guardian', name: 'guardian', component: GuardianPage, meta: { title: '保護者', nav: false } },
+  { path: '/credits', name: 'credits', component: CreditsPage, meta: { title: '出典と権利表示', nav: false } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

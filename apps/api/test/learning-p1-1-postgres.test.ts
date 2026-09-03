@@ -147,6 +147,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0013_voice_consent_withdrawal_jobs.sql',
           '0014_payment_webhook_events.sql',
           '0015_game_rewards_mvp.sql',
+          '0016_content_items_licence_ledger.sql',
         ],
         [],
       ])
@@ -171,6 +172,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0013_voice_consent_withdrawal_jobs.sql', count: '1' },
         { name: '0014_payment_webhook_events.sql', count: '1' },
         { name: '0015_game_rewards_mvp.sql', count: '1' },
+        { name: '0016_content_items_licence_ledger.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])

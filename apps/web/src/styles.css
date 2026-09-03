@@ -502,3 +502,14 @@ small { font-size: max(.75rem, .8em); }
   .app-nav::-webkit-scrollbar { display: none; }
   .app-nav-link { flex: 0 0 auto; }
 }
+
+/* 出典表示。ライセンス条件である署名を、実際に開ける画面として置いています。 */
+.credits-page { width: min(720px, 100%); }
+.credits-page h1 { margin: 0 0 12px; font-size: clamp(1.5rem, 3vw, 2.1rem); }
+.credits-list { display: grid; gap: 14px; margin: 22px 0; padding: 0; list-style: none; }
+.credits-list li { display: grid; gap: 4px; padding: 16px 18px; border: 2px solid var(--ink); background: var(--paper); box-shadow: 4px 4px 0 var(--ink); }
+.credits-list strong { font-size: 1.02rem; }
+.credits-list span, .credits-list small { color: var(--muted-ink); font-size: .82rem; }
+.credits-list a { color: var(--green); font-size: .8rem; overflow-wrap: anywhere; }
+.credits-note { padding: 14px 16px; border-left: 5px solid var(--line); color: var(--muted-ink); font-size: .84rem; line-height: 1.6; }
+footer a { color: var(--muted-ink); font-size: .78rem; }

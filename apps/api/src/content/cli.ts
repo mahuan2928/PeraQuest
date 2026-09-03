@@ -107,6 +107,10 @@ const commands: Record<string, () => Promise<void>> = {
         process.exitCode = 1
         return
       }
+      if (result.status === 'nothing_to_publish') {
+        console.log(`nothing to publish for ${knowledgePoint}; every item there is already published`)
+        return
+      }
       console.log(`published ${result.count} items for ${knowledgePoint} (reviewer: ${reviewer})`)
     } finally {
       await client.end()

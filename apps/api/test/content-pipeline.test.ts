@@ -121,6 +121,15 @@ describe('publishing a knowledge point', () => {
     expect(published.rows).toEqual([])
   })
 
+  it('says nothing happened instead of reporting a publish of zero items', async () => {
+    const database = await freshDatabase()
+    await importContentItems(database, twelveItems)
+    await publishKnowledgePoint(database, 'vocabulary.context', 'r')
+    // 2 回目は公開するものがありません。0 件を「公開しました」と返すのは、
+    // B-3 で避けた「静かに成功に見える」形と同じです。
+    expect(await publishKnowledgePoint(database, 'vocabulary.context', 'r')).toEqual({ status: 'nothing_to_publish' })
+  })
+
   it('publishes the whole point at once and records who reviewed it', async () => {
     const database = await freshDatabase()
     await importContentItems(database, twelveItems)

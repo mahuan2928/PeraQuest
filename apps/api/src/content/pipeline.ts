@@ -131,6 +131,7 @@ export const readCoverage = async (database: ContentDatabase): Promise<CoverageR
 
 export type PublishOutcome =
   | { status: 'published'; count: number }
+  | { status: 'nothing_to_publish' }
   | { status: 'too_few'; available: number; required: number }
 
 /**
@@ -154,5 +155,8 @@ export const publishKnowledgePoint = async (
     WHERE knowledge_point_ref = $1 AND status = 'in_review'
     RETURNING id
   `, [knowledgePointRef, reviewer])
+  // すでに全部公開済みなら 0 件です。0 件を「公開しました」と返すと、
+  // 押したのに何も起きていないことが呼び出し側に伝わりません。
+  if (published.rows.length === 0) return { status: 'nothing_to_publish' }
   return { status: 'published', count: published.rows.length }
 }

@@ -20,6 +20,8 @@ type KnowledgeItem = {
   masteryScore: number
   state: string
   dueAt: string | null
+  /** 3 日つづけて正解が出ていない項目。古い応答には無いので任意にしています。 */
+  leech?: boolean
 }
 
 type SummaryItem = {
@@ -250,7 +252,10 @@ async function toggleConsent() {
   }
 }
 
-function stateLabel(state: string, masteryScore: number) {
+function stateLabel(state: string, masteryScore: number, leech = false) {
+  // 3 日つづけて正解が出ていない項目は、状態より先にそのことを伝えます。
+  // 同じ問題を 4 日目も出すのは学習ではなく消耗なので、出題を止めて説明に戻す合図です。
+  if (leech) return '教え直しが必要です'
   // まだ 4 回に満たない項目は、判定していないことをそのまま伝えます。
   if (state === 'unassessed') return 'これから確かめます'
   if (state === 'mastered') return '安定しています'
@@ -499,18 +504,17 @@ function stateLabel(state: string, masteryScore: number) {
                 <h3>{{ knowledgePointLabel(item.knowledgePointRef) }}</h3>
                 <span
                   class="status-pill"
-                  :class="item.state === 'mastered' ? 'status-pill--mastered' : item.state === 'learning' ? 'status-pill--in-progress' : 'status-pill--review'"
+                  :class="item.leech ? 'status-pill--review' : item.state === 'mastered' ? 'status-pill--mastered' : item.state === 'learning' ? 'status-pill--in-progress' : 'status-pill--review'"
                 >
-                  {{ stateLabel(item.state, item.masteryScore) }}
+                  {{ stateLabel(item.state, item.masteryScore, item.leech) }}
                 </span>
               </div>
-              <div class="mastery-meter-row">
-                <!-- バーも同じ数字の見た目違いなので、三段階そのものを出します。 -->
-                <span
-                  class="mastery-state"
-                  :class="`mastery-state--${item.state}`"
-                >{{ stateLabel(item.state, item.masteryScore) }}</span>
-              </div>
+              <p
+                v-if="item.leech"
+                class="knowledge-item__reteach"
+              >
+                3 日つづけて正解が出ていません。出題をいったん止めています。もう一度いっしょに説明を読んでみてください。
+              </p>
             </div>
           </li>
         </ul>

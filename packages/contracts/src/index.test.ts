@@ -72,6 +72,7 @@ const masteryProjection = {
   state: 'review',
   lastOccurredAt: '2026-08-27T00:00:00.000Z',
   dueAt: '2026-08-30T00:00:00.000Z',
+  leech: false,
   updatedAt: '2026-08-27T00:00:00.000Z',
 } satisfies StudentKnowledgeProjectionDto
 const masteryProjectionList = { items: [masteryProjection] } satisfies StudentKnowledgeProjectionListResponse

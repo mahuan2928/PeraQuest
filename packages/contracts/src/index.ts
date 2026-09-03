@@ -327,9 +327,13 @@ export interface StudentKnowledgeProjectionDto {
   rawCorrectTotal: number
   rawAttemptTotal: number
   masteryScore: number
+  /** Read-time value: a mastered point with stale evidence is reported as `review`. */
   state: StudentKnowledgeProjectionState
   lastOccurredAt: string
+  /** Read-time value: a stale mastered point is due now, not on its stored schedule. */
   dueAt: string
+  /** Three consecutive study days with no correct answer. Reteach it rather than drilling it. */
+  leech: boolean
   updatedAt: string
 }
 

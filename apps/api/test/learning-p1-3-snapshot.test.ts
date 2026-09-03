@@ -488,6 +488,8 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       ladder: string
       unassessed_due: boolean
       mastered_due: boolean
+      leech_due: boolean
+      leech_never_tightens: boolean
     }>(`
       SELECT
         calculate_knowledge_state(3, 3, 5) AS too_few,
@@ -497,10 +499,16 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
         calculate_knowledge_state(7, 8, 2) AS not_mastered_without_interval,
         calculate_knowledge_state(7, 8, 3) AS mastered,
         array_to_string(ARRAY(SELECT knowledge_ladder_days(s) FROM generate_series(0, 5) AS s), ',') AS ladder,
-        calculate_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 'unassessed', 5, NULL)
+        calculate_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 'unassessed', 5, NULL, false)
           = TIMESTAMPTZ '2026-08-28 00:00:00+00' AS unassessed_due,
-        calculate_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 'mastered', 5, NULL)
-          = TIMESTAMPTZ '2026-09-26 00:00:00+00' AS mastered_due
+        calculate_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 'mastered', 5, NULL, false)
+          = TIMESTAMPTZ '2026-09-26 00:00:00+00' AS mastered_due,
+        -- leech は下限なので、1 日しか許されない状態を 3 日まで押し広げます。
+        calculate_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 'learning', 5, NULL, true)
+          = TIMESTAMPTZ '2026-08-30 00:00:00+00' AS leech_due,
+        -- 一方で 30 日間隔を 3 日に縮めることはありません。上限ではないからです。
+        calculate_knowledge_due_at(TIMESTAMPTZ '2026-08-27 00:00:00+00', 'mastered', 5, NULL, true)
+          = TIMESTAMPTZ '2026-09-26 00:00:00+00' AS leech_never_tightens
     `)
 
     expect(rules.rows).toEqual([{
@@ -512,6 +520,8 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
       ladder: '1,2,4,7,14,30',
       unassessed_due: true,
       mastered_due: true,
+      leech_due: true,
+      leech_never_tightens: true,
     }])
   })
 
@@ -554,6 +564,7 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
         state: 'learning',
         lastOccurredAt: '2026-08-27T00:00:00.000Z',
         dueAt: '2026-08-28T00:00:00.000Z',
+        leech: false,
         updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       },
       {
@@ -566,6 +577,7 @@ describe('learning P1.3-1 stage attempt snapshots', () => {
         state: 'mastered',
         lastOccurredAt: '2026-08-27T00:00:00.000Z',
         dueAt: '2026-09-10T00:00:00.000Z',
+        leech: false,
         updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       },
     ])

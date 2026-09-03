@@ -46,6 +46,8 @@ export type KnowledgeItem = {
   masteryScore: number
   state: string
   dueAt: string | null
+  /** 3 日つづけて正解が出ていない項目。古い応答には無いので任意にしています。 */
+  leech?: boolean
 }
 
 export type GameReward = {
@@ -476,7 +478,9 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     if (status === 'current') return '次の目標'
     return 'ロック中'
   }
-  const reviewStateLabel = (state: string) => {
+  const reviewStateLabel = (state: string, leech = false) => {
+    // つまずいている項目は、状態より先に「いったん止めている」ことを伝えます。
+    if (leech) return '教え直し'
     if (state === 'unassessed') return 'これから'
     if (state === 'mastered') return '安定'
     if (state === 'due') return '復習優先'

@@ -46,7 +46,7 @@ const demoRole = ref<DemoRole>('student')
 const demoSession = ref<DemoSessionResponse | null>(null)
 const demoCapabilities = ref<Record<string, unknown> | null>(null)
 const demoInvitationCode = ref('')
-const demoKnowledgeItems = ref<Array<{ knowledgePointRef: string; masteryScore: number; state: string; dueAt: string | null }>>([])
+const demoKnowledgeItems = ref<Array<{ knowledgePointRef: string; masteryScore: number; state: string; dueAt: string | null; leech?: boolean }>>([])
 const demoJourneySummary = ref<DemoJourneySummary | null>(null)
 const guardianReportRefreshKey = ref(0)
 

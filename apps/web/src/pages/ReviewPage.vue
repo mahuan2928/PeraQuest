@@ -35,9 +35,9 @@ const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDo
           v-for="item in reviewQuestItems"
           :key="item.knowledgePointRef"
         >
-          <span>{{ reviewStateLabel(item.state) }}</span>
+          <span>{{ reviewStateLabel(item.state, item.leech) }}</span>
           <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
-          <small>{{ reviewStateLabel(item.state) }}</small>
+          <small v-if="item.leech">説明を読みなおしてから、また挑戦しましょう。</small>
         </li>
       </ol>
     </section>
@@ -91,7 +91,7 @@ const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDo
             >
             <span>
               <strong>{{ knowledgePointLabel(item.knowledgePointRef) }}</strong>
-              <small>{{ reviewStateLabel(item.state) }}</small>
+              <small>{{ reviewStateLabel(item.state, item.leech) }}</small>
             </span>
           </label>
         </fieldset>

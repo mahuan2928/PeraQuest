@@ -207,6 +207,7 @@ interface StudentKnowledgeProjectionRow extends Record<string, unknown> {
   state: StudentKnowledgeProjectionDto['state']
   last_occurred_at: Date
   due_at: Date
+  leech: boolean
   updated_at: Date
 }
 
@@ -333,11 +334,16 @@ const readStageAttemptResult = async (database: Queryable, studentId: string, at
 
 const readStudentKnowledgeProjections = async (database: Queryable, studentId: string): Promise<StudentKnowledgeProjectionDto[]> => {
   const result = await database.query<StudentKnowledgeProjectionRow>(`
-    SELECT student_id, knowledge_point_ref, raw_correct_total::text, raw_attempt_total::text,
-           mastery_score::text, state, last_occurred_at, due_at, updated_at
-    FROM student_knowledge
-    WHERE student_id = $1
-    ORDER BY due_at ASC, knowledge_point_ref ASC
+    SELECT sk.student_id, sk.knowledge_point_ref, sk.raw_correct_total::text, sk.raw_attempt_total::text,
+           sk.mastery_score::text,
+           knowledge_effective_state(sk.state, sk.last_occurred_at, u.exam_date) AS state,
+           sk.leech, sk.last_occurred_at,
+           knowledge_effective_due_at(sk.due_at, sk.state, sk.last_occurred_at, u.exam_date) AS due_at,
+           sk.updated_at
+    FROM student_knowledge sk
+    JOIN users u ON u.id = sk.student_id
+    WHERE sk.student_id = $1
+    ORDER BY due_at ASC, sk.knowledge_point_ref ASC
   `, [studentId])
   return result.rows.map((row) => ({
     studentId: row.student_id,
@@ -348,6 +354,7 @@ const readStudentKnowledgeProjections = async (database: Queryable, studentId: s
     state: row.state,
     lastOccurredAt: toIso(row.last_occurred_at),
     dueAt: toIso(row.due_at),
+    leech: row.leech,
     updatedAt: toIso(row.updated_at),
   }))
 }
@@ -1246,21 +1253,81 @@ export class PostgresStudentRepository implements StudentRepository {
         SELECT ci.id, ci.item_kind, ci.knowledge_point_ref, ci.payload
         FROM student_knowledge sk
         JOIN content_items ci ON ci.knowledge_point_ref = sk.knowledge_point_ref AND ci.status = 'published'
-        WHERE sk.student_id = $1 AND sk.due_at <= CURRENT_TIMESTAMP
-        ORDER BY sk.due_at ASC
+        JOIN users u ON u.id = sk.student_id
+        WHERE sk.student_id = $1
+          AND knowledge_effective_due_at(sk.due_at, sk.state, sk.last_occurred_at, u.exam_date) <= CURRENT_TIMESTAMP
+        ORDER BY knowledge_effective_due_at(sk.due_at, sk.state, sk.last_occurred_at, u.exam_date) ASC
         LIMIT least($2::int, $3::int)
       `, [studentId, reviewCap, target])
       const reviewIds = reviews.rows.map((item) => item.id)
 
+      // 新規の知識ポイントは 1 日 3 個まで。さらに、期限切れの滞留が日額の 1.5 倍を超えたら
+      // 新規はゼロにします。この閘門がないと 2 週目に終わらない待ち行列が育ちます。
+      // 数えるのは実効の期限です。鮮度切れの習得項目も滞留に含めないと過小申告になります。
+      const backlog = await client.query<{ overdue: number }>(`
+        SELECT count(*)::int AS overdue
+        FROM student_knowledge sk
+        JOIN users u ON u.id = sk.student_id
+        WHERE sk.student_id = $1
+          AND knowledge_effective_due_at(sk.due_at, sk.state, sk.last_occurred_at, u.exam_date) <= CURRENT_TIMESTAMP
+      `, [studentId])
+      const intake = Number(backlog.rows[0]!.overdue) > Math.floor(target * 1.5) ? 0 : 3
+
       const fresh = await client.query<DailyItemRow>(`
+        WITH admitted AS (
+          SELECT DISTINCT ci.knowledge_point_ref
+          FROM content_items ci
+          WHERE ci.status = 'published'
+            AND NOT EXISTS (
+              SELECT 1 FROM student_knowledge sk
+              WHERE sk.student_id = $3 AND sk.knowledge_point_ref = ci.knowledge_point_ref
+            )
+          ORDER BY ci.knowledge_point_ref
+          LIMIT $4::int
+        )
         SELECT id, item_kind, knowledge_point_ref, payload
         FROM content_items
-        WHERE status = 'published' AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+        WHERE status = 'published'
+          AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+          AND knowledge_point_ref IN (SELECT knowledge_point_ref FROM admitted)
         ORDER BY created_at
         LIMIT $1::int
-      `, [target - reviews.rows.length, reviewIds])
+      `, [target - reviews.rows.length, reviewIds, studentId, intake])
 
-      const picked = [...reviews.rows, ...fresh.rows]
+      // 閘門は新しい知識ポイントを増やさないためのものです。すでに回転に入っている
+      // ポイントの追加練習は待ち行列を伸ばさないので、最低問数に届かないぶんはこれで埋めます。
+      const pickedIds = [...reviewIds, ...fresh.rows.map((item) => item.id)]
+      const shortfall = target - reviews.rows.length - fresh.rows.length
+      const filler = shortfall > 0
+        ? await client.query<DailyItemRow>(`
+            SELECT id, item_kind, knowledge_point_ref, payload
+            FROM content_items
+            WHERE status = 'published'
+              AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+              AND EXISTS (
+                SELECT 1 FROM student_knowledge sk
+                WHERE sk.student_id = $3 AND sk.knowledge_point_ref = content_items.knowledge_point_ref
+              )
+            ORDER BY created_at
+            LIMIT $1::int
+          `, [shortfall, pickedIds, studentId])
+        : { rows: [] as DailyItemRow[] }
+
+      // 投入上限はペース配分、12 問は試験カバレッジの下限です。ぶつかったら下限が勝ちます。
+      // 題庫が 4 ポイントしかないうちは上限 3 だと 12 問に届かないので、ここで足します。
+      // 題庫が育てば（A-1）この経路は自然に使われなくなります。
+      const capped = [...reviews.rows, ...fresh.rows, ...filler.rows]
+      const topUp = capped.length < 12
+        ? await client.query<DailyItemRow>(`
+            SELECT id, item_kind, knowledge_point_ref, payload
+            FROM content_items
+            WHERE status = 'published' AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+            ORDER BY created_at
+            LIMIT $1::int
+          `, [target - capped.length, capped.map((item) => item.id)])
+        : { rows: [] as DailyItemRow[] }
+
+      const picked = [...capped, ...topUp.rows]
       if (picked.length < 12) {
         await client.query('ROLLBACK')
         return null

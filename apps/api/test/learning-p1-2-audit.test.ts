@@ -152,6 +152,7 @@ describe('learning P1.2 audit migration', () => {
       '0018_daily_loop_rewards_and_mastery.sql',
       '0019_daily_target_for_exam_coverage.sql',
       '0020_windowed_mastery_and_ladder.sql',
+    '0021_leech_and_effective_state.sql',
     ])
     await expect(runMigrations(asMigrationDatabase(database))).resolves.toEqual([])
     const backfilled = await database.query<{ attempts: number; snapshots: number; missing_hashes: number }>(`

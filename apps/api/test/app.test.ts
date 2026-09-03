@@ -541,6 +541,7 @@ describe('identity, consent, and capabilities slice', () => {
           state: 'learning',
           lastOccurredAt: '2026-08-31T00:00:00.000Z',
           dueAt: '2026-09-01T00:00:00.000Z',
+          leech: false,
           updatedAt: '2026-08-31T00:00:00.000Z',
         }]
       : []
@@ -594,6 +595,7 @@ describe('identity, consent, and capabilities slice', () => {
             state: 'mastered',
             lastOccurredAt: '2026-08-31T00:00:00.000Z',
             dueAt: '2026-09-03T00:00:00.000Z',
+            leech: false,
             updatedAt: '2026-08-31T00:00:00.000Z',
           },
           {
@@ -605,6 +607,7 @@ describe('identity, consent, and capabilities slice', () => {
             state: 'review',
             lastOccurredAt: '2026-08-31T00:00:00.000Z',
             dueAt: '2026-09-01T00:00:00.000Z',
+            leech: false,
             updatedAt: '2026-08-31T00:00:00.000Z',
           },
         ]

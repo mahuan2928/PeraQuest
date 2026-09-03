@@ -585,3 +585,4 @@ footer a { color: var(--muted-ink); font-size: .78rem; }
 .mastery-state--mastered { border-color: var(--green); color: var(--green); }
 .mastery-state--review { border-color: var(--ink); }
 .mastery-state--learning, .mastery-state--unassessed { border-color: var(--muted-ink); color: var(--muted-ink); }
+.knowledge-item__reteach { margin: 6px 0 0; color: var(--orange-ink); font-size: max(.75rem, .8em); line-height: 1.6; }

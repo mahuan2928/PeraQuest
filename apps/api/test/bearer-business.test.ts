@@ -550,6 +550,7 @@ describe('formal stage attempt Bearer authorization', () => {
     state: 'mastered',
     lastOccurredAt: '2027-01-15T08:05:00.000Z',
     dueAt: '2027-01-29T08:05:00.000Z',
+    leech: false,
     updatedAt: '2027-01-15T08:05:00.000Z',
   }
 

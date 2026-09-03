@@ -53,6 +53,7 @@ describe('database migrations', () => {
       '0019_daily_target_for_exam_coverage.sql',
       '0020_windowed_mastery_and_ladder.sql',
     '0021_leech_and_effective_state.sql',
+    '0022_cosmetic_shop_and_coin_sink.sql',
     ])
     await expect(runMigrations(adapter)).resolves.toEqual([])
 
@@ -66,6 +67,7 @@ describe('database migrations', () => {
       'auth_identities',
       'consent_records',
       'content_items',
+      'cosmetic_items',
       'daily_answers',
       'daily_sessions',
       'game_reward_ledger',
@@ -89,6 +91,7 @@ describe('database migrations', () => {
       'stage_exam_version_retirements',
       'stage_exam_versions',
       'stage_exams',
+      'student_cosmetics',
       'student_game_state',
       'student_knowledge',
       'student_knowledge_applied_daily_answers',

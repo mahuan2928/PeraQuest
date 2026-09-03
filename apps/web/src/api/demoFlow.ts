@@ -202,3 +202,25 @@ export async function saveExamDate(studentToken: string, examDate: string | null
     body: JSON.stringify({ examDate }),
   })
 }
+
+// ---- 見た目の店（コインの出口） ----
+
+export async function fetchCosmetics(studentToken: string): Promise<DemoRequestResult> {
+  return requestJson('/api/v1/me/cosmetics', { headers: bearerHeaders(studentToken) })
+}
+
+export async function purchaseCosmetic(studentToken: string, code: string): Promise<DemoRequestResult> {
+  return requestJson('/api/v1/me/cosmetics/purchases', {
+    method: 'POST',
+    headers: bearerHeaders(studentToken, { 'content-type': 'application/json' }),
+    body: JSON.stringify({ code }),
+  })
+}
+
+export async function equipCosmetic(studentToken: string, code: string): Promise<DemoRequestResult> {
+  return requestJson('/api/v1/me/cosmetics/equipped', {
+    method: 'POST',
+    headers: bearerHeaders(studentToken, { 'content-type': 'application/json' }),
+    body: JSON.stringify({ code }),
+  })
+}

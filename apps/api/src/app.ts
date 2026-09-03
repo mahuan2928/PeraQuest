@@ -7,6 +7,8 @@ import type {
   DailyAnswerResponse,
   DailyHintResponse,
   ExamDateResponse,
+  CosmeticShopResponse,
+  CosmeticPurchaseResponse,
   DailyPlanResponse,
   DailySessionStartResponse,
   ClientPlatform,
@@ -906,6 +908,35 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const student = await repository.findById(actor.id)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     return repository.getStudentGameState(actor.id)
+  })
+
+  app.get('/api/v1/me/cosmetics', async (request, reply): Promise<CosmeticShopResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    return repository.getCosmeticShop(actor.id)
+  })
+
+  app.post('/api/v1/me/cosmetics/purchases', async (request, reply): Promise<CosmeticPurchaseResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const parsed = z.object({ code: z.string().min(1).max(64) }).strict().safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'cosmetic', reason: 'invalid' })
+    const result = await repository.purchaseCosmetic(actor.id, parsed.data.code)
+    // 買えなかったことは失敗ではなく結果なので、状態コードで伝えます。
+    // 静かに 200 を返して何も起きないのがいちばん困ります。
+    if (result.outcome === 'unknown_item') return sendError(reply, 404, 'COSMETIC_NOT_FOUND')
+    if (result.outcome === 'insufficient_coins') return sendError(reply, 409, 'INSUFFICIENT_COINS')
+    return result
+  })
+
+  app.post('/api/v1/me/cosmetics/equipped', async (request, reply): Promise<CosmeticPurchaseResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const parsed = z.object({ code: z.string().min(1).max(64) }).strict().safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'cosmetic', reason: 'invalid' })
+    const result = await repository.equipCosmetic(actor.id, parsed.data.code)
+    if (!result) return sendError(reply, 404, 'COSMETIC_NOT_OWNED')
+    return result
   })
 
   app.get('/api/v1/me/exam-date', async (request, reply): Promise<ExamDateResponse | void> => {

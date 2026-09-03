@@ -418,6 +418,9 @@ export interface ConsentProjection {
 
 export const stableErrorCodes = [
   'DAILY_SESSION_NOT_AVAILABLE',
+  'COSMETIC_NOT_FOUND',
+  'COSMETIC_NOT_OWNED',
+  'INSUFFICIENT_COINS',
   'AUTH_REQUIRED',
   'AUTH_INVALID',
   'AUTH_FORBIDDEN',
@@ -541,6 +544,30 @@ export interface ExamDateResponse {
   examDate: string | null
   /** 試験日までの残り日数。未設定なら null。 */
   daysRemaining: number | null
+}
+
+/** 見た目だけのアイテム。能力にも出題にも影響しません。 */
+export interface CosmeticItemDto {
+  code: string
+  kind: 'accessory' | 'theme' | 'frame'
+  displayName: string
+  price: number
+  owned: boolean
+  equipped: boolean
+  /** 買えるだけの残高があるか。買えない理由を画面で言えるようにするためです。 */
+  affordable: boolean
+}
+
+export interface CosmeticShopResponse {
+  activityCoins: number
+  items: CosmeticItemDto[]
+}
+
+export type CosmeticPurchaseOutcome = 'purchased' | 'already_owned' | 'insufficient_coins' | 'unknown_item'
+
+export interface CosmeticPurchaseResponse {
+  outcome: CosmeticPurchaseOutcome
+  shop: CosmeticShopResponse
 }
 
 export interface DailyPlanResponse {

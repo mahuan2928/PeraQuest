@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { ExamDateResponse, DailyAnswerResponse, DailyHintResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
+import type { CosmeticShopResponse, CosmeticItemDto, CosmeticPurchaseResponse, CosmeticPurchaseOutcome, ExamDateResponse, DailyAnswerResponse, DailyHintResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -141,6 +141,9 @@ export interface StudentRepository {
   listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
   getStudentGameState(studentId: string): Promise<StudentGameStateResponse>
   listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
+  getCosmeticShop(studentId: string): Promise<CosmeticShopResponse>
+  purchaseCosmetic(studentId: string, code: string): Promise<CosmeticPurchaseResponse>
+  equipCosmetic(studentId: string, code: string): Promise<CosmeticPurchaseResponse | null>
   getExamDate(studentId: string): Promise<ExamDateResponse>
   setExamDate(studentId: string, examDate: string | null): Promise<ExamDateResponse | null>
   getDailyPlan(studentId: string): Promise<DailyPlanResponse>
@@ -1459,6 +1462,52 @@ export class PostgresStudentRepository implements StudentRepository {
     }
   }
 
+  // 見た目の店。目録と所持と残高をひとつの応答にまとめます。
+  // 「買えない」を画面で言えるように、残高との比較もここで済ませます。
+  async getCosmeticShop(studentId: string): Promise<CosmeticShopResponse> {
+    const rows = await this.pool.query<{
+      code: string; kind: CosmeticItemDto['kind']; display_name: string; price: number
+      owned: boolean; equipped: boolean; activity_coins: number
+    }>(`
+      SELECT ci.code, ci.kind, ci.display_name, ci.price,
+             (sc.student_id IS NOT NULL) AS owned,
+             COALESCE(sc.equipped, false) AS equipped,
+             COALESCE(gs.activity_coins, 0) AS activity_coins
+      FROM cosmetic_items ci
+      LEFT JOIN student_cosmetics sc ON sc.code = ci.code AND sc.student_id = $1
+      LEFT JOIN student_game_state gs ON gs.student_id = $1
+      ORDER BY ci.sort_order
+    `, [studentId])
+    const activityCoins = rows.rows[0] ? Number(rows.rows[0].activity_coins) : 0
+    return {
+      activityCoins,
+      items: rows.rows.map((row) => ({
+        code: row.code,
+        kind: row.kind,
+        displayName: row.display_name,
+        price: row.price,
+        owned: row.owned,
+        equipped: row.equipped,
+        affordable: !row.owned && activityCoins >= row.price,
+      })),
+    }
+  }
+
+  async purchaseCosmetic(studentId: string, code: string): Promise<CosmeticPurchaseResponse> {
+    const result = await this.pool.query<{ purchase_cosmetic: CosmeticPurchaseOutcome }>(
+      'SELECT purchase_cosmetic($1, $2) AS purchase_cosmetic', [studentId, code],
+    )
+    return { outcome: result.rows[0]!.purchase_cosmetic, shop: await this.getCosmeticShop(studentId) }
+  }
+
+  async equipCosmetic(studentId: string, code: string): Promise<CosmeticPurchaseResponse | null> {
+    const result = await this.pool.query<{ equip_cosmetic: string }>(
+      'SELECT equip_cosmetic($1, $2) AS equip_cosmetic', [studentId, code],
+    )
+    if (result.rows[0]!.equip_cosmetic === 'not_owned') return null
+    return { outcome: 'purchased', shop: await this.getCosmeticShop(studentId) }
+  }
+
   async getExamDate(studentId: string): Promise<ExamDateResponse> {
     const result = await this.pool.query<{ exam_date: string | null; days_remaining: number | null }>(`
       SELECT exam_date::text,
@@ -1726,6 +1775,25 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
 
   async submitDailyAnswer(input: { studentId: string; sessionId: string; contentItemId: string; response: string | string[] | null; timedOut: boolean }): Promise<DailyAnswerResponse | null> {
     void input
+    return null
+  }
+
+  // インメモリ実装は署名を満たすだけです。見た目の店は Postgres の関数が本体なので、
+  // ここで真似ると二つの真実ができます。
+  async getCosmeticShop(studentId: string): Promise<CosmeticShopResponse> {
+    void studentId
+    return { activityCoins: 0, items: [] }
+  }
+
+  async purchaseCosmetic(studentId: string, code: string): Promise<CosmeticPurchaseResponse> {
+    void studentId
+    void code
+    return { outcome: 'unknown_item', shop: { activityCoins: 0, items: [] } }
+  }
+
+  async equipCosmetic(studentId: string, code: string): Promise<CosmeticPurchaseResponse | null> {
+    void studentId
+    void code
     return null
   }
 

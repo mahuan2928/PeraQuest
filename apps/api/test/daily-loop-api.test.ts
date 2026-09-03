@@ -238,4 +238,49 @@ describe('daily loop repository', () => {
     )
     expect(state.rows[0]?.total_xp).toBe(30)
   })
+
+  it('does not stop the session when lives run out, and offers a hint instead', async () => {
+    const { database, repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    const wrong = ['definitely', 'wrong']
+
+    // わざと 5 問間違えて体力を使い切ります。
+    for (const item of started!.items.slice(0, 5)) {
+      await repository.submitDailyAnswer({
+        studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+        response: wrong, timedOut: false,
+      })
+    }
+    const plan = await repository.getDailyPlan(STUDENT)
+    expect(plan.lives).toBe(0)
+    expect(plan.supportMode).toBe(true)
+
+    // 締め出さずに、続きの問題に答えられます。
+    const sixth = started!.items[5]!
+    const answered = await repository.submitDailyAnswer({
+      studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: sixth.contentItemId,
+      response: null, timedOut: true,
+    })
+    expect(answered).not.toBeNull()
+    expect(answered!.supportMode).toBe(true)
+    expect(answered!.session.completedCount).toBe(6)
+
+    // ヒントは体力が尽きているときだけ、正解そのものは伏せて返します。
+    const hint = await repository.getDailyHint(STUDENT, started!.session.sessionId, started!.items[6]!.contentItemId)
+    expect(hint).not.toBeNull()
+    expect(hint!.hint.length).toBeGreaterThan(0)
+    const stored = await database.query<{ payload: Record<string, unknown> }>(
+      'SELECT payload FROM content_items WHERE id = $1', [started!.items[6]!.contentItemId],
+    )
+    const answer = stored.rows[0]!.payload.answer
+    if (typeof answer === 'string') expect(hint!.hint).not.toContain(answer)
+  })
+
+  it('withholds the hint while the learner still has lives', async () => {
+    const { repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    const hint = await repository.getDailyHint(STUDENT, started!.session.sessionId, started!.items[0]!.contentItemId)
+    expect(hint).toBeNull()
+  })
+
 })

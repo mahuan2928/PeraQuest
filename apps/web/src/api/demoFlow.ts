@@ -178,3 +178,15 @@ export async function submitDailyAnswer(
     body: JSON.stringify(body),
   })
 }
+
+export async function fetchDailyHint(
+  studentToken: string,
+  sessionId: string,
+  contentItemId: string,
+): Promise<DemoRequestResult> {
+  return requestJson(`/api/v1/me/daily-sessions/${sessionId}/hints`, {
+    method: 'POST',
+    headers: bearerHeaders(studentToken, { 'content-type': 'application/json' }),
+    body: JSON.stringify({ contentItemId }),
+  })
+}

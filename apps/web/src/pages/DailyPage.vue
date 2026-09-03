@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref } from 'vue'
-import { fetchDailyPlan, startDailySession, submitDailyAnswer } from '../api/demoFlow'
+import { fetchDailyHint, fetchDailyPlan, startDailySession, submitDailyAnswer } from '../api/demoFlow'
 import { studentExperienceKey } from '../composables/studentExperience'
 import WordOrderItem from '../components/daily/WordOrderItem.vue'
 import ArticleSensorItem from '../components/daily/ArticleSensorItem.vue'
@@ -14,7 +14,7 @@ type DailyItem = {
   prompt: Record<string, unknown>
 }
 type DailySession = { sessionId: string; sessionDate: string; status: string; targetCount: number; completedCount: number; reviewCount: number }
-type DailyPlan = { sessionDate: string; lives: number; maxLives: number; nextLifeAt: string | null; reviewCap: number; session: DailySession | null }
+type DailyPlan = { sessionDate: string; lives: number; maxLives: number; supportMode: boolean; nextLifeAt: string | null; reviewCap: number; session: DailySession | null }
 type Feedback = { correct: boolean; timedOut: boolean; explanation: string }
 
 const experience = inject(studentExperienceKey)!
@@ -27,12 +27,14 @@ const feedback = ref<Feedback | null>(null)
 const busy = ref(false)
 const error = ref('')
 const notAvailable = ref(false)
+const hint = ref('')
 
 const token = () => demoSession.value.studentToken
 const current = computed(() => items.value[index.value] ?? null)
 const finished = computed(() => items.value.length > 0 && index.value >= items.value.length)
 const progress = computed(() => (items.value.length ? Math.round((index.value / items.value.length) * 100) : 0))
-const outOfLives = computed(() => (plan.value?.lives ?? 5) <= 0)
+// 体力が尽きても学習は止めません。ヒントを出せる「ゆっくりモード」に切り替えます。
+const supportMode = computed(() => plan.value?.supportMode === true)
 
 const nextLifeLabel = computed(() => {
   if (!plan.value?.nextLifeAt) return ''
@@ -95,7 +97,22 @@ async function answer(response: string | string[] | null, timedOut = false) {
   }
 }
 
+async function showHint() {
+  const item = current.value
+  if (!item || busy.value) return
+  busy.value = true
+  try {
+    const result = await fetchDailyHint(token(), plan.value!.session!.sessionId, item.contentItemId)
+    if (result.ok) hint.value = (result.body as { hint: string }).hint
+  } catch {
+    // ヒントは補助なので、取れなくても学習は続けられます。
+  } finally {
+    busy.value = false
+  }
+}
+
 function next() {
+  hint.value = ''
   feedback.value = null
   index.value += 1
 }
@@ -143,14 +160,15 @@ onMounted(async () => {
     </p>
 
     <p
-      v-else-if="outOfLives && !finished"
-      class="panel-empty"
+      v-else-if="supportMode && !finished"
+      class="support-mode-note"
+      role="status"
     >
-      きょうの体力を使い切りました。{{ nextLifeLabel }}。休んでから続きに進みましょう。
+      ゆっくりモードにしました。あせらず、ヒントを見ながら進めましょう。{{ nextLifeLabel }}
     </p>
 
     <button
-      v-else-if="!items.length"
+      v-if="!notAvailable && !items.length"
       class="primary-action"
       type="button"
       :disabled="busy"
@@ -186,6 +204,27 @@ onMounted(async () => {
         >復習</span>
         <span class="daily-point">{{ knowledgePointLabel(current!.knowledgePointRef) }}</span>
       </p>
+
+      <div
+        v-if="supportMode && !feedback"
+        class="daily-hint"
+      >
+        <button
+          v-if="!hint"
+          class="secondary-action"
+          type="button"
+          :disabled="busy"
+          @click="showHint"
+        >
+          ヒントを見る
+        </button>
+        <p
+          v-else
+          aria-live="polite"
+        >
+          {{ hint }}
+        </p>
+      </div>
 
       <article class="daily-item">
         <WordOrderItem

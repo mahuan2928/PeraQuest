@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { DailyAnswerResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
+import type { DailyAnswerResponse, DailyHintResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -143,6 +143,7 @@ export interface StudentRepository {
   listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
   getDailyPlan(studentId: string): Promise<DailyPlanResponse>
   startDailySession(studentId: string): Promise<DailySessionStartResponse | null>
+  getDailyHint(studentId: string, sessionId: string, contentItemId: string): Promise<DailyHintResponse | null>
   submitDailyAnswer(input: { studentId: string; sessionId: string; contentItemId: string; response: string | string[] | null; timedOut: boolean }): Promise<DailyAnswerResponse | null>
   processPaymentWebhook(input: ProcessPaymentWebhookInput): Promise<PaymentWebhookProcessResult>
   upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse>
@@ -468,6 +469,19 @@ const gradeDailyItem = (kind: DailyItemKind, payload: Record<string, unknown>, r
   }
   if (Array.isArray(response)) return false
   return response === payload.answer
+}
+
+// 体力が尽きたときに出すヒント。正解そのものは返さず、選択肢を 1 つ減らすか
+// 最初の語だけを示します。学習を止めない代わりに支えを増やすための仕組みです。
+const dailyHintFor = (kind: DailyItemKind, payload: Record<string, unknown>): string => {
+  if (kind === 'word_order') {
+    const first = (payload.answers as string[][] | undefined)?.[0]?.[0]
+    return first ? `最初の語は「${first}」です。` : '主語から並べてみましょう。'
+  }
+  const choices = (payload.choices as string[] | undefined) ?? []
+  const answer = payload.answer as string | undefined
+  const wrong = choices.find((choice) => choice !== answer)
+  return wrong ? `「${wrong}」は当てはまりません。` : '習った形を思い出してみましょう。'
 }
 
 const toDailySession = (row: Record<string, unknown>): DailySessionDto => ({
@@ -1115,7 +1129,34 @@ export class PostgresStudentRepository implements StudentRepository {
 
       const result = await readStageAttemptResult(client, input.studentId, input.attemptId)
       if (!result) throw new Error('Submitted stage attempt result could not be read')
-      result.rewards = await applyGameReward(client, input.studentId, stageAttemptRewardFor(result))
+      // 同じ試験を受け直しても報酬は出ません。出題が毎回同じスナップショットなので、
+      // 覚えて回せば無限に XP を稼げてしまうためです。台帳には 0 で残し、履歴は追えるようにします。
+      const alreadyRewarded = await client.query(`
+        WITH this_exam AS (
+          SELECT ev.exam_id
+          FROM stage_attempts a
+          JOIN stage_exam_versions ev ON ev.id = a.exam_version_id
+          WHERE a.id = $2
+        )
+        SELECT 1
+        FROM game_reward_ledger ledger
+        JOIN stage_attempts a ON a.id = ledger.source_ref::uuid
+        JOIN stage_exam_versions ev ON ev.id = a.exam_version_id
+        JOIN this_exam ON this_exam.exam_id = ev.exam_id
+        WHERE ledger.student_id = $1
+          AND ledger.source_type = 'stage_attempt'
+          AND ledger.xp_delta > 0
+          AND a.id <> $2
+        LIMIT 1
+      `, [input.studentId, input.attemptId])
+      const reward = stageAttemptRewardFor(result)
+      result.rewards = await applyGameReward(
+        client,
+        input.studentId,
+        alreadyRewarded.rows[0]
+          ? { ...reward, xpAwarded: 0, activityCoinsAwarded: 0, questStepDelta: 0, questChapterUnlocked: null, badgesAwarded: [] }
+          : reward,
+      )
       await client.query(`
         UPDATE idempotency_records
         SET status = 'completed',
@@ -1169,6 +1210,7 @@ export class PostgresStudentRepository implements StudentRepository {
         sessionDate: row.session_date,
         lives: Number(row.lives),
         maxLives: 5,
+        supportMode: Number(row.lives) <= 0,
         nextLifeAt: Number(row.lives) >= 5 ? null : new Date(row.refill_anchor_at.getTime() + 30 * 60 * 1000).toISOString(),
         reviewCap: Number(row.review_cap),
         session: session.rows[0] ? toDailySession(session.rows[0]) : null,
@@ -1247,6 +1289,22 @@ export class PostgresStudentRepository implements StudentRepository {
     }
   }
 
+  async getDailyHint(studentId: string, sessionId: string, contentItemId: string): Promise<DailyHintResponse | null> {
+    const lives = await this.pool.query<{ settle_life_refill: number }>('SELECT settle_life_refill($1) AS settle_life_refill', [studentId])
+    // 体力が残っているうちはヒントを出しません。まず自分で考えてもらうためです。
+    if (Number(lives.rows[0]!.settle_life_refill) > 0) return null
+    const owned = await this.pool.query(
+      'SELECT 1 FROM daily_sessions WHERE id = $1 AND student_id = $2', [sessionId, studentId],
+    )
+    if (!owned.rows[0]) return null
+    const item = await this.pool.query<DailyItemRow>(
+      "SELECT id, item_kind, knowledge_point_ref, payload FROM content_items WHERE id = $1 AND status = 'published'",
+      [contentItemId],
+    )
+    if (!item.rows[0]) return null
+    return { contentItemId, hint: dailyHintFor(item.rows[0].item_kind, item.rows[0].payload) }
+  }
+
   async submitDailyAnswer(input: { studentId: string; sessionId: string; contentItemId: string; response: string | string[] | null; timedOut: boolean }): Promise<DailyAnswerResponse | null> {
     const client = await this.pool.connect()
     try {
@@ -1318,6 +1376,7 @@ export class PostgresStudentRepository implements StudentRepository {
         timedOut: input.timedOut,
         explanation: String(payload.explanation ?? ''),
         lives,
+        supportMode: lives <= 0,
         session: updatedSession,
         ...(rewards ? { rewards } : {}),
       }
@@ -1557,11 +1616,18 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
 
   async getDailyPlan(studentId: string): Promise<DailyPlanResponse> {
     void studentId
-    return { sessionDate: new Date().toISOString().slice(0, 10), lives: 5, maxLives: 5, nextLifeAt: null, reviewCap: 20, session: null }
+    return { sessionDate: new Date().toISOString().slice(0, 10), lives: 5, maxLives: 5, supportMode: false, nextLifeAt: null, reviewCap: 20, session: null }
   }
 
   async startDailySession(studentId: string): Promise<DailySessionStartResponse | null> {
     void studentId
+    return null
+  }
+
+  async getDailyHint(studentId: string, sessionId: string, contentItemId: string): Promise<DailyHintResponse | null> {
+    void studentId
+    void sessionId
+    void contentItemId
     return null
   }
 

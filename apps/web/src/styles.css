@@ -569,3 +569,9 @@ footer a { color: var(--muted-ink); font-size: .78rem; }
 .answer-review-prompt { margin: 0 0 6px; font-size: .9rem; font-weight: 800; }
 .answer-review-yours { margin: 0 0 3px; color: var(--orange-ink); font-size: .84rem; }
 .answer-review-correct { margin: 0; color: var(--muted-ink); font-size: .84rem; }
+
+/* 体力が尽きたときは学習を止めず、支えを増やします。 */
+.support-mode-note { margin: 0 0 16px; padding: 12px 14px; border-left: 5px solid var(--green); background: #f7ffe2; font-size: .88rem; font-weight: 700; }
+.daily-hint { margin-bottom: 12px; }
+.daily-hint p { margin: 0; padding: 10px 12px; border: 2px dashed var(--green); background: white; font-size: .86rem; font-weight: 700; }
+.daily-hint .secondary-action { min-height: 44px; }

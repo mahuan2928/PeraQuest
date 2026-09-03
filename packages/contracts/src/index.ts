@@ -532,6 +532,8 @@ export interface DailyPlanResponse {
   sessionDate: string
   lives: number
   maxLives: number
+  /** 体力が尽きた状態。学習は止めず、ヒントを出せるモードに切り替えます。 */
+  supportMode: boolean
   /** 次に生命値が 1 回復する時刻。満タンのときは null。 */
   nextLifeAt: string | null
   reviewCap: number
@@ -556,6 +558,13 @@ export interface DailyAnswerResponse {
   explanation: string
   lives: number
   session: DailySessionDto
+  supportMode: boolean
   /** 関卡を終えたときだけ入ります。 */
   rewards?: GameRewardGrantDto
+}
+
+/** 体力が尽きているときだけ受け取れるヒント。正解そのものは返しません。 */
+export interface DailyHintResponse {
+  contentItemId: string
+  hint: string
 }

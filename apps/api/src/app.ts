@@ -5,6 +5,7 @@ import { sanitizeErrorDetails } from '@peraquest/contracts'
 import type {
   CapabilityResponse,
   DailyAnswerResponse,
+  DailyHintResponse,
   DailyPlanResponse,
   DailySessionStartResponse,
   ClientPlatform,
@@ -919,6 +920,19 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     // 公開済みの問題が 1 関卡ぶんに足りないときは、空のセッションを作らず理由を返します。
     if (!started) return sendError(reply, 409, 'DAILY_SESSION_NOT_AVAILABLE')
     return reply.code(201).send(started)
+  })
+
+  app.post<{ Params: { sessionId: string } }>('/api/v1/me/daily-sessions/:sessionId/hints', async (request, reply): Promise<DailyHintResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const params = z.object({ sessionId: uuidSchema }).safeParse(request.params)
+    if (!params.success) return sendError(reply, 404, 'NOT_FOUND')
+    const parsed = z.object({ contentItemId: uuidSchema }).strict().safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'daily_answer', reason: 'invalid' })
+    const hint = await repository.getDailyHint(actor.id, params.data.sessionId, parsed.data.contentItemId)
+    // 体力が残っているうちは出しません。まず自分で考えてもらうためです。
+    if (!hint) return sendError(reply, 404, 'NOT_FOUND')
+    return hint
   })
 
   app.post<{ Params: { sessionId: string } }>('/api/v1/me/daily-sessions/:sessionId/answers', async (request, reply): Promise<DailyAnswerResponse | void> => {

@@ -1,4 +1,5 @@
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   createDemoGuardianInvitation,
   createDemoVoiceUploadTicket,
@@ -645,8 +646,8 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
         selectedOptionId: selected.value[item.itemId] ?? null,
       }))
       const submitted = await submitDemoStageAttempt(props.session.studentToken, attempt.value!.attemptId, answers, `student-submit-${props.session.studentId}`)
-      if (!submitted.ok) throw new Error('stage attempt submit failed')
       const result = await fetchDemoStageAttemptResult(props.session.studentToken, attempt.value!.attemptId)
+      if (!submitted.ok && !result.ok) throw new Error('stage attempt submit failed')
       if (!result.ok) throw new Error('stage attempt result failed')
       resultSummary.value = result.body as { passed?: boolean; score?: number; maxScore?: number; rewards?: GameReward }
       let progressRefreshOk = true
@@ -732,7 +733,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     title: string
     detail: string
     ctaLabel: string | null
-    targetId: string | null
+    targetPath: string | null
   }
 
 
@@ -744,7 +745,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
         title: '答えを選んで提出します',
         detail: answered.value ? 'すべて選べました。提出できます。' : `${attempt.value.items.length} 問すべてに答えると提出できます。`,
         ctaLabel: answered.value ? '答えを提出します' : '問題を見ます',
-        targetId: 'level-check-panel',
+        targetPath: '/level-check',
       }
     }
     if (!guardianReady.value && !props.invitationCode) {
@@ -754,7 +755,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
         title: '保護者に確認を依頼します',
         detail: '未成年の方は、学習を始める前に保護者の確認が必要です。',
         ctaLabel: '招待コードを発行します',
-        targetId: null,
+        targetPath: null,
       }
     }
     if (!guardianReady.value) {
@@ -764,7 +765,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
         title: '保護者の確認を待っています',
         detail: '「保護者として体験」に切り替えて、招待コードを入力してください。',
         ctaLabel: null,
-        targetId: null,
+        targetPath: null,
       }
     }
     if (learnReady.value && !resultSummary.value) {
@@ -774,7 +775,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
         title: 'レベルチェックを受けます',
         detail: '今の得意と、復習したいポイントを確認します。',
         ctaLabel: 'レベルチェックを開始します',
-        targetId: 'level-check-panel',
+        targetPath: '/level-check',
       }
     }
     if (reviewQuestReady.value && !reviewQuestCompleted.value) {
@@ -784,7 +785,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
         title: '今日の復習クエストに進みます',
         detail: 'レベルチェックで見つかった苦手ポイントを短く確認します。',
         ctaLabel: '復習クエストを始めます',
-        targetId: 'review-panel',
+        targetPath: '/review',
       }
     }
     if (voiceEnabled.value && !voiceReady.value) {
@@ -794,7 +795,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
         title: '音声練習を試します',
         detail: '保護者の同意により、音声練習が利用できます。',
         ctaLabel: '音声練習を提出します',
-        targetId: null,
+        targetPath: null,
       }
     }
     if (!deviceReady.value) {
@@ -804,7 +805,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
         title: 'この端末を登録します',
         detail: '次回もこの端末で続きから体験できるようにします。',
         ctaLabel: '端末を登録します',
-        targetId: null,
+        targetPath: null,
       }
     }
     return {
@@ -813,7 +814,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
       title: '今日の冒険は完了しました',
       detail: '保護者アプリに切り替えると、今日の学習成果を確認できます。',
       ctaLabel: null,
-      targetId: null,
+      targetPath: null,
     }
   })
 
@@ -837,27 +838,40 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     return false
   })
 
-  const focusTarget = (targetId: string | null) => {
-    if (!targetId) return
-    document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  // 製品ではページが分かれているためルーター遷移します。
+  // 単体テスト用ハーネスは1ツリーなのでルーターが無く、その場合はスクロールで代替します。
+  const router = useRouter()
+  const missionPanelIds: Record<string, string> = {
+    '/level-check': 'level-check-panel',
+    '/review': 'review-panel',
   }
 
-  const runMission = () => {
+  const goToMissionTarget = async (targetPath: string | null) => {
+    if (!targetPath) return
+    if (router) {
+      if (router.currentRoute.value.path !== targetPath) await router.push(targetPath)
+      return
+    }
+    const panelId = missionPanelIds[targetPath]
+    if (panelId) document.getElementById(panelId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const runMission = async () => {
     const mission = nextMission.value
     switch (mission.id) {
       case 'submit-answers':
         if (answered.value) void submitLevelCheck()
-        else focusTarget(mission.targetId)
+        else await goToMissionTarget(mission.targetPath)
         return
       case 'invite':
         void createInvitation()
         return
       case 'level-check':
-        focusTarget(mission.targetId)
+        await goToMissionTarget(mission.targetPath)
         void startLevelCheck()
         return
       case 'review':
-        focusTarget(mission.targetId)
+        await goToMissionTarget(mission.targetPath)
         startReviewQuest()
         return
       case 'voice':
@@ -973,7 +987,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     missionTrackIndex,
     missionStepIndex,
     missionBusy,
-    focusTarget,
+    goToMissionTarget,
     runMission,
     comingSoonOpen,
     demoGuideOpen,

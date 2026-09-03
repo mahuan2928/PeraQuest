@@ -311,6 +311,28 @@ describe('minor onboarding vertical slice', () => {
     expect(wrapper.text()).not.toContain('説明者用')
   })
 
+  it('moves the mission call to action to the level check page', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        studentId: 'student-1',
+        studentToken: 'student-token',
+        guardianToken: 'guardian-token',
+        expiresAt: '2026-08-31T12:10:00.000Z',
+      }, 201))
+      .mockResolvedValueOnce(jsonResponse({ canLearn: true, canUploadVoice: false, guardianLinkStatus: 'verified', voiceConsentStatus: 'missing', entitlements: [] }))
+      .mockResolvedValue(jsonResponse({ studentId: 'student-1', totalXp: 20, activityCoins: 0, questChapter: 0, questStep: 2, badges: ['guardian_shield'], updatedAt: '2026-08-31T12:00:00.000Z' })))
+    const { wrapper, router } = mountApp()
+
+    await wrapper.get('[data-testid="start-product-demo"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('レベルチェックを受けます'))
+    expect(router.currentRoute.value.path).toBe('/')
+
+    await wrapper.get('.mission-cta').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/level-check')
+  })
+
   it('shows a slow-start hint while the online demo backend is waking up', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))

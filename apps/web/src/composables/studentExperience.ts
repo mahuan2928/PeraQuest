@@ -1,5 +1,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { knowledgePointLabel } from '../data/knowledgeLabels'
 import {
   createDemoGuardianInvitation,
   createDemoVoiceUploadTicket,
@@ -137,7 +138,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
   const error = ref('')
   const attempt = ref<StageAttempt | null>(null)
   const selected = ref<Record<string, string>>({})
-  const resultSummary = ref<{ passed?: boolean; score?: number; rawScore?: number; maxScore?: number; rewards?: GameReward } | null>(null)
+  const resultSummary = ref<{ passed?: boolean; score?: number; rawScore?: number; maxScore?: number; rewards?: GameReward; items?: Array<{ itemId: string; outcome: string; prompt: string; selectedText: string | null; correctText: string }> } | null>(null)
   const gameState = ref<GameState | null>(null)
   const voiceReady = ref(false)
   const deviceReady = ref(false)
@@ -241,20 +242,6 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     review_forest_cleared: '復習の森クリア',
     listening_cove_trial: 'リスニング入り江体験',
   }
-  const knowledgePointLabels: Record<string, string> = {
-    'grammar.past_tense': '過去形',
-    'vocabulary.context': '文脈から語彙を選ぶ力',
-    'reading.reason': '理由を読み取る力',
-    'grammar.comparative': '比較表現',
-    'listening.time': '時刻を聞き取る力',
-    'writing.word_order': '自然な語順',
-    'past-tense': '過去形',
-    'daily-vocabulary': '日常語彙',
-    'main-idea': '文章の要点をつかむ力',
-    comparatives: '比較表現',
-    'short-dialogue': '短い会話を聞き取る力',
-    'sentence-order': '自然な語順',
-  }
   const questBlueprint = [
     {
       id: 'start',
@@ -339,10 +326,16 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     .sort((left, right) => left.masteryScore - right.masteryScore)
     .slice(0, 3))
   const reviewQuestReady = computed(() => questStep.value >= 3 && reviewQuestItems.value.length > 0)
+  // 英単語が 2 つ以上あることだけを確かめます。文字数だけの判定だと
+  // 「あああああ」でもタスク完了になってしまい、書き直した実感が伴いません。
+  const reviewRewriteLooksEnglish = computed(() => {
+    const words = reviewRewriteText.value.trim().split(/\s+/).filter((word) => /^[A-Za-z][A-Za-z'’.,!?-]*$/.test(word))
+    return words.length >= 2
+  })
   const reviewTaskProgress = computed(() => [
     reviewReadAloudDone.value,
     Boolean(reviewFocusRef.value),
-    reviewRewriteText.value.trim().length >= 6,
+    reviewRewriteLooksEnglish.value,
   ].filter(Boolean).length)
   const reviewQuestCanComplete = computed(() => reviewQuestOpen.value && reviewTaskProgress.value === 3)
   const nextIslandReady = computed(() => questStep.value >= 4)
@@ -478,7 +471,6 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     if (status === 'current') return '次の目標'
     return 'ロック中'
   }
-  const knowledgePointLabel = (knowledgePointRef: string) => knowledgePointLabels[knowledgePointRef] ?? '復習ポイント'
   const reviewStateLabel = (state: string) => {
     if (state === 'mastered') return '安定'
     if (state === 'due') return '復習優先'
@@ -615,7 +607,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
       const result = await fetchDemoStageAttemptResult(props.session.studentToken, attempt.value!.attemptId)
       if (!submitted.ok && !result.ok) throw new Error('stage attempt submit failed')
       if (!result.ok) throw new Error('stage attempt result failed')
-      resultSummary.value = result.body as { passed?: boolean; score?: number; rawScore?: number; maxScore?: number; rewards?: GameReward }
+      resultSummary.value = result.body as { passed?: boolean; score?: number; rawScore?: number; maxScore?: number; rewards?: GameReward; items?: Array<{ itemId: string; outcome: string; prompt: string; selectedText: string | null; correctText: string }> }
       let progressRefreshOk = true
       try {
         const knowledge = await fetchDemoStudentKnowledge(props.session.studentToken)
@@ -902,7 +894,6 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     lockedInventoryHints,
     inventoryCollectionCount,
     badgeLabels,
-    knowledgePointLabels,
     questBlueprint,
     questIslandBlueprint,
     questMapNodes,
@@ -915,6 +906,7 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
     reviewQuestReady,
     reviewTaskProgress,
     reviewQuestCanComplete,
+    reviewRewriteLooksEnglish,
     nextIslandReady,
     listeningDemoOptions,
     demoAnswerTextByPrompt,

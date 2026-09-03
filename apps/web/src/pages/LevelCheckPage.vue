@@ -119,6 +119,37 @@ const { busy, attempt, selected, resultSummary, earnedReward, learnReady, answer
           クエスト +{{ earnedReward.questStepDelta }}
         </span>
       </div>
+
+      <section
+        v-if="resultSummary.items?.length"
+        class="answer-review"
+        aria-label="問題ごとの見直し"
+      >
+        <h2>まちがえたところを見直しましょう</h2>
+        <ol>
+          <li
+            v-for="(item, index) in resultSummary.items"
+            :key="item.itemId"
+            :class="item.outcome"
+          >
+            <span class="answer-review-mark">{{ item.outcome === 'correct' ? '✓' : '✗' }}</span>
+            <div>
+              <p class="answer-review-prompt">
+                {{ index + 1 }}. {{ item.prompt }}
+              </p>
+              <p
+                v-if="item.outcome !== 'correct'"
+                class="answer-review-yours"
+              >
+                あなたの答え：{{ item.selectedText ?? '未回答' }}
+              </p>
+              <p class="answer-review-correct">
+                正解：<strong>{{ item.correctText }}</strong>
+              </p>
+            </div>
+          </li>
+        </ol>
+      </section>
     </article>
   </section>
 </template>

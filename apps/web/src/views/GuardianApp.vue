@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { knowledgePointLabel } from '../data/knowledgeLabels'
 import {
   fetchDemoGuardianLearningSummary,
   fetchDemoGuardianStudentKnowledge,
@@ -133,14 +134,15 @@ const guardianSupportMemo = computed<GuardianSupportMemo | null>(() => {
   const journey = guardianJourneySummary.value
   if (!journey && !learningSummary.value) return null
   const reviewFocus = learningSummary.value?.reviewFocus[0]?.label
+  // 保護者には学習の中身を伝えます。クエストの進行度は生徒側だけの指標です。
   const progress = journey
-    ? `${journey.completedQuestCount} / ${journey.totalQuestCount} スポットまで進みました。`
+    ? `平均の定着率は ${journey.masteryAverage}% です。`
     : learningSummary.value?.quest.summary ?? '今日の学習状況を確認しています。'
   const focus = reviewFocus
     ? `次は「${reviewFocus}」を短く復習すると効果的です。`
     : journey?.nextStep ?? learningSummary.value?.nextRecommendation ?? '次のおすすめを確認しましょう。'
   const encouragement = journey?.badges.length
-    ? '「今日のバッジ、よく集めたね」と声をかけて、次の一歩を一緒に確認しましょう。'
+    ? '「今日はどこが分かるようになった？」と聞いて、次の一歩を一緒に確認しましょう。'
     : '「まずは始められたね」と声をかけて、安心して続けられる雰囲気を作りましょう。'
   return { progress, focus, encouragement }
 })
@@ -250,20 +252,14 @@ async function toggleConsent() {
   }
 }
 
-function stateLabel(state: string) {
+function stateLabel(state: string, masteryScore: number) {
   if (state === 'mastered') return '安定しています'
-  if (state === 'learning') return '伸びています'
+  // 一度も正解していない項目を「伸びています」と伝えると、
+  // 保護者が支払いを判断する材料として誤解を招きます。
+  if (state === 'learning') return masteryScore > 0 ? '伸びています' : 'これから伸ばすところ'
   return '復習しましょう'
 }
 
-function badgeLabel(badge: string) {
-  if (badge === 'guardian_shield') return 'ガーディアンシールド'
-  if (badge === 'level_check_cleared') return 'レベルチェッククリア'
-  if (badge === 'level_check_challenger') return 'チャレンジャー'
-  if (badge === 'review_forest_cleared') return '復習の森クリア'
-  if (badge === 'listening_cove_trial') return 'リスニング入り江体験'
-  return badge
-}
 </script>
 
 <template>
@@ -380,14 +376,6 @@ function badgeLabel(badge: string) {
             <strong>{{ learningSummary.overview.reviewItemCount }}</strong>
             <span>復習したい項目</span>
           </div>
-          <div>
-            <strong>{{ learningSummary.quest.totalXp }}</strong>
-            <span>獲得 XP</span>
-          </div>
-          <div>
-            <strong>{{ learningSummary.quest.activityCoins }}</strong>
-            <span>コイン</span>
-          </div>
         </div>
 
         <section
@@ -398,21 +386,9 @@ function badgeLabel(badge: string) {
           <p class="card-kicker">
             学習レポート
           </p>
-          <h3>お子さまの冒険まとめ</h3>
-          <p>今日の学習で進んだ場所と、獲得したごほうびを保護者向けにまとめました。</p>
+          <h3>お子さまの学習まとめ</h3>
+          <p>今日どこまで進み、何が身についたかをまとめました。</p>
           <div class="guardian-journey-grid">
-            <div>
-              <strong>{{ guardianJourneySummary.completedQuestCount }} / {{ guardianJourneySummary.totalQuestCount }}</strong>
-              <span>達成スポット</span>
-            </div>
-            <div>
-              <strong>{{ guardianJourneySummary.totalXp }}</strong>
-              <span>XP</span>
-            </div>
-            <div>
-              <strong>{{ guardianJourneySummary.activityCoins }}</strong>
-              <span>コイン</span>
-            </div>
             <div>
               <strong>{{ guardianJourneySummary.masteryAverage }}%</strong>
               <span>平均習熟度</span>
@@ -426,13 +402,6 @@ function badgeLabel(badge: string) {
               {{ highlight }}
             </li>
           </ul>
-          <div
-            v-if="guardianJourneySummary.badges.length"
-            class="guardian-journey-badges"
-          >
-            <span>獲得バッジ</span>
-            <strong>{{ guardianJourneySummary.badges.map(badgeLabel).join(' / ') }}</strong>
-          </div>
           <p class="guardian-journey-next">
             {{ guardianJourneySummary.nextStep }}
           </p>
@@ -507,26 +476,7 @@ function badgeLabel(badge: string) {
           </ul>
         </section>
 
-        <section
-          v-if="learningSummary"
-          class="report-section"
-        >
-          <h3>クエストの記録</h3>
-          <p>{{ learningSummary.quest.summary }}</p>
-          <div
-            v-if="learningSummary.quest.badges.length"
-            class="badge-row"
-          >
-            <span
-              v-for="badge in learningSummary.quest.badges"
-              :key="badge"
-              class="plan-badge"
-            >
-              {{ badgeLabel(badge) }}
-            </span>
-          </div>
-        </section>
-
+        
         <section
           v-if="learningSummary"
           class="report-section"
@@ -546,19 +496,19 @@ function badgeLabel(badge: string) {
           >
             <div class="knowledge-item__main">
               <div class="knowledge-item__title-row">
-                <h3>{{ item.knowledgePointRef }}</h3>
+                <h3>{{ knowledgePointLabel(item.knowledgePointRef) }}</h3>
                 <span
                   class="status-pill"
                   :class="item.state === 'mastered' ? 'status-pill--mastered' : item.state === 'learning' ? 'status-pill--in-progress' : 'status-pill--review'"
                 >
-                  {{ stateLabel(item.state) }}
+                  {{ stateLabel(item.state, item.masteryScore) }}
                 </span>
               </div>
               <div class="mastery-meter-row">
                 <div
                   class="mastery-meter"
                   role="progressbar"
-                  :aria-label="`${item.knowledgePointRef}の習熟度`"
+                  :aria-label="`${knowledgePointLabel(item.knowledgePointRef)}の習熟度`"
                   :aria-valuenow="Math.round(item.masteryScore * 100)"
                   aria-valuemin="0"
                   aria-valuemax="100"

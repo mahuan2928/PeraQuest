@@ -538,7 +538,8 @@ describe('formal stage attempt Bearer authorization', () => {
     score: 1,
     passed: true,
     passScore: 0.8,
-    items: [{ itemId: attemptResponse.items[0]!.itemId, outcome: 'correct', earnedScore: 1, maxScore: 1 }],
+    items: [{ itemId: attemptResponse.items[0]!.itemId, outcome: 'correct', earnedScore: 1, maxScore: 1,
+      prompt: 'Choose the natural sentence.', selectedText: 'I play soccer.', correctText: 'I play soccer.' }],
   }
   const masteryProjection: StudentKnowledgeProjectionDto = {
     studentId: STUDENT_A,

@@ -190,6 +190,9 @@ interface StageAttemptResultItemRow extends Record<string, unknown> {
   outcome: KnowledgeEvidenceOutcome
   earned_score: string
   max_score: string
+  prompt: string
+  selected_text: string | null
+  correct_text: string
 }
 
 interface StudentKnowledgeProjectionRow extends Record<string, unknown> {
@@ -291,9 +294,15 @@ const readStageAttemptResult = async (database: Queryable, studentId: string, at
   if (!header) return null
 
   const itemResult = await database.query<StageAttemptResultItemRow>(`
-    SELECT ans.item_snapshot_id AS item_id, ans.outcome, ans.earned_score::text, ans.max_score::text
+    SELECT ans.item_snapshot_id AS item_id, ans.outcome, ans.earned_score::text, ans.max_score::text,
+           item.prompt,
+           chosen.option_text AS selected_text,
+           correct.option_text AS correct_text
     FROM stage_attempt_answers ans
     JOIN stage_attempt_item_snapshots item ON item.id = ans.item_snapshot_id
+    JOIN stage_attempt_answer_key_snapshots keys ON keys.item_snapshot_id = item.id
+    JOIN stage_attempt_item_option_snapshots correct ON correct.id = keys.correct_option_snapshot_id
+    LEFT JOIN stage_attempt_item_option_snapshots chosen ON chosen.id = ans.selected_option_snapshot_id
     WHERE ans.attempt_id = $1
     ORDER BY item.position
   `, [attemptId])
@@ -312,6 +321,9 @@ const readStageAttemptResult = async (database: Queryable, studentId: string, at
       outcome: item.outcome,
       earnedScore: parseNumeric(item.earned_score),
       maxScore: parseNumeric(item.max_score),
+      prompt: item.prompt,
+      selectedText: item.selected_text,
+      correctText: item.correct_text,
     })),
   }
 }

@@ -199,6 +199,10 @@ export interface StageAttemptResultItemDto {
   outcome: KnowledgeEvidenceOutcome
   earnedScore: number
   maxScore: number
+  /** 採点後にだけ返します。どこを間違えたのかを見直すための情報です。 */
+  prompt: string
+  selectedText: string | null
+  correctText: string
 }
 
 export type GameRewardSource = 'stage_attempt' | 'guardian_verification' | 'daily_session'

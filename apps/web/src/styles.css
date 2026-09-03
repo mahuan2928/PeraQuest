@@ -555,3 +555,17 @@ footer a { color: var(--muted-ink); font-size: .78rem; }
 
 @media (prefers-reduced-motion: reduce) { .article-timer span { transition: none; } }
 .score-rate { margin: 4px 0 0; color: var(--muted-ink); font-size: .82rem; font-weight: 700; }
+
+/* 採点後の見直し。どこを間違え、正解が何だったのかをその場で確認します。 */
+.answer-review { margin-top: 20px; padding-top: 16px; border-top: 2px solid var(--line); }
+.answer-review h2 { margin: 0 0 12px; font-size: 1.05rem; }
+.answer-review ol { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.answer-review li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding: 12px 14px; border: 2px solid var(--line); background: white; }
+.answer-review li.correct { border-color: var(--green); }
+.answer-review li.incorrect, .answer-review li.skipped { border-color: var(--orange-ink); }
+.answer-review-mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: white; background: var(--muted-ink); font-size: .8rem; font-weight: 900; }
+.answer-review li.correct .answer-review-mark { background: var(--green); }
+.answer-review li.incorrect .answer-review-mark, .answer-review li.skipped .answer-review-mark { background: var(--orange-ink); }
+.answer-review-prompt { margin: 0 0 6px; font-size: .9rem; font-weight: 800; }
+.answer-review-yours { margin: 0 0 3px; color: var(--orange-ink); font-size: .84rem; }
+.answer-review-correct { margin: 0; color: var(--muted-ink); font-size: .84rem; }

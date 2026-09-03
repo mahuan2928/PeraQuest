@@ -15,8 +15,8 @@ const {
 } = experience
 
 const codeCopied = ref(false)
-// 32文字のコードはそのままでは読み取りづらいため、4文字ごとに区切って表示します。
-const groupedInvitationCode = computed(() => (invitationCode.value.match(/.{1,4}/g) ?? []).join(' '))
+// コードは生成時点で 5 文字ずつ区切られています。そのまま表示します。
+const groupedInvitationCode = computed(() => invitationCode.value)
 
 async function copyInvitationCode() {
   try {
@@ -29,6 +29,7 @@ async function copyInvitationCode() {
 }
 
 const entries = [
+  { to: '/daily', kicker: '学習', title: '今日の学習', body: '12問の関卡で、今日のぶんを進めます。' },
   { to: '/level-check', kicker: '学習', title: 'レベルチェック', body: '今の得意と、復習したいところを確かめます。' },
   { to: '/review', kicker: '学習', title: '今日の復習', body: '苦手なところを短く確認します。' },
   { to: '/map', kicker: '記録', title: '冒険マップ', body: '学習の成果が、冒険の進み具合になります。' },

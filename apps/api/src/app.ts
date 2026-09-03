@@ -70,7 +70,9 @@ const dailyAnswerSchema = z.object({
   timedOut: z.boolean().optional(),
 }).strict()
 const idempotencyKeySchema = z.string().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/)
-const guardianInviteCodeSchema = z.string().min(16).max(128).regex(/^[A-Za-z0-9_-]+$/)
+// 保護者は別の端末で手入力します。区切り・空白・大小文字の違いで弾かないよう、
+// 受け取ってから正規化して照合します。
+const guardianInviteCodeSchema = z.string().min(8).max(128).regex(/^[A-Za-z0-9_ -]+$/)
 const guardianLinkVerificationSchema = z.object({ inviteCode: guardianInviteCodeSchema }).strict()
 const submitStageAttemptSchema = z.object({
   answers: z.array(z.object({
@@ -113,9 +115,12 @@ const hashDeviceId = (studentId: string, deviceId: string): string => createHash
   .update(deviceId)
   .digest('hex')
 
+const normalizeGuardianInviteCode = (inviteCode: string): string =>
+  inviteCode.replace(/[\s-]/g, '').toUpperCase()
+
 const hashGuardianInviteCode = (inviteCode: string): string => createHash('sha256')
-  .update('peraquest:guardian-invite:v1:')
-  .update(inviteCode)
+  .update('peraquest:guardian-invite:v2:')
+  .update(normalizeGuardianInviteCode(inviteCode))
   .digest('hex')
 
 const stableStringify = (value: unknown): string => {
@@ -222,7 +227,13 @@ const buildGuardianLearningSummary = (
   }
 }
 
-const createGuardianInviteCode = (): string => randomBytes(24).toString('base64url')
+const inviteCodeAlphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+const createGuardianInviteCode = (): string => {
+  // 10 文字で約 49 ビット。5 文字ずつ区切って読み上げやすくします。
+  const bytes = randomBytes(10)
+  const code = [...bytes].map((byte) => inviteCodeAlphabet[byte % inviteCodeAlphabet.length]).join('')
+  return `${code.slice(0, 5)}-${code.slice(5)}`
+}
 const encodeDemoTokenPart = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url')
 const signDemoToken = (payload: string, secret: string): string => createHmac('sha256', secret).update(payload).digest('base64url')
 

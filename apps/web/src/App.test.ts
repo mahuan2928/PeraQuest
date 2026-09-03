@@ -408,17 +408,18 @@ describe('minor onboarding vertical slice', () => {
       },
     })
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('お子さまの冒険まとめ'))
-    expect(wrapper.text()).toContain('4 / 5')
-    expect(wrapper.text()).toContain('145')
-    expect(wrapper.text()).toContain('58')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('お子さまの学習まとめ'))
     expect(wrapper.text()).toContain('リスニング入り江を体験しました')
-    expect(wrapper.text()).toContain('リスニング入り江体験')
     expect(wrapper.text()).toContain('次は、リスニング入り江の本編公開に向けて短い会話を続けましょう。')
     expect(wrapper.text()).toContain('家庭サポートメモ')
     expect(wrapper.text()).toContain('今日の成果')
-    expect(wrapper.text()).toContain('4 / 5 スポットまで進みました。')
     expect(wrapper.text()).toContain('声かけ例')
+    // test-plan P0-22: 保護者レポートに XP・コイン・バッジなどのゲーム指標は出しません。
+    expect(wrapper.text()).not.toContain('145')
+    expect(wrapper.text()).not.toContain('獲得 XP')
+    expect(wrapper.text()).not.toContain('達成スポット')
+    expect(wrapper.text()).not.toContain('獲得バッジ')
+    expect(wrapper.text()).not.toContain('クエストの記録')
   })
 
   it('shows and dismisses a reward celebration from game-state progress after the level check', async () => {

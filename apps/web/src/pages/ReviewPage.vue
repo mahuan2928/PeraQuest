@@ -3,7 +3,7 @@ import { inject } from 'vue'
 import { studentExperienceKey } from '../composables/studentExperience'
 
 const experience = inject(studentExperienceKey)!
-const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDone, reviewFocusRef, reviewRewriteText, masteryAverage, reviewQuestItems, reviewQuestReady, reviewTaskProgress, reviewQuestCanComplete, knowledgePointLabel, reviewStateLabel, startReviewQuest, completeReviewQuest } = experience
+const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDone, reviewFocusRef, reviewRewriteText, reviewRewriteLooksEnglish, masteryAverage, reviewQuestItems, reviewQuestReady, reviewTaskProgress, reviewQuestCanComplete, knowledgePointLabel, reviewStateLabel, startReviewQuest, completeReviewQuest } = experience
 </script>
 
 <template>
@@ -97,11 +97,11 @@ const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDo
         </fieldset>
         <label
           class="review-task rewrite"
-          :class="{ done: reviewRewriteText.trim().length >= 6 }"
+          :class="{ done: reviewRewriteLooksEnglish }"
         >
           <span>
             <strong>短い英文を1つ書き直しました</strong>
-            <small>例: I finished my homework.</small>
+            <small>英語で書いてみましょう。例: I finished my homework.</small>
           </span>
           <input
             v-model="reviewRewriteText"

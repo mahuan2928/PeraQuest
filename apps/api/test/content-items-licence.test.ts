@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
+import { seedContentItems } from '../src/seed-content.js'
 
 const databases: PGlite[] = []
 
@@ -161,5 +162,41 @@ describe('content item publication ledger', () => {
     // 0017 で daily_answers から参照されたため、TRUNCATE は外部キーの段階で拒否されます。
     // どちらの経路でも「切り捨てさせない」という保証は変わりません。
     await expect(database.query('TRUNCATE content_items')).rejects.toThrowError(/retired, not truncated|foreign key constraint/)
+  })
+
+  describe('the seeded item bank', () => {
+    it('lands in review rather than published, because no reviewer has seen it', async () => {
+      const database = await freshDatabase()
+      const count = await seedContentItems(database)
+      const rows = await database.query<{ status: string; reviewer: string | null }>(
+        'SELECT status, reviewer FROM content_items',
+      )
+      expect(rows.rows).toHaveLength(count)
+      expect(rows.rows.every((row) => row.status === 'in_review')).toBe(true)
+      expect(rows.rows.every((row) => row.reviewer === null)).toBe(true)
+    })
+
+    it('names the reviewer honestly when published for a local demo', async () => {
+      const database = await freshDatabase()
+      await seedContentItems(database, { publishForDemo: true })
+      const rows = await database.query<{ status: string; reviewer: string; attribution_location: string }>(
+        'SELECT status, reviewer, attribution_location FROM content_items',
+      )
+      expect(rows.rows.every((row) => row.status === 'published')).toBe(true)
+      expect(rows.rows.every((row) => row.reviewer === 'unreviewed-demo-seed')).toBe(true)
+      expect(rows.rows.every((row) => row.attribution_location === '/credits')).toBe(true)
+    })
+
+    it('covers the three item types the daily level needs', async () => {
+      const database = await freshDatabase()
+      await seedContentItems(database, { publishForDemo: true })
+      const kinds = await database.query<{ item_kind: string; count: string }>(
+        'SELECT item_kind, count(*) AS count FROM content_items GROUP BY item_kind ORDER BY item_kind',
+      )
+      expect(kinds.rows.map((row) => row.item_kind)).toEqual(['article', 'katakana', 'word_order'])
+      const total = kinds.rows.reduce((sum, row) => sum + Number(row.count), 0)
+      // 1 関卡は 12-15 題なので、1 日ぶんを埋められる数が必要です。
+      expect(total).toBeGreaterThanOrEqual(12)
+    })
   })
 })

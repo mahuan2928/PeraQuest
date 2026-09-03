@@ -11,7 +11,8 @@
     "seed:demo": "tsx src/seed-demo.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "migrate": "tsx src/migrate.ts"
+    "migrate": "tsx src/migrate.ts",
+    "seed:content": "tsx src/seed-content.ts"
   },
   "dependencies": {
     "@peraquest/contracts": "*",

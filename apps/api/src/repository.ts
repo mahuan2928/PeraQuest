@@ -1,5 +1,5 @@
 import type { Pool } from 'pg'
-import type { AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
+import type { DailyAnswerResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -141,6 +141,9 @@ export interface StudentRepository {
   listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
   getStudentGameState(studentId: string): Promise<StudentGameStateResponse>
   listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
+  getDailyPlan(studentId: string): Promise<DailyPlanResponse>
+  startDailySession(studentId: string): Promise<DailySessionStartResponse | null>
+  submitDailyAnswer(input: { studentId: string; sessionId: string; contentItemId: string; response: string | string[] | null; timedOut: boolean }): Promise<DailyAnswerResponse | null>
   processPaymentWebhook(input: ProcessPaymentWebhookInput): Promise<PaymentWebhookProcessResult>
   upsertCurrentDevice(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse>
   disableCurrentDevicePush(input: UpsertCurrentDeviceInput): Promise<CurrentDeviceRegistrationResponse | null>
@@ -408,6 +411,47 @@ const stageAttemptRewardFor = (result: StageAttemptResultResponse): GameRewardGr
   questStepDelta: result.passed ? 1 : 0,
   questChapterUnlocked: result.passed ? 1 : null,
   badgesAwarded: result.passed ? ['level_check_cleared'] : ['level_check_challenger'],
+})
+
+
+// ---- 毎日ループ ----
+
+interface DailyItemRow extends Record<string, unknown> {
+  id: string
+  item_kind: DailyItemKind
+  knowledge_point_ref: string
+  payload: Record<string, unknown>
+}
+
+// 出題時に正解や解説を送らないよう、題型ごとに提示部分だけを取り出します。
+const publicDailyPrompt = (kind: DailyItemKind, payload: Record<string, unknown>): Record<string, unknown> => {
+  if (kind === 'word_order') {
+    return { japanese: payload.japanese, blocks: payload.blocks }
+  }
+  if (kind === 'article') {
+    return { sentence: payload.sentence, choices: payload.choices, timeLimitSeconds: payload.timeLimitSeconds }
+  }
+  return { katakana: payload.katakana, choices: payload.choices }
+}
+
+const gradeDailyItem = (kind: DailyItemKind, payload: Record<string, unknown>, response: string | string[] | null): boolean => {
+  if (response === null) return false
+  if (kind === 'word_order') {
+    if (!Array.isArray(response)) return false
+    const accepted = (payload.answers as string[][] | undefined) ?? []
+    return accepted.some((answer) => answer.length === response.length && answer.every((word, index) => word === response[index]))
+  }
+  if (Array.isArray(response)) return false
+  return response === payload.answer
+}
+
+const toDailySession = (row: Record<string, unknown>): DailySessionDto => ({
+  sessionId: String(row.id),
+  sessionDate: row.session_date instanceof Date ? row.session_date.toISOString().slice(0, 10) : String(row.session_date).slice(0, 10),
+  status: row.status as DailySessionDto['status'],
+  targetCount: Number(row.target_count),
+  completedCount: Number(row.completed_count),
+  reviewCount: Number(row.review_count),
 })
 
 export class PostgresStudentRepository implements StudentRepository {
@@ -1077,6 +1121,177 @@ export class PostgresStudentRepository implements StudentRepository {
   async getStudentGameState(studentId: string): Promise<StudentGameStateResponse> {
     return readStudentGameState(this.pool, studentId)
   }
+
+  // 日付は Asia/Tokyo で切ります。UTC で切ると日本の朝 9 時前が前日扱いになります。
+  async getDailyPlan(studentId: string): Promise<DailyPlanResponse> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT settle_life_refill($1)', [studentId])
+      const state = await client.query<{ lives: number; refill_anchor_at: Date; session_date: string; review_cap: number }>(`
+        SELECT sl.lives, sl.refill_anchor_at,
+               (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date::text AS session_date,
+               daily_review_cap($1) AS review_cap
+        FROM student_lives sl WHERE sl.student_id = $1
+      `, [studentId])
+      const row = state.rows[0]!
+      const session = await client.query(`
+        SELECT id, session_date, status, target_count, completed_count, review_count
+        FROM daily_sessions WHERE student_id = $1 AND session_date = $2::date
+      `, [studentId, row.session_date])
+      await client.query('COMMIT')
+      return {
+        sessionDate: row.session_date,
+        lives: Number(row.lives),
+        maxLives: 5,
+        nextLifeAt: Number(row.lives) >= 5 ? null : new Date(row.refill_anchor_at.getTime() + 30 * 60 * 1000).toISOString(),
+        reviewCap: Number(row.review_cap),
+        session: session.rows[0] ? toDailySession(session.rows[0]) : null,
+      }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async startDailySession(studentId: string): Promise<DailySessionStartResponse | null> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [studentId, 'daily_session'])
+      const today = await client.query<{ session_date: string }>(
+        "SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date::text AS session_date",
+      )
+      const sessionDate = today.rows[0]!.session_date
+
+      // 復習は上限まで、残りを新規で埋めます（PRD: 復習は普通の関卡に混ぜる）。
+      const cap = await client.query<{ daily_review_cap: number }>('SELECT daily_review_cap($1)', [studentId])
+      const reviewCap = Number(cap.rows[0]!.daily_review_cap)
+      const target = 12
+
+      const reviews = await client.query<DailyItemRow>(`
+        SELECT ci.id, ci.item_kind, ci.knowledge_point_ref, ci.payload
+        FROM student_knowledge sk
+        JOIN content_items ci ON ci.knowledge_point_ref = sk.knowledge_point_ref AND ci.status = 'published'
+        WHERE sk.student_id = $1 AND sk.due_at <= CURRENT_TIMESTAMP
+        ORDER BY sk.due_at ASC
+        LIMIT least($2::int, $3::int)
+      `, [studentId, reviewCap, target])
+      const reviewIds = reviews.rows.map((item) => item.id)
+
+      const fresh = await client.query<DailyItemRow>(`
+        SELECT id, item_kind, knowledge_point_ref, payload
+        FROM content_items
+        WHERE status = 'published' AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+        ORDER BY created_at
+        LIMIT $1::int
+      `, [target - reviews.rows.length, reviewIds])
+
+      const picked = [...reviews.rows, ...fresh.rows]
+      if (picked.length < 12) {
+        await client.query('ROLLBACK')
+        return null
+      }
+
+      const created = await client.query(`
+        INSERT INTO daily_sessions (student_id, session_date, target_count, review_count)
+        VALUES ($1, $2::date, $3, $4)
+        ON CONFLICT (student_id, session_date) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+        RETURNING id, session_date, status, target_count, completed_count, review_count
+      `, [studentId, sessionDate, picked.length, reviews.rows.length])
+      await client.query('COMMIT')
+
+      const reviewSet = new Set(reviewIds)
+      return {
+        session: toDailySession(created.rows[0]!),
+        items: picked.map((item): DailyItemDto => ({
+          contentItemId: item.id,
+          itemKind: item.item_kind,
+          knowledgePointRef: item.knowledge_point_ref,
+          isReview: reviewSet.has(item.id),
+          prompt: publicDailyPrompt(item.item_kind, item.payload),
+        })),
+      }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async submitDailyAnswer(input: { studentId: string; sessionId: string; contentItemId: string; response: string | string[] | null; timedOut: boolean }): Promise<DailyAnswerResponse | null> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const session = await client.query(`
+        SELECT id, session_date, status, target_count, completed_count, review_count
+        FROM daily_sessions WHERE id = $1 AND student_id = $2 FOR UPDATE
+      `, [input.sessionId, input.studentId])
+      if (!session.rows[0]) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      const item = await client.query<DailyItemRow>(
+        "SELECT id, item_kind, knowledge_point_ref, payload FROM content_items WHERE id = $1 AND status = 'published'",
+        [input.contentItemId],
+      )
+      if (!item.rows[0]) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      const { item_kind: kind, payload, knowledge_point_ref: knowledgePointRef } = item.rows[0]
+      const correct = !input.timedOut && gradeDailyItem(kind, payload, input.response)
+      const outcome = input.timedOut ? 'skipped' : correct ? 'correct' : 'incorrect'
+
+      const inserted = await client.query(`
+        INSERT INTO daily_answers
+          (session_id, student_id, content_item_id, knowledge_point_ref, is_review, outcome, timed_out, earned_score, max_score, occurred_at)
+        VALUES ($1, $2, $3, $4, false, $5, $6, $7, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT (session_id, content_item_id) DO NOTHING
+        RETURNING id
+      `, [input.sessionId, input.studentId, input.contentItemId, knowledgePointRef, outcome, input.timedOut, correct ? 1 : 0])
+
+      // タイムアウトは知識の誤りではないので生命値を減らしません（P0-13）。
+      let lives: number
+      if (inserted.rows[0] && !correct && !input.timedOut) {
+        const spent = await client.query<{ spend_life: number }>('SELECT spend_life($1, $2) AS spend_life', [
+          input.studentId, `${input.sessionId}:${input.contentItemId}`,
+        ])
+        lives = Number(spent.rows[0]!.spend_life)
+      } else {
+        const settled = await client.query<{ settle_life_refill: number }>('SELECT settle_life_refill($1) AS settle_life_refill', [input.studentId])
+        lives = Number(settled.rows[0]!.settle_life_refill)
+      }
+
+      const updated = await client.query(`
+        UPDATE daily_sessions ds
+        SET completed_count = sub.answered,
+            status = CASE WHEN sub.answered >= ds.target_count THEN 'completed' ELSE ds.status END,
+            completed_at = CASE WHEN sub.answered >= ds.target_count THEN CURRENT_TIMESTAMP ELSE ds.completed_at END,
+            updated_at = CURRENT_TIMESTAMP
+        FROM (SELECT count(*)::int AS answered FROM daily_answers WHERE session_id = $1) AS sub
+        WHERE ds.id = $1
+        RETURNING ds.id, ds.session_date, ds.status, ds.target_count, ds.completed_count, ds.review_count
+      `, [input.sessionId])
+      await client.query('COMMIT')
+
+      return {
+        correct,
+        timedOut: input.timedOut,
+        explanation: String(payload.explanation ?? ''),
+        lives,
+        session: toDailySession(updated.rows[0]!),
+      }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
 }
 
 export class MemoryStudentRepository implements StudentRepository, AuthUserResolver {
@@ -1302,5 +1517,20 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
   async listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]> {
     void studentId
     return []
+  }
+
+  async getDailyPlan(studentId: string): Promise<DailyPlanResponse> {
+    void studentId
+    return { sessionDate: new Date().toISOString().slice(0, 10), lives: 5, maxLives: 5, nextLifeAt: null, reviewCap: 20, session: null }
+  }
+
+  async startDailySession(studentId: string): Promise<DailySessionStartResponse | null> {
+    void studentId
+    return null
+  }
+
+  async submitDailyAnswer(input: { studentId: string; sessionId: string; contentItemId: string; response: string | string[] | null; timedOut: boolean }): Promise<DailyAnswerResponse | null> {
+    void input
+    return null
   }
 }

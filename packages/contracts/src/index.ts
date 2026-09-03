@@ -409,6 +409,7 @@ export interface ConsentProjection {
 }
 
 export const stableErrorCodes = [
+  'DAILY_SESSION_NOT_AVAILABLE',
   'AUTH_REQUIRED',
   'AUTH_INVALID',
   'AUTH_FORBIDDEN',
@@ -499,4 +500,56 @@ export function sanitizeErrorDetails(input: unknown): SafeErrorDetails | undefin
   if (typeof value.revision === 'number' && Number.isInteger(value.revision) && value.revision >= 0) details.revision = value.revision
   if (typeof value.retryAfterSeconds === 'number' && Number.isInteger(value.retryAfterSeconds) && value.retryAfterSeconds >= 0) details.retryAfterSeconds = value.retryAfterSeconds
   return Object.keys(details).length > 0 ? details : undefined
+}
+
+/** 毎日ループで出題される 1 問。正解は含めません（採点はサーバー側）。 */
+export const dailyItemKinds = ['word_order', 'article', 'katakana'] as const
+export type DailyItemKind = (typeof dailyItemKinds)[number]
+
+export interface DailyItemDto {
+  contentItemId: string
+  itemKind: DailyItemKind
+  knowledgePointRef: string
+  isReview: boolean
+  /** 題型ごとの提示内容。正解・解説は採点後にのみ返します。 */
+  prompt: Record<string, unknown>
+}
+
+export interface DailySessionDto {
+  sessionId: string
+  sessionDate: string
+  status: 'open' | 'completed' | 'expired'
+  targetCount: number
+  completedCount: number
+  reviewCount: number
+}
+
+export interface DailyPlanResponse {
+  sessionDate: string
+  lives: number
+  maxLives: number
+  /** 次に生命値が 1 回復する時刻。満タンのときは null。 */
+  nextLifeAt: string | null
+  reviewCap: number
+  session: DailySessionDto | null
+}
+
+export interface DailySessionStartResponse {
+  session: DailySessionDto
+  items: DailyItemDto[]
+}
+
+export interface DailyAnswerRequest {
+  contentItemId: string
+  /** 語順は語の配列、冠詞・和製英語は選択肢の文字列。無解答は null。 */
+  response: string | string[] | null
+  timedOut?: boolean
+}
+
+export interface DailyAnswerResponse {
+  correct: boolean
+  timedOut: boolean
+  explanation: string
+  lives: number
+  session: DailySessionDto
 }

@@ -1,0 +1,160 @@
+import { PGlite } from '@electric-sql/pglite'
+import type { Pool } from 'pg'
+import { afterEach, describe, expect, it } from 'vitest'
+import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
+import { PostgresStudentRepository } from '../src/repository.js'
+import { seedContentItems } from '../src/seed-content.js'
+
+const databases: PGlite[] = []
+const STUDENT = '00000000-0000-0000-0000-0000000000b1'
+
+const asMigrationDatabase = (database: PGlite): MigrationDatabase => ({
+  query: async <Row extends Record<string, unknown>>(sql: string, parameters?: unknown[]) => {
+    if (parameters === undefined && sql.split(';').filter((statement) => statement.trim().length > 0).length > 1) {
+      const results = await database.exec(sql)
+      return { rows: (results.at(-1)?.rows ?? []) as Row[] }
+    }
+    const result = await database.query<Row>(sql, parameters)
+    return { rows: result.rows }
+  },
+})
+
+const setup = async () => {
+  const database = new PGlite()
+  databases.push(database)
+  await runMigrations(asMigrationDatabase(database))
+  await database.query(
+    "INSERT INTO users (id, role, birth_month, is_minor) VALUES ($1, 'student', '2012-04-01', true)",
+    [STUDENT],
+  )
+  await seedContentItems(database, { publishForDemo: true })
+  const client = { query: database.query.bind(database), release: () => undefined }
+  const pool = { query: database.query.bind(database), connect: async () => client } as unknown as Pool
+  return { database, repository: new PostgresStudentRepository(pool) }
+}
+
+describe('daily loop repository', () => {
+  afterEach(async () => {
+    await Promise.all(databases.map((database) => database.close()))
+    databases.length = 0
+  })
+
+  it('reports full lives and no session before the first level', async () => {
+    const { repository } = await setup()
+    const plan = await repository.getDailyPlan(STUDENT)
+    expect(plan).toMatchObject({ lives: 5, maxLives: 5, nextLifeAt: null, reviewCap: 20, session: null })
+  })
+
+  it('starts a level of twelve items and never sends the answers', async () => {
+    const { repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    expect(started).not.toBeNull()
+    expect(started!.session.targetCount).toBe(12)
+    expect(started!.items).toHaveLength(12)
+    for (const item of started!.items) {
+      const serialised = JSON.stringify(item.prompt)
+      expect(serialised).not.toContain('"answer"')
+      expect(serialised).not.toContain('"answers"')
+      expect(serialised).not.toContain('explanation')
+      expect(serialised).not.toContain('naturalEnglish')
+    }
+  })
+
+  it('returns the same session for a second start on the same day', async () => {
+    const { repository } = await setup()
+    const first = await repository.startDailySession(STUDENT)
+    const second = await repository.startDailySession(STUDENT)
+    expect(second!.session.sessionId).toBe(first!.session.sessionId)
+  })
+
+  it('grades a word order answer and accepts an equivalent order', async () => {
+    const { database, repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    const item = started!.items.find((entry) => entry.itemKind === 'word_order' && (entry.prompt.blocks as string[]).includes('yesterday'))!
+    const stored = await database.query<{ payload: { answers: string[][] } }>(
+      'SELECT payload FROM content_items WHERE id = $1', [item.contentItemId],
+    )
+    const [first, second] = stored.rows[0]!.payload.answers
+    const result = await repository.submitDailyAnswer({
+      studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+      response: second ?? first!, timedOut: false,
+    })
+    expect(result!.correct).toBe(true)
+    expect(result!.lives).toBe(5)
+    expect(result!.explanation).not.toBe('')
+  })
+
+  it('spends a life on a wrong answer and only once per item', async () => {
+    const { repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    const item = started!.items[0]!
+    const first = await repository.submitDailyAnswer({
+      studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+      response: ['definitely', 'wrong'], timedOut: false,
+    })
+    expect(first!.correct).toBe(false)
+    expect(first!.lives).toBe(4)
+
+    const retry = await repository.submitDailyAnswer({
+      studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+      response: ['definitely', 'wrong'], timedOut: false,
+    })
+    expect(retry!.lives).toBe(4)
+    expect(retry!.session.completedCount).toBe(1)
+  })
+
+  it('does not spend a life when the article sensor times out', async () => {
+    const { repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    const item = started!.items.find((entry) => entry.itemKind === 'article')!
+    const result = await repository.submitDailyAnswer({
+      studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+      response: null, timedOut: true,
+    })
+    expect(result!.correct).toBe(false)
+    expect(result!.timedOut).toBe(true)
+    expect(result!.lives).toBe(5)
+  })
+
+  it('completes the session once every item is answered', async () => {
+    const { repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    let last = null
+    for (const item of started!.items) {
+      last = await repository.submitDailyAnswer({
+        studentId: STUDENT, sessionId: started!.session.sessionId, contentItemId: item.contentItemId,
+        response: null, timedOut: true,
+      })
+    }
+    expect(last!.session.completedCount).toBe(12)
+    expect(last!.session.status).toBe('completed')
+  })
+
+  it('refuses an answer for someone else’s session', async () => {
+    const { database, repository } = await setup()
+    const started = await repository.startDailySession(STUDENT)
+    await database.query(
+      "INSERT INTO users (id, role, birth_month, is_minor) VALUES ('00000000-0000-0000-0000-0000000000b2', 'student', '2011-04-01', true)",
+    )
+    const result = await repository.submitDailyAnswer({
+      studentId: '00000000-0000-0000-0000-0000000000b2',
+      sessionId: started!.session.sessionId,
+      contentItemId: started!.items[0]!.contentItemId,
+      response: null, timedOut: true,
+    })
+    expect(result).toBeNull()
+  })
+
+  it('will not start a level when the bank has no published items', async () => {
+    const database = new PGlite()
+    databases.push(database)
+    await runMigrations(asMigrationDatabase(database))
+    await database.query(
+      "INSERT INTO users (id, role, birth_month, is_minor) VALUES ($1, 'student', '2012-04-01', true)", [STUDENT],
+    )
+    await seedContentItems(database) // in_review のまま
+    const client = { query: database.query.bind(database), release: () => undefined }
+    const repository = new PostgresStudentRepository({ query: database.query.bind(database), connect: async () => client } as unknown as Pool)
+    expect(await repository.startDailySession(STUDENT)).toBeNull()
+  })
+})

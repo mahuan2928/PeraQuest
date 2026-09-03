@@ -10,6 +10,399 @@
     }
   ],
   "paths": {
+    "/api/v1/me/daily-plan": {
+      "get": {
+        "operationId": "getDailyPlan",
+        "summary": "Read today's level, remaining lives, and review cap.",
+        "description": "Student-only formal API. The day is cut in Asia/Tokyo. Lives recover one every thirty minutes and are settled on read.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Today's plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyPlanResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/me/daily-sessions": {
+      "post": {
+        "operationId": "startDailySession",
+        "summary": "Start or resume today's level.",
+        "description": "One session per learner per day. Reviews are mixed into the level up to the review cap. Item payloads never include answers.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Session and its items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailySessionStartResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Not enough published items to fill a level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StableError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/daily-sessions/{sessionId}/answers": {
+      "post": {
+        "operationId": "submitDailyAnswer",
+        "summary": "Submit one answer and receive server-side grading.",
+        "description": "Grading happens on the server. A wrong answer costs one life, once per item; a timeout costs none.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DailyAnswerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Grading result and updated session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyAnswerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/me/game-state": {
+      "get": {
+        "operationId": "getStudentGameState",
+        "summary": "Read the current Bearer student's Quest progress, XP, activity coins, and badges.",
+        "description": "Student-only formal API. Rewards are projected only from server-verified learning and guardian-link events.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current Quest progress and reward wallet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentGameStateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/stage-attempts/{stageAttemptId}": {
+      "get": {
+        "operationId": "getStageAttempt",
+        "summary": "Read the current Bearer student's open formal stage attempt snapshot.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "stageAttemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Formal stage attempt snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartStageAttemptResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/stage-attempts/{stageAttemptId}/result": {
+      "get": {
+        "operationId": "getStageAttemptResult",
+        "summary": "Read the current Bearer student's submitted formal stage attempt result.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "stageAttemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-scored formal stage attempt result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageAttemptResultResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/stage-attempts/{stageAttemptId}/submit": {
+      "post": {
+        "operationId": "submitStageAttempt",
+        "summary": "Submit all formal stage attempt answers and receive the server-scored result.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "stageAttemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/FormalIdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitStageAttemptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-scored formal stage attempt result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageAttemptResultResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          }
+        }
+      }
+    },
+    "/api/v1/stage-exams/{stageExamId}/attempts": {
+      "post": {
+        "operationId": "startStageAttempt",
+        "summary": "Start a formal stage exam attempt from the Bearer student identity.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "stageExamId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/FormalIdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Formal stage attempt started or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartStageAttemptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/student-knowledge": {
+      "get": {
+        "operationId": "listStudentKnowledgeProjections",
+        "summary": "List the current Bearer student's materialized mastery and due projections.",
+        "description": "Returns only existing student_knowledge projection rows for the authenticated Student. It does not materialize state=new rows and does not allow Guardian-derived student inference.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student mastery/due projections ordered by dueAt then knowledgePointRef",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentKnowledgeProjectionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "operationId": "getHealth",
@@ -92,204 +485,6 @@
         },
         "parameters": [],
         "security": []
-      }
-    },
-    "/v1/payments/web-checkout/webhook": {
-      "post": {
-        "operationId": "processWebCheckoutWebhook",
-        "summary": "Process a signed web-checkout subscription event into student entitlements.",
-        "description": "Server-to-server endpoint. The provider eventId is the idempotency key; clients must not send learner credentials or raw payment secrets.",
-        "security": [
-          {
-            "WebhookSignature": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WebCheckoutWebhookRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Webhook accepted and entitlement projection updated or deduplicated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WebCheckoutWebhookResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "description": "Unsupported webhook event type",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        }
-      }
-    },
-    "/v1/students/onboarding": {
-      "post": {
-        "operationId": "onboardStudent",
-        "summary": "Create an Eiken Grade 3 learner profile and determine guardian requirements.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StudentOnboardingRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Student onboarded",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StudentOnboardingResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Resource-Revision": {
-                "description": "Current resource revision.",
-                "schema": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          }
-        },
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
-        ]
-      }
-    },
-    "/v1/me/guardian-link": {
-      "get": {
-        "operationId": "getGuardianLink",
-        "summary": "Read the current learner's guardian-link state.",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/StudentId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Guardian-link state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GuardianLink"
-                }
-              }
-            },
-            "headers": {
-              "X-Resource-Revision": {
-                "description": "Current resource revision.",
-                "schema": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          }
-        }
-      }
-    },
-    "/v1/me/guardian-link/invitations": {
-      "post": {
-        "operationId": "createGuardianInvitation",
-        "summary": "Create a short-lived guardian invitation code for the current minor student.",
-        "description": "Bearer student only. The raw invite code is returned once to the student client; only a server-side hash is stored.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Guardian invitation created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GuardianInvitationResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          }
-        }
       }
     },
     "/v1/guardian-links/verification": {
@@ -403,11 +598,149 @@
         }
       }
     },
+    "/v1/guardian-links/{studentId}/learning-summary": {
+      "get": {
+        "operationId": "getGuardianLearningSummary",
+        "summary": "Read a verified guardian's child learning summary.",
+        "description": "Bearer guardian only. Aggregates child mastery projections and Quest state into guardian-readable report copy.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guardian-readable child learning summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianLearningSummaryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/guardian-links/{studentId}/student-knowledge": {
+      "get": {
+        "operationId": "listGuardianStudentKnowledgeProjections",
+        "summary": "List a verified guardian's child mastery and due projections.",
+        "description": "Bearer guardian only. The target student must be linked to the authenticated guardian with a verified guardian link.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Child mastery/due projections ordered by dueAt then knowledgePointRef",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentKnowledgeProjectionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/me/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "summary": "Resolve server-authoritative learning, voice, commerce, notification, LINE-return, and entitlement capabilities.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StudentId"
+          },
+          {
+            "$ref": "#/components/parameters/ClientPlatform"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/v1/me/consents/voice-processing": {
       "put": {
         "operationId": "putVoiceConsent",
         "summary": "Record or withdraw the current voice-processing consent version.",
-        "description": "Supports Bearer student self-write for non-minor learners. Deprecated X-Student-Id/X-Guardian-Id headers remain only for legacy compatibility and minor guardian consent policy.",
+        "description": "Consent writes may be attributed to the verified guardian actor. Legacy X-Guardian-Id is deprecated and retained only for compatibility.",
         "security": [
           {
             "BearerAuth": []
@@ -472,57 +805,6 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          }
-        },
-        "description": "Consent writes may be attributed to the verified guardian actor. Legacy X-Guardian-Id is deprecated and retained only for compatibility."
-      }
-    },
-    "/v1/me/capabilities": {
-      "get": {
-        "operationId": "getCapabilities",
-        "summary": "Resolve server-authoritative learning, voice, commerce, notification, LINE-return, and entitlement capabilities.",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/StudentId"
-          },
-          {
-            "$ref": "#/components/parameters/ClientPlatform"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Resolved capabilities",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Capabilities"
-                }
-              }
-            },
-            "headers": {
-              "X-Resource-Revision": {
-                "description": "Current resource revision.",
-                "schema": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
@@ -632,6 +914,94 @@
         }
       }
     },
+    "/v1/me/guardian-link": {
+      "get": {
+        "operationId": "getGuardianLink",
+        "summary": "Read the current learner's guardian-link state.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/StudentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guardian-link state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianLink"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/v1/me/guardian-link/invitations": {
+      "post": {
+        "operationId": "createGuardianInvitation",
+        "summary": "Create a short-lived guardian invitation code for the current minor student.",
+        "description": "Bearer student only. The raw invite code is returned once to the student client; only a server-side hash is stored.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Guardian invitation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardianInvitationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/v1/me/voice-upload-ticket": {
       "post": {
         "operationId": "createVoiceUploadTicket",
@@ -702,273 +1072,14 @@
         }
       }
     },
-    "/api/v1/stage-exams/{stageExamId}/attempts": {
+    "/v1/payments/web-checkout/webhook": {
       "post": {
-        "operationId": "startStageAttempt",
-        "summary": "Start a formal stage exam attempt from the Bearer student identity.",
+        "operationId": "processWebCheckoutWebhook",
+        "summary": "Process a signed web-checkout subscription event into student entitlements.",
+        "description": "Server-to-server endpoint. The provider eventId is the idempotency key; clients must not send learner credentials or raw payment secrets.",
         "security": [
           {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "stageExamId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "$ref": "#/components/parameters/FormalIdempotencyKey"
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Formal stage attempt started or idempotently replayed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StartStageAttemptResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          }
-        }
-      }
-    },
-    "/api/v1/student-knowledge": {
-      "get": {
-        "operationId": "listStudentKnowledgeProjections",
-        "summary": "List the current Bearer student's materialized mastery and due projections.",
-        "description": "Returns only existing student_knowledge projection rows for the authenticated Student. It does not materialize state=new rows and does not allow Guardian-derived student inference.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Student mastery/due projections ordered by dueAt then knowledgePointRef",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StudentKnowledgeProjectionListResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/api/v1/me/game-state": {
-      "get": {
-        "operationId": "getStudentGameState",
-        "summary": "Read the current Bearer student's Quest progress, XP, activity coins, and badges.",
-        "description": "Student-only formal API. Rewards are projected only from server-verified learning and guardian-link events.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Current Quest progress and reward wallet",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StudentGameStateResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
-    "/v1/guardian-links/{studentId}/student-knowledge": {
-      "get": {
-        "operationId": "listGuardianStudentKnowledgeProjections",
-        "summary": "List a verified guardian's child mastery and due projections.",
-        "description": "Bearer guardian only. The target student must be linked to the authenticated guardian with a verified guardian link.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "studentId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Child mastery/due projections ordered by dueAt then knowledgePointRef",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StudentKnowledgeProjectionListResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
-    "/v1/guardian-links/{studentId}/learning-summary": {
-      "get": {
-        "operationId": "getGuardianLearningSummary",
-        "summary": "Read a verified guardian's child learning summary.",
-        "description": "Bearer guardian only. Aggregates child mastery projections and Quest state into guardian-readable report copy.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "studentId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Guardian-readable child learning summary",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GuardianLearningSummaryResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
-    "/api/v1/stage-attempts/{stageAttemptId}": {
-      "get": {
-        "operationId": "getStageAttempt",
-        "summary": "Read the current Bearer student's open formal stage attempt snapshot.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "stageAttemptId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Formal stage attempt snapshot",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StartStageAttemptResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
-    "/api/v1/stage-attempts/{stageAttemptId}/submit": {
-      "post": {
-        "operationId": "submitStageAttempt",
-        "summary": "Submit all formal stage attempt answers and receive the server-scored result.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "stageAttemptId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "$ref": "#/components/parameters/FormalIdempotencyKey"
+            "WebhookSignature": []
           }
         ],
         "requestBody": {
@@ -976,18 +1087,77 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SubmitStageAttemptRequest"
+                "$ref": "#/components/schemas/WebCheckoutWebhookRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Server-scored formal stage attempt result",
+            "description": "Webhook accepted and entitlement projection updated or deduplicated",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StageAttemptResultResponse"
+                  "$ref": "#/components/schemas/WebCheckoutWebhookResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "description": "Unsupported webhook event type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/students/onboarding": {
+      "post": {
+        "operationId": "onboardStudent",
+        "summary": "Create an Eiken Grade 3 learner profile and determine guardian requirements.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudentOnboardingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Student onboarded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentOnboardingResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Resource-Revision": {
+                "description": "Current resource revision.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -1001,59 +1171,15 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
           "409": {
             "$ref": "#/components/responses/Conflict"
-          },
-          "410": {
-            "$ref": "#/components/responses/Gone"
           }
-        }
-      }
-    },
-    "/api/v1/stage-attempts/{stageAttemptId}/result": {
-      "get": {
-        "operationId": "getStageAttemptResult",
-        "summary": "Read the current Bearer student's submitted formal stage attempt result.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        },
         "parameters": [
           {
-            "name": "stageAttemptId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
-        ],
-        "responses": {
-          "200": {
-            "description": "Server-scored formal stage attempt result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StageAttemptResultResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
+        ]
       }
     },
     "/v1/trial-attempts": {
@@ -3002,6 +3128,226 @@
           },
           "duplicate": {
             "type": "boolean"
+          }
+        }
+      },
+      "DailySessionDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sessionId",
+          "sessionDate",
+          "status",
+          "targetCount",
+          "completedCount",
+          "reviewCount"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessionDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Session day, cut in Asia/Tokyo."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "completed",
+              "expired"
+            ]
+          },
+          "targetCount": {
+            "type": "integer",
+            "minimum": 12,
+            "maximum": 15
+          },
+          "completedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reviewCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "DailyItemDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contentItemId",
+          "itemKind",
+          "knowledgePointRef",
+          "isReview",
+          "prompt"
+        ],
+        "properties": {
+          "contentItemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "itemKind": {
+            "type": "string",
+            "enum": [
+              "word_order",
+              "article",
+              "katakana"
+            ]
+          },
+          "knowledgePointRef": {
+            "type": "string"
+          },
+          "isReview": {
+            "type": "boolean"
+          },
+          "prompt": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Presentation only. Correct answers and explanations are never sent with the item."
+          }
+        }
+      },
+      "DailyPlanResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sessionDate",
+          "lives",
+          "maxLives",
+          "nextLifeAt",
+          "reviewCap",
+          "session"
+        ],
+        "properties": {
+          "sessionDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "lives": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "maxLives": {
+            "type": "integer",
+            "const": 5
+          },
+          "nextLifeAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When one life is restored. Null while full."
+          },
+          "reviewCap": {
+            "type": "integer",
+            "description": "20 for a new learner, 60 once established."
+          },
+          "session": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DailySessionDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "DailySessionStartResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session",
+          "items"
+        ],
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/DailySessionDto"
+          },
+          "items": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 15,
+            "items": {
+              "$ref": "#/components/schemas/DailyItemDto"
+            }
+          }
+        }
+      },
+      "DailyAnswerRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contentItemId",
+          "response"
+        ],
+        "properties": {
+          "contentItemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "response": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "minItems": 1,
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Word order sends the ordered blocks; the other kinds send the chosen option."
+          },
+          "timedOut": {
+            "type": "boolean",
+            "description": "A timeout is recorded as skipped and never costs a life."
+          }
+        }
+      },
+      "DailyAnswerResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "correct",
+          "timedOut",
+          "explanation",
+          "lives",
+          "session"
+        ],
+        "properties": {
+          "correct": {
+            "type": "boolean"
+          },
+          "timedOut": {
+            "type": "boolean"
+          },
+          "explanation": {
+            "type": "string",
+            "description": "Returned only after grading."
+          },
+          "lives": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "session": {
+            "$ref": "#/components/schemas/DailySessionDto"
           }
         }
       }

@@ -14,6 +14,9 @@ describe('OpenAPI document', () => {
     const document = JSON.parse(await readFile(resolve(process.cwd(), '../../docs/api/openapi.json'), 'utf8')) as OpenApiDocument
     expect(document.openapi).toBe('3.1.0')
     expect(Object.keys(document.paths).sort()).toEqual([
+      '/api/v1/me/daily-plan',
+      '/api/v1/me/daily-sessions',
+      '/api/v1/me/daily-sessions/{sessionId}/answers',
       '/api/v1/me/game-state',
       '/api/v1/stage-attempts/{stageAttemptId}',
       '/api/v1/stage-attempts/{stageAttemptId}/result',
@@ -108,7 +111,16 @@ describe('OpenAPI document', () => {
       .flatMap((item) => Object.entries(item)
         .filter(([method]) => ['post', 'put', 'patch', 'delete'].includes(method))
         .map(([, operation]) => operation as { operationId?: string; parameters?: Array<{ $ref?: string }>; security?: unknown }))
-      .filter((operation) => !['createDemoSession', 'processWebCheckoutWebhook'].includes(operation.operationId ?? ''))
+      .filter((operation) => ![
+        'createDemoSession',
+        'processWebCheckoutWebhook',
+        // 毎日ループの書き込みは一意キーで冪等です。
+        // startDailySession は UNIQUE(student_id, session_date)、
+        // submitDailyAnswer は UNIQUE(session_id, content_item_id) で、
+        // 再送しても同じセッションが返り、生命値は二度減りません。
+        'startDailySession',
+        'submitDailyAnswer',
+      ].includes(operation.operationId ?? ''))
     expect(writeOperations.every((operation) => operation.parameters?.some((parameter) => parameter.$ref === '#/components/parameters/IdempotencyKey' || parameter.$ref === '#/components/parameters/FormalIdempotencyKey'))).toBe(true)
     const createDemoSessionOperation = document.paths['/v1/demo/session']?.post
     const startStageAttemptOperation = document.paths['/api/v1/stage-exams/{stageExamId}/attempts']?.post

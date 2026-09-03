@@ -4,6 +4,9 @@ import { z } from 'zod'
 import { sanitizeErrorDetails } from '@peraquest/contracts'
 import type {
   CapabilityResponse,
+  DailyAnswerResponse,
+  DailyPlanResponse,
+  DailySessionStartResponse,
   ClientPlatform,
   ConsentResponse,
   CurrentDevicePushDisableResponse,
@@ -61,6 +64,11 @@ const voiceUploadTicketSchema = z.object({
 const demoSessionSchema = z.object({ scenario: z.literal('minor_guardian_voice').optional() }).strict()
 const trialAnswerSchema = z.object({ questionId: z.string().min(1), answer: z.string().min(1).max(200) })
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+const dailyAnswerSchema = z.object({
+  contentItemId: uuidSchema,
+  response: z.union([z.string().min(1).max(200), z.array(z.string().min(1).max(60)).min(1).max(20)]).nullable(),
+  timedOut: z.boolean().optional(),
+}).strict()
 const idempotencyKeySchema = z.string().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/)
 const guardianInviteCodeSchema = z.string().min(16).max(128).regex(/^[A-Za-z0-9_-]+$/)
 const guardianLinkVerificationSchema = z.object({ inviteCode: guardianInviteCodeSchema }).strict()
@@ -439,7 +447,7 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
   }
 
-  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/api/v1/me/game-state') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification') || url.startsWith('/v1/guardian-links/')
+  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/api/v1/me/game-state') || url.startsWith('/api/v1/me/daily-') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification') || url.startsWith('/v1/guardian-links/')
   const protectedPath = (url: string): boolean => formalProtectedPath(url) || url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return
@@ -880,6 +888,39 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const student = await repository.findById(actor.id)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     return repository.getStudentGameState(actor.id)
+  })
+
+  app.get('/api/v1/me/daily-plan', async (request, reply): Promise<DailyPlanResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    return repository.getDailyPlan(actor.id)
+  })
+
+  app.post('/api/v1/me/daily-sessions', async (request, reply): Promise<DailySessionStartResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const started = await repository.startDailySession(actor.id)
+    // 公開済みの問題が 1 関卡ぶんに足りないときは、空のセッションを作らず理由を返します。
+    if (!started) return sendError(reply, 409, 'DAILY_SESSION_NOT_AVAILABLE')
+    return reply.code(201).send(started)
+  })
+
+  app.post<{ Params: { sessionId: string } }>('/api/v1/me/daily-sessions/:sessionId/answers', async (request, reply): Promise<DailyAnswerResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    const params = z.object({ sessionId: uuidSchema }).safeParse(request.params)
+    if (!params.success) return sendError(reply, 404, 'NOT_FOUND')
+    const parsed = dailyAnswerSchema.safeParse(request.body)
+    if (!parsed.success) return sendError(reply, 400, 'VALIDATION_FAILED', { resource: 'daily_answer', reason: 'invalid' })
+    const result = await repository.submitDailyAnswer({
+      studentId: actor.id,
+      sessionId: params.data.sessionId,
+      contentItemId: parsed.data.contentItemId,
+      response: parsed.data.response,
+      timedOut: parsed.data.timedOut === true,
+    })
+    if (!result) return sendError(reply, 404, 'NOT_FOUND')
+    return result
   })
 
   app.post<{ Params: { attemptId: string } }>('/v1/trial-attempts/:attemptId/answers', async (request, reply): Promise<TrialAnswerResponse | void> => {

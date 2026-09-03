@@ -513,3 +513,44 @@ small { font-size: max(.75rem, .8em); }
 .credits-list a { color: var(--green); font-size: .8rem; overflow-wrap: anywhere; }
 .credits-note { padding: 14px 16px; border-left: 5px solid var(--line); color: var(--muted-ink); font-size: .84rem; line-height: 1.6; }
 footer a { color: var(--muted-ink); font-size: .78rem; }
+
+/* ---- 今日の学習（日本人特化題型）---- */
+.daily-page { display: grid; gap: 16px; }
+.daily-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.daily-header h2 { margin: 0; font-size: clamp(1.2rem, 2.4vw, 1.6rem); }
+.daily-lives { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.daily-lives .life { color: var(--orange-ink); font-size: 1.3rem; line-height: 1; }
+.daily-lives .life.spent { color: var(--line); }
+.daily-lives small { width: 100%; color: var(--muted-ink); font-size: .75rem; }
+.daily-progress { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; color: var(--muted-ink); font-size: .82rem; font-weight: 700; }
+.daily-review-tag { padding: 3px 8px; border: 1px solid var(--green); color: var(--green); font-size: .72rem; font-weight: 900; }
+.daily-point { padding: 3px 8px; border: 1px solid var(--line); background: white; font-size: .75rem; }
+.daily-item { padding: 20px; border: 2px solid var(--ink); background: var(--paper); box-shadow: 5px 5px 0 var(--ink); }
+.daily-feedback { display: grid; gap: 8px; padding: 16px 18px; border: 2px solid var(--ink); border-left-width: 8px; background: white; }
+.daily-feedback.correct { border-left-color: var(--green); }
+.daily-feedback.timed-out { border-left-color: var(--orange-ink); }
+.daily-feedback strong { font-size: 1.05rem; }
+.daily-feedback p { margin: 0; color: var(--muted-ink); font-size: .88rem; line-height: 1.65; }
+.daily-done { display: grid; gap: 6px; padding: 20px; border: 2px solid var(--green); background: #f2ffdc; }
+
+.item-japanese { margin: 0 0 14px; font-size: 1.02rem; font-weight: 700; }
+.item-sentence { margin: 14px 0; font-size: clamp(1.1rem, 2.4vw, 1.45rem); font-weight: 700; }
+.item-lead { margin: 0; color: var(--muted-ink); font-size: .85rem; }
+
+.word-order-sentence { display: flex; flex-wrap: wrap; gap: 8px; min-height: 64px; padding: 12px; border: 2px dashed var(--line); background: white; }
+.word-order-empty { margin: 0; align-self: center; color: var(--muted-ink); font-size: .84rem; }
+.word-order-bank { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 18px; }
+.word-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; border: 2px solid var(--ink); background: var(--lime); font-size: .95rem; font-weight: 800; box-shadow: 3px 3px 0 var(--ink); }
+.word-chip.placed { gap: 4px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.word-chip.placed > button { min-height: 44px; padding: 8px 12px; border: 2px solid var(--ink); background: var(--paper); font-size: .95rem; font-weight: 800; }
+.word-chip-move { display: inline-flex; }
+.word-chip-move button { min-width: 32px; min-height: 44px; padding: 0 6px; border: 2px solid var(--ink); border-left: 0; background: white; font-size: 1rem; font-weight: 900; }
+
+.article-timer { height: 10px; margin-bottom: 6px; border: 2px solid var(--ink); background: white; }
+.article-timer span { display: block; height: 100%; background: var(--green); transition: width 1s linear; }
+.article-remaining { margin: 0; color: var(--muted-ink); font-size: .78rem; font-weight: 800; }
+.article-choices, .katakana-choices { display: flex; flex-wrap: wrap; gap: 10px; }
+.article-choices .secondary-action, .katakana-choices .secondary-action { min-height: 48px; margin: 0; }
+.katakana-word { margin: 10px 0 16px; font-size: clamp(1.5rem, 4vw, 2.2rem); font-weight: 1000; letter-spacing: .04em; }
+
+@media (prefers-reduced-motion: reduce) { .article-timer span { transition: none; } }

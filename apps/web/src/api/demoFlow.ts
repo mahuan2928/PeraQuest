@@ -153,3 +153,28 @@ export async function registerDemoDevice(studentToken: string): Promise<DemoRequ
     body: JSON.stringify({ platform: 'ios', deviceId: 'web-live-demo-device', appVersion: '1.0.0', osVersion: '17.5' }),
   })
 }
+
+// ---- 毎日ループ ----
+
+export async function fetchDailyPlan(studentToken: string): Promise<DemoRequestResult> {
+  return requestJson('/api/v1/me/daily-plan', { headers: bearerHeaders(studentToken) })
+}
+
+export async function startDailySession(studentToken: string): Promise<DemoRequestResult> {
+  return requestJson('/api/v1/me/daily-sessions', {
+    method: 'POST',
+    headers: bearerHeaders(studentToken),
+  })
+}
+
+export async function submitDailyAnswer(
+  studentToken: string,
+  sessionId: string,
+  body: { contentItemId: string; response: string | string[] | null; timedOut?: boolean },
+): Promise<DemoRequestResult> {
+  return requestJson(`/api/v1/me/daily-sessions/${sessionId}/answers`, {
+    method: 'POST',
+    headers: bearerHeaders(studentToken, { 'content-type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+}

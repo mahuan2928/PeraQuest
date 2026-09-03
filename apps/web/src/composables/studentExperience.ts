@@ -895,11 +895,13 @@ export function createStudentExperience(props: StudentExperienceProps, emit: Stu
 
   // SFC では props がテンプレートに自動公開されていたため、ページ側へ明示的に渡します。
   const knowledgeItems = computed(() => props.knowledgeItems)
+  const session = computed(() => props.session)
   const invitationCode = computed(() => props.invitationCode)
   const capabilities = computed(() => props.capabilities)
 
   return {
     knowledgeItems,
+    session,
     invitationCode,
     capabilities,
     demoStageExamId,

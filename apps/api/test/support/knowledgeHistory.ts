@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto'
+
 // 習熟度の投影は台帳からしか作れません（0020 のトリガ）。
 // テストで履歴を用意するための最小の道具です。時刻を指定できるので、
 // 窓・段位・次回予定の検証に使えます。
+// content_version は 0025 で生きている行の一意キーになったので、
+// 同じ知識ポイントに 2 回積んでも衝突しないよう毎回ユニークにします。
 
 export interface HistoryDatabase {
   query<Row extends Record<string, unknown> = Record<string, unknown>>(
@@ -55,7 +59,7 @@ export async function recordAnswers(
                $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, now(), $12)
        RETURNING id`,
       [
-        knowledgePointRef, LEDGER.dataset_version, `${LEDGER.content_version}-${knowledgePointRef}-${index}`,
+        knowledgePointRef, LEDGER.dataset_version, `${LEDGER.content_version}-${knowledgePointRef}-${index}-${randomUUID()}`,
         LEDGER.source_name, LEDGER.source_url, LEDGER.license_name, LEDGER.license_scope,
         LEDGER.attribution_text, LEDGER.attribution_location, LEDGER.author, LEDGER.reviewer, LEDGER.evidence_link,
       ],

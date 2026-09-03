@@ -1,4 +1,5 @@
 import type { Pool } from 'pg'
+import { dailyItemKinds } from '@peraquest/contracts'
 import type { CosmeticShopResponse, CosmeticItemDto, CosmeticPurchaseResponse, CosmeticPurchaseOutcome, ExamDateResponse, DailyAnswerResponse, DailyHintResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
@@ -463,15 +464,26 @@ interface DailyItemRow extends Record<string, unknown> {
 }
 
 // 出題時に正解や解説を送らないよう、題型ごとに提示部分だけを取り出します。
+// 既定の分岐は置きません。知らない題型は「最後の分岐の形」で配られるより、
+// ここで止まるほうが安全です（正解が混ざった payload をそのまま送る事故を防ぎます）。
 const publicDailyPrompt = (kind: DailyItemKind, payload: Record<string, unknown>): Record<string, unknown> => {
-  if (kind === 'word_order') {
-    return { japanese: payload.japanese, blocks: payload.blocks }
+  switch (kind) {
+    case 'word_order':
+      return { japanese: payload.japanese, blocks: payload.blocks }
+    case 'article':
+      return { sentence: payload.sentence, choices: payload.choices, timeLimitSeconds: payload.timeLimitSeconds }
+    case 'katakana':
+      return { katakana: payload.katakana, choices: payload.choices }
+    case 'mcq':
+      return { sentence: payload.sentence, choices: payload.choices }
   }
-  if (kind === 'article') {
-    return { sentence: payload.sentence, choices: payload.choices, timeLimitSeconds: payload.timeLimitSeconds }
-  }
-  return { katakana: payload.katakana, choices: payload.choices }
 }
+
+// 採点も同じ理由で網羅します。合っている分岐に偶然落ちるのと、
+// 意図してその分岐にいるのは別のことです。
+// DB の CHECK は pronunciation も許しますが、出題も採点もできません。
+// 出題キューはここにある題型だけを拾います。
+const renderableItemKinds = [...dailyItemKinds]
 
 const gradeDailyItem = (kind: DailyItemKind, payload: Record<string, unknown>, response: string | string[] | null): boolean => {
   if (response === null) return false
@@ -481,7 +493,12 @@ const gradeDailyItem = (kind: DailyItemKind, payload: Record<string, unknown>, r
     return accepted.some((answer) => answer.length === response.length && answer.every((word, index) => word === response[index]))
   }
   if (Array.isArray(response)) return false
-  return response === payload.answer
+  switch (kind) {
+    case 'article':
+    case 'katakana':
+    case 'mcq':
+      return response === payload.answer
+  }
 }
 
 // 体力が尽きたときに出すヒント。正解そのものは返さず、選択肢を 1 つ減らすか
@@ -1281,13 +1298,14 @@ export class PostgresStudentRepository implements StudentRepository {
       const reviews = await client.query<DailyItemRow>(`
         SELECT ci.id, ci.item_kind, ci.knowledge_point_ref, ci.payload
         FROM student_knowledge sk
-        JOIN content_items ci ON ci.knowledge_point_ref = sk.knowledge_point_ref AND ci.status = 'published'
+        JOIN content_items ci ON ci.knowledge_point_ref = sk.knowledge_point_ref
+          AND ci.status = 'published' AND ci.item_kind = ANY($4::text[])
         JOIN users u ON u.id = sk.student_id
         WHERE sk.student_id = $1
           AND knowledge_effective_due_at(sk.due_at, sk.state, sk.last_occurred_at, u.exam_date) <= CURRENT_TIMESTAMP
         ORDER BY knowledge_effective_due_at(sk.due_at, sk.state, sk.last_occurred_at, u.exam_date) ASC
         LIMIT least($2::int, $3::int)
-      `, [studentId, reviewCap, target])
+      `, [studentId, reviewCap, target, renderableItemKinds])
       const reviewIds = reviews.rows.map((item) => item.id)
 
       // 新規の知識ポイントは 1 日 3 個まで。さらに、期限切れの滞留が日額の 1.5 倍を超えたら
@@ -1306,7 +1324,7 @@ export class PostgresStudentRepository implements StudentRepository {
         WITH admitted AS (
           SELECT DISTINCT ci.knowledge_point_ref
           FROM content_items ci
-          WHERE ci.status = 'published'
+          WHERE ci.status = 'published' AND ci.item_kind = ANY($5::text[])
             AND NOT EXISTS (
               SELECT 1 FROM student_knowledge sk
               WHERE sk.student_id = $3 AND sk.knowledge_point_ref = ci.knowledge_point_ref
@@ -1316,12 +1334,12 @@ export class PostgresStudentRepository implements StudentRepository {
         )
         SELECT id, item_kind, knowledge_point_ref, payload
         FROM content_items
-        WHERE status = 'published'
+        WHERE status = 'published' AND item_kind = ANY($5::text[])
           AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
           AND knowledge_point_ref IN (SELECT knowledge_point_ref FROM admitted)
         ORDER BY created_at
         LIMIT $1::int
-      `, [target - reviews.rows.length, reviewIds, studentId, intake])
+      `, [target - reviews.rows.length, reviewIds, studentId, intake, renderableItemKinds])
 
       // 閘門は新しい知識ポイントを増やさないためのものです。すでに回転に入っている
       // ポイントの追加練習は待ち行列を伸ばさないので、最低問数に届かないぶんはこれで埋めます。
@@ -1331,7 +1349,7 @@ export class PostgresStudentRepository implements StudentRepository {
         ? await client.query<DailyItemRow>(`
             SELECT id, item_kind, knowledge_point_ref, payload
             FROM content_items
-            WHERE status = 'published'
+            WHERE status = 'published' AND item_kind = ANY($4::text[])
               AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
               AND EXISTS (
                 SELECT 1 FROM student_knowledge sk
@@ -1339,7 +1357,7 @@ export class PostgresStudentRepository implements StudentRepository {
               )
             ORDER BY created_at
             LIMIT $1::int
-          `, [shortfall, pickedIds, studentId])
+          `, [shortfall, pickedIds, studentId, renderableItemKinds])
         : { rows: [] as DailyItemRow[] }
 
       // 投入上限はペース配分、12 問は試験カバレッジの下限です。ぶつかったら下限が勝ちます。
@@ -1350,10 +1368,11 @@ export class PostgresStudentRepository implements StudentRepository {
         ? await client.query<DailyItemRow>(`
             SELECT id, item_kind, knowledge_point_ref, payload
             FROM content_items
-            WHERE status = 'published' AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+            WHERE status = 'published' AND item_kind = ANY($3::text[])
+              AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
             ORDER BY created_at
             LIMIT $1::int
-          `, [target - capped.length, capped.map((item) => item.id)])
+          `, [target - capped.length, capped.map((item) => item.id), renderableItemKinds])
         : { rows: [] as DailyItemRow[] }
 
       const picked = [...capped, ...topUp.rows]

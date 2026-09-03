@@ -5,10 +5,11 @@ import { studentExperienceKey } from '../composables/studentExperience'
 import WordOrderItem from '../components/daily/WordOrderItem.vue'
 import ArticleSensorItem from '../components/daily/ArticleSensorItem.vue'
 import KatakanaHunterItem from '../components/daily/KatakanaHunterItem.vue'
+import McqItem from '../components/daily/McqItem.vue'
 
 type DailyItem = {
   contentItemId: string
-  itemKind: 'word_order' | 'article' | 'katakana'
+  itemKind: 'word_order' | 'article' | 'katakana' | 'mcq'
   knowledgePointRef: string
   isReview: boolean
   prompt: Record<string, unknown>
@@ -261,6 +262,12 @@ onMounted(async () => {
           @timeout="answer(null, true)"
         />
         <KatakanaHunterItem
+          v-else-if="current!.itemKind === 'katakana'"
+          :prompt="current!.prompt"
+          :disabled="busy || Boolean(feedback)"
+          @answer="answer"
+        />
+        <McqItem
           v-else
           :prompt="current!.prompt"
           :disabled="busy || Boolean(feedback)"

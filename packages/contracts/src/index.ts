@@ -515,7 +515,7 @@ export function sanitizeErrorDetails(input: unknown): SafeErrorDetails | undefin
 }
 
 /** 毎日ループで出題される 1 問。正解は含めません（採点はサーバー側）。 */
-export const dailyItemKinds = ['word_order', 'article', 'katakana'] as const
+export const dailyItemKinds = ['word_order', 'article', 'katakana', 'mcq'] as const
 export type DailyItemKind = (typeof dailyItemKinds)[number]
 
 export interface DailyItemDto {

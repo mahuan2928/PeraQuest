@@ -156,6 +156,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
           '0022_cosmetic_shop_and_coin_sink.sql',
           '0023_daily_streak.sql',
           '0024_stage_retake_gate.sql',
+          '0025_content_item_version_unique.sql',
         ],
         [],
       ])
@@ -189,6 +190,7 @@ describePostgres('learning P1.1 PostgreSQL concurrency', () => {
         { name: '0022_cosmetic_shop_and_coin_sink.sql', count: '1' },
         { name: '0023_daily_streak.sql', count: '1' },
         { name: '0024_stage_retake_gate.sql', count: '1' },
+        { name: '0025_content_item_version_unique.sql', count: '1' },
       ])
     } finally {
       await Promise.all([first.end(), second.end()])

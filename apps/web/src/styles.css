@@ -598,3 +598,5 @@ footer a { color: var(--muted-ink); font-size: .78rem; }
 .streak-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 14px; }
 .streak-line strong { font-size: 1.05rem; }
 .streak-line small { color: var(--muted-ink); font-size: max(.75rem, .8em); }
+.mcq-choices { display: grid; gap: 10px; }
+.mcq-choices button { min-height: 48px; justify-content: flex-start; text-align: left; }

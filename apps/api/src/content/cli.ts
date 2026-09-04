@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { Client } from 'pg'
 import { MINIMUM_ITEMS_PER_KNOWLEDGE_POINT, RECOMMENDED_ITEMS_PER_KNOWLEDGE_POINT } from './schema.js'
 import { importContentItems, publishKnowledgePoint, readContentDirectory, readCoverage, validateContent } from './pipeline.js'
+import { readKnowledgePoints } from './knowledgePoints.js'
 
 // 実行時の作業ディレクトリに依存させません。npm run の起点が変わるだけで
 // 「0 題」と報告されるのがいちばん困ります。
@@ -60,29 +61,32 @@ const commands: Record<string, () => Promise<void>> = {
   },
 
   async coverage() {
+    const points = await readKnowledgePoints()
     const client = await connect()
     try {
-      const rows = await readCoverage(client)
-      if (rows.length === 0) {
-        console.log('no content items yet')
-        return
-      }
-      console.log('knowledge point'.padEnd(32) + 'published  in_review  to minimum  to recommended')
-      for (const row of rows) {
+      const rows = await readCoverage(client, points)
+      const onlyFirst = process.argv.includes('--first-30')
+      const shown = onlyFirst ? rows.filter((row) => row.status === 'first-30') : rows
+      console.log('#   knowledge point'.padEnd(38) + 'pub  rev   最低まで  推奨まで  状態')
+      for (const row of shown) {
         console.log(
-          row.knowledgePointRef.padEnd(32) +
-          String(row.published).padStart(9) +
-          String(row.inReview).padStart(11) +
-          String(row.shortfallToMinimum).padStart(12) +
-          String(row.shortfallToRecommended).padStart(16),
+          `${String(row.teachingOrder ?? '-').padStart(3)} ${row.knowledgePointRef}`.padEnd(38) +
+          String(row.published).padStart(3) + String(row.inReview).padStart(5) +
+          String(row.shortfallToMinimum).padStart(10) + String(row.shortfallToRecommended).padStart(10) +
+          '  ' + row.status,
         )
       }
-      // 合計ではなく最小値を見ます。合計が足りていても偏っていれば窓は壊れます。
-      const thinnest = rows.reduce((low, row) => Math.min(low, row.published), Number.POSITIVE_INFINITY)
+      // 合計ではなく「まだ 1 題も無い点の数」と「いちばん薄い点」を見ます。
+      // 合計が足りていても偏っていれば、2 日目に同じ問題が出ます。
+      const scope = rows.filter((row) => row.status === 'first-30')
+      const unstarted = scope.filter((row) => row.published + row.inReview === 0).length
+      const ready = scope.filter((row) => row.published >= MINIMUM_ITEMS_PER_KNOWLEDGE_POINT).length
       console.log(
-        `\nthinnest knowledge point has ${thinnest} published items ` +
-        `(minimum ${MINIMUM_ITEMS_PER_KNOWLEDGE_POINT}, recommended ${RECOMMENDED_ITEMS_PER_KNOWLEDGE_POINT})`,
+        `\n最初の 30 点: 公開ずみ ${ready} / 未着手 ${unstarted} / 残り ${scope.length - ready}` +
+        `（1 点あたり最低 ${MINIMUM_ITEMS_PER_KNOWLEDGE_POINT}、推奨 ${RECOMMENDED_ITEMS_PER_KNOWLEDGE_POINT} 題）`,
       )
+      const remaining = scope.reduce((total, row) => total + row.shortfallToRecommended, 0)
+      console.log(`推奨まで残り ${remaining} 題`)
     } finally {
       await client.end()
     }

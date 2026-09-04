@@ -6,6 +6,7 @@ import { runMigrations, type MigrationDatabase } from '../src/migrate.js'
 import { seedContentItems } from '../src/seed-content.js'
 import { parseContentLines } from '../src/content/schema.js'
 import { importContentItems, publishKnowledgePoint, readContentDirectory, readCoverage, validateContent } from '../src/content/pipeline.js'
+import { readKnowledgePoints } from '../src/content/knowledgePoints.js'
 
 const databases: PGlite[] = []
 
@@ -149,12 +150,16 @@ describe('coverage', () => {
     await importContentItems(database, twelveItems)
     await publishKnowledgePoint(database, 'vocabulary.context', 'r')
     await importContentItems(database, [JSON.parse(line({ contentVersion: 'thin-1', knowledgePointRef: 'grammar.article' }))])
-    const rows = await readCoverage(database)
+    const rows = await readCoverage(database, await readKnowledgePoints())
     // 合計は 13 題ありますが、薄いポイントは 1 題です。窓を壊すのはこちらです。
-    expect(rows[0]).toMatchObject({ knowledgePointRef: 'grammar.article', published: 0, inReview: 1, shortfallToMinimum: 8 })
+    expect(rows.find((row) => row.knowledgePointRef === 'grammar.article'))
+      .toMatchObject({ published: 0, inReview: 1, shortfallToMinimum: 8 })
     expect(rows.find((row) => row.knowledgePointRef === 'vocabulary.context')).toMatchObject({
       published: 12, shortfallToMinimum: 0, shortfallToRecommended: 0,
     })
+    // 1 題も無い点も行として出ます。これが無いと「30 点中 29 点が未着手」を言えません。
+    const untouched = rows.find((row) => row.knowledgePointRef === 'grammar.be_present')
+    expect(untouched).toMatchObject({ published: 0, inReview: 0, shortfallToMinimum: 8, status: 'first-30' })
   })
 })
 

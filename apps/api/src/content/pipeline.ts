@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { KnowledgePoint } from './knowledgePoints.js'
 import {
   findDuplicateVersions, parseContentLines,
   MINIMUM_ITEMS_PER_KNOWLEDGE_POINT, RECOMMENDED_ITEMS_PER_KNOWLEDGE_POINT,
@@ -99,6 +100,9 @@ export const importContentItems = async (
 
 export interface CoverageRow {
   knowledgePointRef: string
+  labelJa: string
+  teachingOrder: number | null
+  status: KnowledgePoint['status']
   published: number
   inReview: number
   shortfallToMinimum: number
@@ -109,8 +113,13 @@ export interface CoverageRow {
  * 8 回の判定窓が本当に機能しているかは、合計題数では分かりません。
  * 1,200 題あっても 40 ポイントに偏っていれば 2 日目に同じ問題が出ます。
  * 見るべきはいつでも「いちばん薄い知識ポイント」です。
+ *
+ * 数えはじめは登録簿の側からです。content_items を GROUP BY するだけだと、
+ * 1 題も無い知識ポイントは行として現れず、「30 点中 29 点が未着手」を報告できません。
  */
-export const readCoverage = async (database: ContentDatabase): Promise<CoverageRow[]> => {
+export const readCoverage = async (
+  database: ContentDatabase, knowledgePoints: KnowledgePoint[],
+): Promise<CoverageRow[]> => {
   const result = await database.query<{ knowledge_point_ref: string; published: number; in_review: number }>(`
     SELECT knowledge_point_ref,
            count(*) FILTER (WHERE status = 'published')::int AS published,
@@ -118,15 +127,35 @@ export const readCoverage = async (database: ContentDatabase): Promise<CoverageR
     FROM content_items
     WHERE status <> 'retired'
     GROUP BY knowledge_point_ref
-    ORDER BY 2 ASC, 1 ASC
   `)
-  return result.rows.map((row) => ({
-    knowledgePointRef: row.knowledge_point_ref,
-    published: Number(row.published),
-    inReview: Number(row.in_review),
-    shortfallToMinimum: Math.max(0, MINIMUM_ITEMS_PER_KNOWLEDGE_POINT - Number(row.published)),
-    shortfallToRecommended: Math.max(0, RECOMMENDED_ITEMS_PER_KNOWLEDGE_POINT - Number(row.published)),
-  }))
+  const counted = new Map(result.rows.map((row) => [row.knowledge_point_ref, row]))
+  const rows: CoverageRow[] = knowledgePoints.map((point) => {
+    const found = counted.get(point.knowledgePointRef)
+    const published = Number(found?.published ?? 0)
+    return {
+      knowledgePointRef: point.knowledgePointRef,
+      labelJa: point.labelJa,
+      teachingOrder: point.teachingOrder,
+      status: point.status,
+      published,
+      inReview: Number(found?.in_review ?? 0),
+      shortfallToMinimum: Math.max(0, MINIMUM_ITEMS_PER_KNOWLEDGE_POINT - published),
+      shortfallToRecommended: Math.max(0, RECOMMENDED_ITEMS_PER_KNOWLEDGE_POINT - published),
+    }
+  })
+  // 登録簿に無い ref が題庫に居たら黙って落とさず、行として出します。
+  // 登録簿と生きている行が食い違っている状態は、登録簿が無いより悪いからです。
+  for (const [ref, row] of counted) {
+    if (knowledgePoints.some((point) => point.knowledgePointRef === ref)) continue
+    rows.push({
+      knowledgePointRef: ref, labelJa: '（登録簿に無い）', teachingOrder: null, status: 'in-scope',
+      published: Number(row.published), inReview: Number(row.in_review),
+      shortfallToMinimum: 0, shortfallToRecommended: 0,
+    })
+  }
+  return rows.sort((left, right) =>
+    (left.teachingOrder ?? Number.MAX_SAFE_INTEGER) - (right.teachingOrder ?? Number.MAX_SAFE_INTEGER)
+    || left.knowledgePointRef.localeCompare(right.knowledgePointRef))
 }
 
 export type PublishOutcome =

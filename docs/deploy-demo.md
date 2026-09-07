@@ -4,8 +4,12 @@
 
 ```
 web  : Cloudflare Workers（静的配信、既存）  https://peraquest-dev.larkjapandemo.workers.dev
-API  : Fly.io（nrt / 東京）+ Neon Postgres（ap-northeast-1 / 東京）
+API  : Fly.io（nrt / 東京）— アプリと Postgres の両方
 ```
+
+**必要なアカウントは Fly.io の 1 つだけです。** Postgres も Fly 側で作れるので、
+別の DB サービスは要りません。イメージは Fly 側でビルドされるため、
+手元に Docker も要りません。
 
 Fastify は Workers では動かず、Cloudflare に Postgres はありません。
 スキーマは plpgsql の関数とトリガに不変条件を預けているので、D1（SQLite）へは移せません
@@ -17,29 +21,35 @@ Fastify は Workers では動かず、Cloudflare に Postgres はありません
 
 ## 1. アカウント（人間しかできない作業）
 
-- Fly.io https://fly.io/app/sign-up
-- Neon https://neon.tech — プロジェクトを **ap-northeast-1 (Tokyo)** で作成し、接続文字列を控える
+Fly.io の登録だけです。https://fly.io/app/sign-up
+（クレジットカードの登録を求められます。この構成の想定は無料枠〜数ドル/月です。）
 
-## 2. flyctl
+## 2. ログイン
+
+flyctl は導入済みです。ブラウザが開くので、そこで許可してください。
 
 ```bash
-brew install flyctl
 fly auth login
 ```
 
-## 3. アプリ作成とシークレット
+## 3. アプリと Postgres
 
 ```bash
 fly launch --no-deploy --copy-config --name peraquest-api --region nrt
 
+# Postgres も Fly 側に作ります。別サービスは要りません。
+fly postgres create --name peraquest-db --region nrt --initial-cluster-size 1 --vm-size shared-cpu-1x --volume-size 1
+fly postgres attach peraquest-db --app peraquest-api   # DATABASE_URL が自動で入ります
+
 fly secrets set \
-  DATABASE_URL='postgresql://...neon.tech/neondb?sslmode=require' \
   DEMO_SESSION_SECRET="$(openssl rand -hex 32)" \
   CORS_ORIGIN='https://peraquest-dev.larkjapandemo.workers.dev' \
   AUTH_ISSUER='https://issuer.example.test' \
   AUTH_AUDIENCE='peraquest-api' \
   AUTH_JWKS_URL='https://issuer.example.test/.well-known/jwks.json'
 ```
+
+`fly postgres attach` が `DATABASE_URL` を設定するので、手で貼る必要はありません。
 
 `NODE_ENV` / `DEMO_DEPLOYMENT` / `DEMO_API_ENABLED` は `fly.toml` に入っています。
 
@@ -54,7 +64,8 @@ fly secrets set \
 ## 4. デプロイ
 
 ```bash
-fly deploy
+fly deploy --remote-only   # イメージは Fly 側でビルドされます（手元に Docker は不要）
+fly scale count 1          # 1 台に固定（理由は下の「既知の制約」）
 ```
 
 `release_command` が毎回この順で走ります（`apps/api/src/release.ts`）。

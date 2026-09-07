@@ -24,8 +24,13 @@ FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+# npm ci はロックファイルが参照する全ワークスペースの manifest を要求します。
+# API に要らない web/mobile/desktop も、manifest だけは置きます。
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+COPY apps/mobile/package.json apps/mobile/
+COPY apps/desktop/package.json apps/desktop/
 COPY packages/contracts/package.json packages/contracts/
 COPY packages/platform/package.json packages/platform/
 RUN npm ci --omit=dev --workspace @peraquest/api --include-workspace-root

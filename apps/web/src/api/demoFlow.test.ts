@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createDemoSession, registerDemoDevice, setDemoVoiceConsent } from './demoFlow'
+import { createDemoSession, fetchDailyPlan, registerDemoDevice, setDemoVoiceConsent } from './demoFlow'
 
 function jsonResponse(data: unknown, status = 200): Response {
   return {
@@ -68,5 +68,19 @@ describe('product demo API client', () => {
     expect(response.ok).toBe(false)
     expect(response.status).toBe(502)
     expect(response.body).toEqual({ message: 'temporary backend error' })
+  })
+})
+
+describe('a 200 that is not JSON', () => {
+  it('is reported as a failure, not as an empty success', async () => {
+    // API 未配置のとき、SPA のフォールバックが /api/... にも index.html を 200 で返します。
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '<!doctype html><html lang="ja"><body><div id="app"></div></body></html>',
+    }) as unknown as Response))
+    const result = await fetchDailyPlan('token')
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe(200)
   })
 })

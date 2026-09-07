@@ -27,14 +27,19 @@ async function requestJson<T>(path: string, init: RequestInit): Promise<DemoRequ
   const response = await fetch(buildApiUrl(path), init)
   const text = await response.text()
   let body: unknown = {}
+  let parsed = true
   if (text.trim()) {
     try {
       body = JSON.parse(text)
     } catch {
+      parsed = false
       body = { message: text }
     }
   }
-  return { status: response.status, body: body as T, ok: response.ok }
+  // JSON でない 200 は成功ではありません。API が配置されていないと、SPA のフォールバックが
+  // /api/... にも index.html を 200 で返します。それを ok として扱うと、
+  // 画面は「呼べたのに中身が空」に見え、原因が API 不在だと分かりません。
+  return { status: response.status, body: body as T, ok: response.ok && parsed }
 }
 
 const bearerHeaders = (token: string, extra?: HeadersInit): HeadersInit => ({

@@ -1334,12 +1334,15 @@ export class PostgresStudentRepository implements StudentRepository {
           ORDER BY ci.knowledge_point_ref
           LIMIT $4::int
         )
-        SELECT id, item_kind, knowledge_point_ref, payload
-        FROM content_items
-        WHERE status = 'published' AND item_kind = ANY($5::text[])
-          AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
-          AND knowledge_point_ref IN (SELECT knowledge_point_ref FROM admitted)
-        ORDER BY created_at
+        SELECT id, item_kind, knowledge_point_ref, payload FROM (
+          SELECT id, item_kind, knowledge_point_ref, payload,
+                 row_number() OVER (PARTITION BY knowledge_point_ref ORDER BY created_at) AS seat
+          FROM content_items
+          WHERE status = 'published' AND item_kind = ANY($5::text[])
+            AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+            AND knowledge_point_ref IN (SELECT knowledge_point_ref FROM admitted)
+        ) ranked
+        ORDER BY seat, knowledge_point_ref
         LIMIT $1::int
       `, [target - reviews.rows.length, reviewIds, studentId, intake, renderableItemKinds])
 
@@ -1349,15 +1352,18 @@ export class PostgresStudentRepository implements StudentRepository {
       const shortfall = target - reviews.rows.length - fresh.rows.length
       const filler = shortfall > 0
         ? await client.query<DailyItemRow>(`
-            SELECT id, item_kind, knowledge_point_ref, payload
-            FROM content_items
-            WHERE status = 'published' AND item_kind = ANY($4::text[])
-              AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
-              AND EXISTS (
-                SELECT 1 FROM student_knowledge sk
-                WHERE sk.student_id = $3 AND sk.knowledge_point_ref = content_items.knowledge_point_ref
-              )
-            ORDER BY created_at
+            SELECT id, item_kind, knowledge_point_ref, payload FROM (
+              SELECT id, item_kind, knowledge_point_ref, payload,
+                     row_number() OVER (PARTITION BY knowledge_point_ref ORDER BY created_at) AS seat
+              FROM content_items
+              WHERE status = 'published' AND item_kind = ANY($4::text[])
+                AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+                AND EXISTS (
+                  SELECT 1 FROM student_knowledge sk
+                  WHERE sk.student_id = $3 AND sk.knowledge_point_ref = content_items.knowledge_point_ref
+                )
+            ) ranked
+            ORDER BY seat, knowledge_point_ref
             LIMIT $1::int
           `, [shortfall, pickedIds, studentId, renderableItemKinds])
         : { rows: [] as DailyItemRow[] }
@@ -1368,11 +1374,14 @@ export class PostgresStudentRepository implements StudentRepository {
       const capped = [...reviews.rows, ...fresh.rows, ...filler.rows]
       const topUp = capped.length < 12
         ? await client.query<DailyItemRow>(`
-            SELECT id, item_kind, knowledge_point_ref, payload
-            FROM content_items
-            WHERE status = 'published' AND item_kind = ANY($3::text[])
-              AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
-            ORDER BY created_at
+            SELECT id, item_kind, knowledge_point_ref, payload FROM (
+              SELECT id, item_kind, knowledge_point_ref, payload,
+                     row_number() OVER (PARTITION BY knowledge_point_ref ORDER BY created_at) AS seat
+              FROM content_items
+              WHERE status = 'published' AND item_kind = ANY($3::text[])
+                AND ($2::uuid[] = '{}' OR id <> ALL($2::uuid[]))
+            ) ranked
+            ORDER BY seat, knowledge_point_ref
             LIMIT $1::int
           `, [target - capped.length, capped.map((item) => item.id), renderableItemKinds])
         : { rows: [] as DailyItemRow[] }

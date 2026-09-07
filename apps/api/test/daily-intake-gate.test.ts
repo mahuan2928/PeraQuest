@@ -114,3 +114,21 @@ describe('new knowledge point intake', () => {
     expect(introduced).toEqual([])
   })
 })
+
+describe('how a day is spread across knowledge points', () => {
+  it('rotates through the admitted points instead of exhausting one', async () => {
+    const { database, repository } = await setup()
+    // 3 ポイント × 12 問。上限どおり 3 点が入りますが、
+    // 1 点から 12 問続けて出すと、8 回の窓が 1 日で埋まってしまいます。
+    await publishItems(database, 3, 12)
+    const started = await repository.startDailySession(STUDENT)
+    const perPoint = new Map<string, number>()
+    for (const item of started!.items) {
+      perPoint.set(item.knowledgePointRef, (perPoint.get(item.knowledgePointRef) ?? 0) + 1)
+    }
+    expect(perPoint.size).toBe(3)
+    // 19 問を 3 点で回すので、どの点も 7 問を超えません。
+    expect(Math.max(...perPoint.values())).toBeLessThanOrEqual(7)
+    expect(Math.min(...perPoint.values())).toBeGreaterThanOrEqual(6)
+  })
+})

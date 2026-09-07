@@ -468,7 +468,11 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     return { id: request.authActor.id, providerSubject: request.authActor.providerSubject }
   }
 
-  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/api/v1/me/game-state') || url.startsWith('/api/v1/me/daily-') || url.startsWith('/api/v1/me/exam-date') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification') || url.startsWith('/v1/guardian-links/')
+  // `/api/v1/me/` はまとめて保護します。以前は game-state・daily-・exam-date と
+  // 個別に並べていたため、あとから足した cosmetics と study-plan がどの分岐にも入らず、
+  // 認証フックを素通りしていました（`/v1/me/` の後方一致にも当たりません）。
+  // 一覧を手で足す方式は、足し忘れが「認証なし」に倒れるので規則にします。
+  const formalProtectedPath = (url: string): boolean => url.startsWith('/api/v1/stage-exams/') || url.startsWith('/api/v1/stage-attempts/') || url.startsWith('/api/v1/student-knowledge') || url.startsWith('/api/v1/me/') || url.startsWith('/v1/me/devices/current') || url.startsWith('/v1/me/guardian-link/invitations') || url.startsWith('/v1/guardian-links/verification') || url.startsWith('/v1/guardian-links/')
   const protectedPath = (url: string): boolean => formalProtectedPath(url) || url.startsWith('/v1/me/') || url.startsWith('/v1/trial-attempts')
   app.addHook('preValidation', async (request, reply) => {
     if (!protectedPath(request.url)) return

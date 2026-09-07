@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite'
 import { afterEach, describe, expect, it } from 'vitest'
-import { runRelease } from '../src/release.js'
+import { contentItemsDirectory, runRelease } from '../src/release.js'
+import { readContentDirectory } from '../src/content/pipeline.js'
 import { PostgresStudentRepository } from '../src/repository.js'
 import type { Pool } from 'pg'
 
@@ -37,8 +38,10 @@ describe('the release command that runs on every deploy', () => {
     const published = await database.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM content_items WHERE status = 'published'",
     )
-    // デモ 14 題 + 語彙 12 題。
-    expect(published.rows[0]!.count).toBe(26)
+    // 題数は増え続けるので、数字を焼き込まずに「デモ 14 題 + 題庫ファイルの全題」を数えます。
+    // 固定値にすると、題を足すたびにこのテストが落ちます。
+    const { items } = await readContentDirectory(contentItemsDirectory)
+    expect(published.rows[0]!.count).toBe(14 + items.length)
   })
 
   it('is safe to run again, which it will be on the next deploy', async () => {
@@ -52,7 +55,8 @@ describe('the release command that runs on every deploy', () => {
       "SELECT count(*)::int AS count FROM content_items WHERE status <> 'retired'",
     )
     // 2 回目で題数が増えないこと。0025 の一意キーが効いている証拠です。
-    expect(live.rows[0]!.count).toBe(26)
+    const { items } = await readContentDirectory(contentItemsDirectory)
+    expect(live.rows[0]!.count).toBe(14 + items.length)
     expect(second.join('\n')).toContain('already up to date')
     expect(second.join('\n')).toContain('publish vocabulary.context: nothing_to_publish')
   })

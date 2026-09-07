@@ -15,7 +15,7 @@ const { knowledgeItems, reviewQuestOpen, reviewQuestCompleted, reviewReadAloudDo
       学習
     </p>
     <h2>今日の復習</h2>
-    <p>{{ knowledgeItems.length ? `${knowledgeItems.length} 件の復習予定があります。` : 'レベルチェックが終わると、復習予定がここに表示されます。' }}</p>
+    <p>{{ knowledgeItems.length ? `${knowledgeItems.length} 件の復習予定があります。` : '今日の学習かレベルチェックを終えると、覚えた内容が復習予定としてここに並びます。' }}</p>
     <div
       v-if="knowledgeItems.length"
       class="mini-mastery"

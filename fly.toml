@@ -1,0 +1,44 @@
+# PeraQuest API。web は Cloudflare Workers に静的配信されているので、ここは API だけです。
+app = "peraquest-api"
+primary_region = "nrt"   # 東京。学習者も審査も日本国内なので、処理地を日本に置きます。
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # マイグレーションと題庫の投入は毎回ここで走ります。手で流す運用にすると必ずずれます。
+  release_command = "node apps/api/dist/release.js"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  # 公開デモであることの明示。本番の締めつけ（HTTPS の auth URL、テスト用ヘッダ禁止）は
+  # そのままで、デモの入口だけが開きます。
+  DEMO_DEPLOYMENT = "true"
+  DEMO_API_ENABLED = "true"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # デモのトークン台帳がプロセス内の Map なので、複数インスタンスにすると
+  # 「発行したインスタンス以外では無効」になり、トークン不具合に見える形で落ちます。
+  # 台帳を外に出すまでは 1 インスタンスに固定します。
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  path = "/health"
+  timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

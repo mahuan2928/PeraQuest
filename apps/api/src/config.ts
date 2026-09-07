@@ -31,6 +31,9 @@ const schema = z.object({
   VOICE_UPLOAD_TICKET_TTL_SECONDS: z.coerce.number().int().positive().max(15 * 60).default(5 * 60),
   WEB_CHECKOUT_WEBHOOK_SECRET: z.string().min(16).optional(),
   DEMO_API_ENABLED: booleanFlag.default(false),
+  // 公開デモ環境の明示的な宣言。NODE_ENV=production の締めつけは一切ゆるめません。
+  // これが無いと本番のデモは「API は動くのに入口が無い」状態になります。
+  DEMO_DEPLOYMENT: booleanFlag.default(false),
   DEMO_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().max(15 * 60).default(10 * 60),
   DEMO_SESSION_SECRET: z.string().min(16).optional(),
   ALLOW_LEGACY_TEST_HEADERS: booleanFlag.default(false),
@@ -51,7 +54,8 @@ export type RuntimeConfig = z.infer<typeof schema>
 
 export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): RuntimeConfig => {
   const config = schema.parse(environment)
-  if (config.NODE_ENV !== 'production' && config.DEMO_API_ENABLED && !config.DEMO_SESSION_SECRET) throw new Error('DEMO_SESSION_SECRET is required when DEMO_API_ENABLED is true')
+  const demoEnabled = config.DEMO_API_ENABLED && (config.NODE_ENV !== 'production' || config.DEMO_DEPLOYMENT)
+  if (demoEnabled && !config.DEMO_SESSION_SECRET) throw new Error('DEMO_SESSION_SECRET is required when the demo API is enabled')
   if (config.NODE_ENV === 'production') {
     for (const key of productionAuthKeys) {
       if (!environment[key]?.trim()) throw new Error(`${key} is required in production`)
@@ -62,7 +66,12 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): Runtim
   }
   return {
     ...config,
+    // テスト用ヘッダは本番では常に無効のままです。ここは緩めません。
     ALLOW_LEGACY_TEST_HEADERS: config.NODE_ENV !== 'production' && config.ALLOW_LEGACY_TEST_HEADERS,
-    DEMO_API_ENABLED: config.NODE_ENV !== 'production' && config.DEMO_API_ENABLED,
+    // デモの入口だけは、DEMO_DEPLOYMENT を明示した本番でも開けます。
+    // 本番の締めつけ（HTTPS の auth URL、テスト用ヘッダの禁止）はそのまま残るので、
+    // これは「本番の穴」ではなく「デモ環境という別の宣言」です。
+    // 宣言せずに本番へ出せば、今までどおりデモの入口は閉じたままになります。
+    DEMO_API_ENABLED: demoEnabled,
   }
 }

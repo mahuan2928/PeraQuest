@@ -41,4 +41,47 @@ describe('runtime configuration', () => {
     expect(config.DEMO_API_ENABLED).toBe(false)
     expect(config.AUTH_PROVIDER).toBe('email_magic_link')
   })
+
+  it('keeps the demo entrance shut in production unless the deployment declares itself a demo', () => {
+    const config = loadConfig({
+      NODE_ENV: 'production',
+      AUTH_PROVIDER: 'email_magic_link',
+      AUTH_ISSUER: 'https://issuer.example.test',
+      AUTH_AUDIENCE: 'peraquest-api',
+      AUTH_JWKS_URL: 'https://issuer.example.test/.well-known/jwks.json',
+      DEMO_API_ENABLED: 'true',
+      DEMO_SESSION_SECRET: 'hosted-demo-session-secret',
+    })
+    // 宣言していない本番では、DEMO_API_ENABLED を立てても開きません。
+    expect(config.DEMO_API_ENABLED).toBe(false)
+  })
+
+  it('opens the demo entrance for a declared demo deployment without loosening production', () => {
+    const config = loadConfig({
+      NODE_ENV: 'production',
+      AUTH_PROVIDER: 'email_magic_link',
+      AUTH_ISSUER: 'https://issuer.example.test',
+      AUTH_AUDIENCE: 'peraquest-api',
+      AUTH_JWKS_URL: 'https://issuer.example.test/.well-known/jwks.json',
+      DEMO_API_ENABLED: 'true',
+      DEMO_DEPLOYMENT: 'true',
+      DEMO_SESSION_SECRET: 'hosted-demo-session-secret',
+      ALLOW_LEGACY_TEST_HEADERS: 'true',
+    })
+    expect(config.DEMO_API_ENABLED).toBe(true)
+    // デモを開けても、テスト用ヘッダは本番では閉じたままです。ここが緩んだら意味がありません。
+    expect(config.ALLOW_LEGACY_TEST_HEADERS).toBe(false)
+  })
+
+  it('refuses a declared demo deployment that has no session secret', () => {
+    expect(() => loadConfig({
+      NODE_ENV: 'production',
+      AUTH_PROVIDER: 'email_magic_link',
+      AUTH_ISSUER: 'https://issuer.example.test',
+      AUTH_AUDIENCE: 'peraquest-api',
+      AUTH_JWKS_URL: 'https://issuer.example.test/.well-known/jwks.json',
+      DEMO_API_ENABLED: 'true',
+      DEMO_DEPLOYMENT: 'true',
+    })).toThrow('DEMO_SESSION_SECRET is required')
+  })
 })

@@ -20,10 +20,11 @@
     "build:mobile": "npm run build -w @peraquest/web && npm run build -w @peraquest/mobile",
     "build:desktop": "npm run build -w @peraquest/desktop",
     "package:desktop": "npm run package -w @peraquest/desktop",
-    "build:cloudflare": "npm run build -w @peraquest/web",
+    "build:cloudflare": "node scripts/check-api-base-url.mjs && npm run build -w @peraquest/web",
     "deploy:cloudflare": "npm run build:cloudflare && npx --yes wrangler@4.124.0 deploy",
     "deploy": "npm run deploy:cloudflare",
-    "test:ci": "node --test scripts/ci/*.test.mjs"
+    "test:ci": "node --test scripts/ci/*.test.mjs",
+    "deploy:api": "fly deploy"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

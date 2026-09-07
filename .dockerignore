@@ -1,0 +1,7 @@
+node_modules
+**/node_modules
+**/dist
+.git
+apps/web/test-results
+apps/mobile/ios
+apps/desktop

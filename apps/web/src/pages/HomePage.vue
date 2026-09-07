@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref } from 'vue'
-import { fetchExamDate, saveExamDate } from '../api/demoFlow'
+import { fetchExamDate, fetchStudyPlan, saveExamDate } from '../api/demoFlow'
 import { studentExperienceKey } from '../composables/studentExperience'
 
 const experience = inject(studentExperienceKey)!
@@ -22,6 +22,27 @@ const examDate = ref('')
 const examDaysRemaining = ref<number | null>(null)
 const examSaving = ref(false)
 const today = new Date().toISOString().slice(0, 10)
+
+type StudyPlan = {
+  examDate: string | null; daysRemaining: number | null; dailyTarget: number
+  teachablePoints: number; startedPoints: number; steadyPoints: number
+  nextPoints: Array<{ knowledgePointRef: string; labelJa: string }>; scopePoints: number
+}
+const studyPlan = ref<StudyPlan | null>(null)
+
+async function loadStudyPlan() {
+  const result = await fetchStudyPlan(session.value.studentToken)
+  if (result.ok) studyPlan.value = result.body as StudyPlan
+}
+
+// 受験日の言い回しは、過ぎた日付を隠しません。0 に丸めると受験が終わったことが画面から消えます。
+const examCountdown = computed(() => {
+  const days = studyPlan.value?.daysRemaining
+  if (days === null || days === undefined) return ''
+  if (days > 0) return `試験まで あと ${days} 日`
+  if (days === 0) return '試験は今日です'
+  return `試験日から ${Math.abs(days)} 日たちました`
+})
 
 async function loadExamDate() {
   const result = await fetchExamDate(session.value.studentToken)
@@ -45,7 +66,7 @@ async function storeExamDate() {
   }
 }
 
-onMounted(loadExamDate)
+onMounted(() => { void loadExamDate(); void loadStudyPlan() })
 // コードは生成時点で 5 文字ずつ区切られています。そのまま表示します。
 const groupedInvitationCode = computed(() => invitationCode.value)
 
@@ -237,6 +258,55 @@ const entries = [
       </p>
     </section>
 
+    <article
+      v-if="studyPlan"
+      class="action-card study-plan-card"
+    >
+      <p class="card-kicker">
+        学習計画
+      </p>
+      <h2>いまの進み方</h2>
+      <p
+        v-if="examCountdown"
+        class="study-plan-countdown"
+      >
+        <strong>{{ examCountdown }}</strong>
+      </p>
+      <p
+        v-else
+        class="study-plan-countdown"
+      >
+        受験予定日を入れると、そこから逆算した計画になります。
+      </p>
+
+      <ul class="study-plan-counts">
+        <li>
+          <strong>{{ studyPlan.startedPoints }}</strong>
+          <small>始めたポイント</small>
+        </li>
+        <li>
+          <strong>{{ studyPlan.steadyPoints }}</strong>
+          <small>安定してきたポイント</small>
+        </li>
+        <li>
+          <strong>{{ studyPlan.dailyTarget }}</strong>
+          <small>1 日の目標問題数</small>
+        </li>
+      </ul>
+
+      <p v-if="studyPlan.nextPoints.length">
+        つぎに学ぶのは
+        <strong>{{ studyPlan.nextPoints.map((point) => point.labelJa).join('、') }}</strong>
+        です。
+      </p>
+
+      <!-- 題庫が範囲に届いていないことは隠しません。学べない範囲まで数に入れると、
+           守れない約束を数字で見せることになります。 -->
+      <p class="study-plan-scope">
+        いま学べるのは {{ studyPlan.teachablePoints }} ポイントです（3 級の範囲は {{ studyPlan.scopePoints }} ポイント。残りは問題を作成中です）。
+      </p>
+    </article>
+
     <article class="action-card exam-date-card">
       <p class="card-kicker">
         学習
@@ -270,7 +340,7 @@ const entries = [
         @click="comingSoonOpen = !comingSoonOpen"
       >
         <span>近日公開</span>
-        <strong>学習プラン ・ 次の島 ・ リスニング入り江を開発しています</strong>
+        <strong>料金プラン ・ 次の島 ・ リスニング入り江を開発しています</strong>
         <small>{{ comingSoonOpen ? '閉じる' : '開く' }}</small>
       </button>
       <div
@@ -278,7 +348,7 @@ const entries = [
         class="coming-soon-body"
       >
         <article class="future-card">
-          <h3>学習プラン</h3>
+          <h3>料金プラン</h3>
           <p>現在は無料でご利用いただけます。保護者の確認が終われば、すべての学習に進めます。</p>
           <span class="plan-badge">無料プラン</span>
         </article>

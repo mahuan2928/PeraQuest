@@ -571,6 +571,24 @@ export interface CosmeticPurchaseResponse {
   shop: CosmeticShopResponse
 }
 
+/** 学習計画。数えられるのは「いま学べる範囲」だけで、題庫の外は約束しません。 */
+export interface StudyPlanResponse {
+  examDate: string | null
+  daysRemaining: number | null
+  /** 1 日の目標問題数。 */
+  dailyTarget: number
+  /** いま出題できる知識ポイント数（公開済み）。計画はこれを母数にします。 */
+  teachablePoints: number
+  /** そのうち一度でも解いた点。 */
+  startedPoints: number
+  /** review か mastered に届いた点。 */
+  steadyPoints: number
+  /** 教える順で、まだ始めていない次の点（最大 3 件）。 */
+  nextPoints: Array<{ knowledgePointRef: string; labelJa: string }>
+  /** 3 級の範囲として台帳にある点の総数。teachablePoints との差が題庫の不足です。 */
+  scopePoints: number
+}
+
 export interface DailyPlanResponse {
   sessionDate: string
   lives: number

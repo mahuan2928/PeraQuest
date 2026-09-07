@@ -1,6 +1,7 @@
 import type { Pool } from 'pg'
 import { dailyItemKinds } from '@peraquest/contracts'
-import type { CosmeticShopResponse, CosmeticItemDto, CosmeticPurchaseResponse, CosmeticPurchaseOutcome, ExamDateResponse, DailyAnswerResponse, DailyHintResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
+import { readKnowledgePoints } from './content/knowledgePoints.js'
+import type { StudyPlanResponse, CosmeticShopResponse, CosmeticItemDto, CosmeticPurchaseResponse, CosmeticPurchaseOutcome, ExamDateResponse, DailyAnswerResponse, DailyHintResponse, DailyItemDto, DailyItemKind, DailyPlanResponse, DailySessionDto, DailySessionStartResponse, AuthProvider, ClientPlatform, ConsentStatus, CurrentDeviceRegistrationResponse, GameRewardGrantDto, GuardianInvitationResponse, GuardianLinkStatus, GuardianLinkVerificationResponse, KnowledgeEvidenceOutcome, StageAttemptResultResponse, StartStageAttemptResponse, StudentGameStateResponse, StudentKnowledgeProjectionDto, UserRole } from '@peraquest/contracts'
 import type { AuthUser, AuthUserResolver } from './auth.js'
 
 export class PostgresAuthUserResolver implements AuthUserResolver {
@@ -143,6 +144,7 @@ export interface StudentRepository {
   listStudentKnowledgeProjections(studentId: string): Promise<StudentKnowledgeProjectionDto[]>
   getStudentGameState(studentId: string): Promise<StudentGameStateResponse>
   listActiveEntitlements(studentId: string, asOf: Date): Promise<string[]>
+  getStudyPlan(studentId: string): Promise<StudyPlanResponse>
   getCosmeticShop(studentId: string): Promise<CosmeticShopResponse>
   purchaseCosmetic(studentId: string, code: string): Promise<CosmeticPurchaseResponse>
   equipCosmetic(studentId: string, code: string): Promise<CosmeticPurchaseResponse | null>
@@ -1507,6 +1509,65 @@ export class PostgresStudentRepository implements StudentRepository {
     }
   }
 
+  /**
+   * 学習計画。母数は「台帳にある範囲」ではなく「いま出題できる点」です。
+   * 56 点の範囲を約束しても題庫が 5 点しか無ければ、守れない数字を見せることになります。
+   * パーセントは出しません（B-1 と同じ理由：動かない数字は進捗に見えて進捗ではありません）。
+   */
+  async getStudyPlan(studentId: string): Promise<StudyPlanResponse> {
+    const rows = await this.pool.query<{
+      teachable: number; started: number; steady: number; exam_date: string | null; days_remaining: number | null
+    }>(`
+      WITH teachable AS (
+        SELECT DISTINCT knowledge_point_ref FROM content_items WHERE status = 'published'
+      )
+      SELECT
+        (SELECT count(*)::int FROM teachable) AS teachable,
+        (SELECT count(*)::int FROM student_knowledge sk
+           JOIN teachable t ON t.knowledge_point_ref = sk.knowledge_point_ref
+         WHERE sk.student_id = $1) AS started,
+        (SELECT count(*)::int FROM student_knowledge sk
+           JOIN teachable t ON t.knowledge_point_ref = sk.knowledge_point_ref
+           JOIN users u ON u.id = sk.student_id
+         WHERE sk.student_id = $1
+           AND knowledge_effective_state(sk.state, sk.last_occurred_at, u.exam_date) IN ('review', 'mastered')) AS steady,
+        (SELECT exam_date::text FROM users WHERE id = $1) AS exam_date,
+        (SELECT (exam_date - (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date) FROM users WHERE id = $1) AS days_remaining
+    `, [studentId])
+    const row = rows.rows[0]!
+
+    // 次に学ぶ点は教える順で決めます。CEFR-J のレベル順ではありません（頻度順なので教材には使えません）。
+    const pending = await this.pool.query<{ knowledge_point_ref: string }>(`
+      SELECT DISTINCT ci.knowledge_point_ref
+      FROM content_items ci
+      WHERE ci.status = 'published'
+        AND NOT EXISTS (
+          SELECT 1 FROM student_knowledge sk
+          WHERE sk.student_id = $1 AND sk.knowledge_point_ref = ci.knowledge_point_ref
+        )
+    `, [studentId])
+
+    const registry = await readKnowledgePoints()
+    const order = new Map(registry.map((point) => [point.knowledgePointRef, point]))
+    const nextPoints = pending.rows
+      .map((entry) => order.get(entry.knowledge_point_ref))
+      .filter((point) => point !== undefined && point.teachingOrder !== null)
+      .sort((left, right) => left!.teachingOrder! - right!.teachingOrder!)
+      .slice(0, 3)
+      .map((point) => ({ knowledgePointRef: point!.knowledgePointRef, labelJa: point!.labelJa }))
+
+    return {
+      examDate: row.exam_date,
+      daysRemaining: row.days_remaining === null ? null : Number(row.days_remaining),
+      dailyTarget: 19,
+      teachablePoints: Number(row.teachable),
+      startedPoints: Number(row.started),
+      steadyPoints: Number(row.steady),
+      nextPoints,
+      scopePoints: registry.filter((point) => point.status !== 'blocked').length,
+    }
+  }
+
   // 見た目の店。目録と所持と残高をひとつの応答にまとめます。
   // 「買えない」を画面で言えるように、残高との比較もここで済ませます。
   async getCosmeticShop(studentId: string): Promise<CosmeticShopResponse> {
@@ -1829,6 +1890,14 @@ export class MemoryStudentRepository implements StudentRepository, AuthUserResol
 
   // インメモリ実装は署名を満たすだけです。見た目の店は Postgres の関数が本体なので、
   // ここで真似ると二つの真実ができます。
+  async getStudyPlan(studentId: string): Promise<StudyPlanResponse> {
+    void studentId
+    return {
+      examDate: null, daysRemaining: null, dailyTarget: 19,
+      teachablePoints: 0, startedPoints: 0, steadyPoints: 0, nextPoints: [], scopePoints: 0,
+    }
+  }
+
   async getCosmeticShop(studentId: string): Promise<CosmeticShopResponse> {
     void studentId
     return { activityCoins: 0, items: [] }

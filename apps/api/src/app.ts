@@ -8,6 +8,7 @@ import type {
   DailyHintResponse,
   ExamDateResponse,
   CosmeticShopResponse,
+  StudyPlanResponse,
   CosmeticPurchaseResponse,
   DailyPlanResponse,
   DailySessionStartResponse,
@@ -914,6 +915,12 @@ export const buildApp = (options: BuildAppOptions = {}) => {
     const student = await repository.findById(actor.id)
     if (!student) return sendError(reply, 404, 'STUDENT_NOT_FOUND')
     return repository.getStudentGameState(actor.id)
+  })
+
+  app.get('/api/v1/me/study-plan', async (request, reply): Promise<StudyPlanResponse | void> => {
+    const actor = formalStudentActor(request, reply)
+    if (!actor) return
+    return repository.getStudyPlan(actor.id)
   })
 
   app.get('/api/v1/me/cosmetics', async (request, reply): Promise<CosmeticShopResponse | void> => {

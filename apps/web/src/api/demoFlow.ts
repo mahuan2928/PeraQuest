@@ -229,3 +229,7 @@ export async function equipCosmetic(studentToken: string, code: string): Promise
     body: JSON.stringify({ code }),
   })
 }
+
+export async function fetchStudyPlan(studentToken: string): Promise<DemoRequestResult> {
+  return requestJson('/api/v1/me/study-plan', { headers: bearerHeaders(studentToken) })
+}

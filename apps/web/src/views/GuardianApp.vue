@@ -331,7 +331,7 @@ function stateLabel(state: string, masteryScore: number, leech = false) {
       </article>
 
       <article class="guardian-card">
-        <h2>学習プラン</h2>
+        <h2>料金プラン</h2>
         <p>現在は無料でご利用いただけます。</p>
         <span class="plan-badge">無料プラン</span>
       </article>

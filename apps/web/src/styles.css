@@ -600,3 +600,9 @@ footer a { color: var(--muted-ink); font-size: .78rem; }
 .streak-line small { color: var(--muted-ink); font-size: max(.75rem, .8em); }
 .mcq-choices { display: grid; gap: 10px; }
 .mcq-choices button { min-height: 48px; justify-content: flex-start; text-align: left; }
+.study-plan-countdown { margin: 0 0 12px; font-size: 1.05rem; }
+.study-plan-counts { list-style: none; display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; padding: 0; }
+.study-plan-counts li { flex: 1 1 90px; padding: 12px; border: 2px solid var(--line); border-radius: 14px; text-align: center; }
+.study-plan-counts strong { display: block; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.study-plan-counts small { color: var(--muted-ink); font-size: max(.72rem, .78em); }
+.study-plan-scope { margin: 10px 0 0; color: var(--muted-ink); font-size: max(.75rem, .8em); line-height: 1.6; }

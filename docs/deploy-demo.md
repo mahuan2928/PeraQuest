@@ -117,3 +117,37 @@ curl -sS -X POST "$API/api/v1/me/daily-sessions" -H "authorization: Bearer $TOKE
 | **デモセッションが `users` 行を作る** | 認証なしで 1 回叩くごとに 1 行増えます。TTL は 10 分ですが、行を消す仕組みがありません。公開前に上限か掃除が要ります。 |
 | **認証が未実装** | 上記のとおり。 |
 | **題庫は 1 知識ポイントだけ** | `vocabulary.context` の 12 題のみ。範囲は `docs/knowledge-point-scope.md`。 |
+
+---
+
+## Render（現在の本番デモ）
+
+いま動いているのはこちらです。Fly の手順は将来移す場合のために残しています。
+
+```
+web  : Cloudflare Workers   https://peraquest-dev.larkjapandemo.workers.dev
+API  : Render               https://peraquest-api-dev.onrender.com
+DB   : Render PostgreSQL（Oregon）
+```
+
+### push で自動になるのはコードだけです
+
+main に push すると Render は **API のコードだけ**を入れ替えます。
+マイグレーションと題庫の投入は走りません。実測しました——題を 48 問足して push し、
+10 分間ポーリングしても `teachablePoints` は 14 のまま、DB を直接見ても新しい題は 0 件でした。
+
+つまり **題を足しても、push だけでは画面に出てきません。**
+
+### 直し方（Render の UI で 1 回だけ）
+
+Render の該当サービス → **Settings → Build & Deploy → Pre-Deploy Command** に次を入れます。
+
+```
+npm run release -w @peraquest/api
+```
+
+Pre-Deploy Command はデプロイのたびに 1 回だけ走り、失敗すればデプロイが止まります。
+題庫ファイルが壊れていればリリース自体を止める、という `release.ts` の意図と噛み合います。
+
+これを設定するまでは、題を足すたびに手元から `DATABASE_URL` を渡して
+`npm run release -w @peraquest/api` を実行する必要があります。

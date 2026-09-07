@@ -13,7 +13,8 @@
     "test": "vitest run",
     "migrate": "tsx src/migrate.ts",
     "seed:content": "tsx src/seed-content.ts",
-    "content": "tsx src/content/cli.ts"
+    "content": "tsx src/content/cli.ts",
+    "release": "node dist/release.js"
   },
   "dependencies": {
     "@peraquest/contracts": "*",

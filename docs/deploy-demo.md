@@ -149,5 +149,16 @@ npm run release -w @peraquest/api
 Pre-Deploy Command はデプロイのたびに 1 回だけ走り、失敗すればデプロイが止まります。
 題庫ファイルが壊れていればリリース自体を止める、という `release.ts` の意図と噛み合います。
 
-これを設定するまでは、題を足すたびに手元から `DATABASE_URL` を渡して
-`npm run release -w @peraquest/api` を実行する必要があります。
+### 手元から流す場合
+
+設定するまでは、題を足すたびに手元から実行します。**リポジトリ直下**で動かしてください。
+npm のワークスペースは、リポジトリの外からでは解決できません。
+
+```bash
+cd /path/to/PeraQuest-qa
+DATABASE_URL='postgresql://…/peraquest_dev?sslmode=require' npm run release -w @peraquest/api
+```
+
+`?sslmode=require` が要るのは**外から**つなぐときだけです。Render の外部ホスト名は
+SSL を必須にしていて、付けないと `SSL/TLS required (28000)` で止まります。
+Render 上の Pre-Deploy Command は内部の接続文字列を使うので、そのままで動きます。

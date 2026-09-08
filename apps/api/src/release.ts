@@ -55,11 +55,45 @@ export const runRelease = async (client: ReleaseDatabase, log: (line: string) =>
   log(`coverage: ${coverage.length} knowledge points, thinnest has ${thinnest} published items`)
 }
 
+/**
+ * 接続でつまずいたときに、原因ではなくスタックトレースだけが残ると
+ * 直し方が伝わりません。よくある 2 つはその場で言い切ります。
+ */
+const explainConnectionFailure = (error: unknown, connectionString: string): string | null => {
+  const code = (error as { code?: string } | null)?.code
+  if (code === '28000' && !/sslmode=/.test(connectionString)) {
+    return [
+      'The database refused a connection without TLS.',
+      '',
+      'Render\'s external host requires it. Add sslmode to the URL:',
+      "  DATABASE_URL='postgresql://…/peraquest_dev?sslmode=require'",
+      '',
+      'The internal connection string used by Render itself needs nothing.',
+    ].join('\n')
+  }
+  if (code === 'ENOTFOUND' || code === 'ECONNREFUSED') {
+    return `Could not reach the database host (${code}). Check the URL and that the database is running.`
+  }
+  return null
+}
+
 const main = async (): Promise<void> => {
   const connectionString = process.env.DATABASE_URL
-  if (!connectionString) throw new Error('DATABASE_URL is required')
+  if (!connectionString) {
+    throw new Error('DATABASE_URL is required. Run this from the repository root: npm run release -w @peraquest/api')
+  }
   const client = new Client({ connectionString })
-  await client.connect()
+  try {
+    await client.connect()
+  } catch (error) {
+    const advice = explainConnectionFailure(error, connectionString)
+    if (advice) {
+      process.stderr.write(`${advice}\n`)
+      process.exitCode = 1
+      return
+    }
+    throw error
+  }
   try {
     await runRelease(client, (line) => process.stdout.write(`${line}\n`))
   } finally {
